@@ -19,7 +19,30 @@ Format: newest first. Categories: *Governance*, *Specification*,
 
 ## [Unreleased]
 
-### Implementation — 2026-09-19 (Phase 1 setup batch, uncommitted)
+### Implementation — 2026-09-19 (Phase 2 database foundation)
+- `supabase/migrations/0001_init.sql` (T018): 32 enum types, 28 tables (29
+  entities minus the Clerk-externalized Session) with PK/FK/CHECK/unique/partial
+  indexes and `updated_at` triggers.
+- `supabase/migrations/0002_rls_and_privileges.sql` (T218): privilege baseline
+  (`REVOKE ALL` from anon/authenticated + default privileges), RLS on every
+  table, SELECT-own policies, Class A insert/update policies with column
+  allow-lists (no grant on `identification_details`, `account_number`,
+  `policy_number`, `credentials`, `recovery_info`; asset tables UPDATE-only;
+  `token_hash`/`otp_hash` never selectable), `protect_identity_columns`,
+  append-only `audit_log`, `audit_class_a_change()` triggers, quarantine
+  storage policy.
+- `supabase/migrations/0003_functions.sql` (T019): 32 guarded `SECURITY
+  DEFINER` functions (plan, assignments, attachments, tokens incl.
+  `resend_access_token`, `create_asset`/`set_encrypted_fields`/`delete_asset`,
+  DMS owner transitions, emergency access, AI drafts), 11 system functions
+  (`promote_upload`, `dms_transition` with outbox `access.deliver`,
+  `ea_*`, `system_issue_access_token`, `system_reissue_access_token`,
+  `system_mark_token_delivered`, `claim_jobs`, `rate_limit_hit`,
+  `record_webhook_event`) and internal helpers; error convention 42501 /
+  LV409 / LV422.
+- Applied on the local Supabase stack; `lib/types/database.ts` generated.
+
+### Implementation — 2026-09-19 (Phase 1 setup batch, commit `556105f`)
 - Tasks T001, T002, T003, T005, T006, T007, T008, T009, T010, T011, T012, T013,
   T014, T015, T017, T192, T193, T194 and T202 (initial) implemented; T195,
   T196 and T210 documented in `docs/DEPLOYMENT.md` with every external item

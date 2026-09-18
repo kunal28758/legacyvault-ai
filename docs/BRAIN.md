@@ -105,7 +105,7 @@ legacyvault-ai/
 | Supabase packages (scaffold clients)   | Scaffold          | 🔧 Exists until T028; probe removed 2026-09-19 |
 | Application features                   | —                 | ⬜ Not started |
 | Clerk integration                      | —                 | ⬜ Not started |
-| Database schema / migrations           | —                 | ⬜ Not started |
+| Database schema / migrations           | SQL migrations    | ✅ 0001–0003 applied locally (T018/T218/T019); hosted push pending |
 | Tests                                  | —                 | ⬜ Not started |
 | CI/CD                                  | —                 | ⬜ Not started |
 | Deployment (Vercel)                    | —                 | ⬜ Not started |
@@ -454,7 +454,7 @@ Architecture changes additionally require an ADR in
 | Architecture decisions      | ✅ Completed  | ADR-001 … ADR-016 (ADR-004 r4, ADR-014 r4) |
 | Next.js application shell   | 🔧 Phase 1    | root, v16.3.5; T001–T017, T192–T194 done; Phase 2 not started |
 | Clerk integration           | 🔧 Prepared   | `@clerk/nextjs` + proxy/layout wiring; dashboard checklist ⏳ (T195) |
-| Database schema / RLS       | ⬜ Not Started | `supabase/migrations/` does not exist yet  |
+| Database schema / RLS       | ✅ Local      | 28 tables, RLS + allow-lists, 32 guarded / 11 system functions (0001–0003) |
 | API (`/api/v1`)             | ⬜ Not Started | no Route Handlers (probe removed 2026-09-19) |
 | Job runner / cron           | ⬜ Not Started |                                            |
 | Storage flow                | ⬜ Not Started |                                            |

@@ -12,9 +12,11 @@ Model, § Transactional functions catalog, § RLS Summary, § Retention);
 ADR-002, ADR-004 r2, ADR-005, ADR-006, ADR-014, ADR-016; `plan.md` Phase 2;
 tasks T018, T218, T019, T028, T029, T194, T196, T212, T215, T242, T245.
 
-**Status**: 📐 specified / 📋 planned. As of 2026-09-18 **no migration,
-table, policy or function exists**; the `supabase/` directory has not been
-created. `docs/DATABASE_SCHEMA.md` (T242) will be generated from the applied
+**Status**: ✅ implemented locally as of 2026-09-19 — `supabase/migrations/
+0001_init.sql` (schema), `0002_rls_and_privileges.sql` (privileges, RLS,
+triggers), `0003_functions.sql` (guarded + system functions) are applied on
+the local stack (T018/T218/T019); hosted projects are not migrated yet.
+`docs/DATABASE_SCHEMA.md` (T242) will be generated from the applied
 migrations later and will then hold the physical schema listing.
 
 ---

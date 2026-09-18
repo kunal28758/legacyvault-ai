@@ -94,11 +94,13 @@ public routes render with the CSP nonce, every protected route answers
 `503 AUTH_NOT_CONFIGURED`; `<ClerkProvider>` is mounted only when the
 publishable key exists. Set the two Clerk keys to enable sign-in (Phase 3).
 
-State on 2026-09-19: Docker Desktop was **not running** on the development
-machine, so the local Supabase stack has not been started yet (⏳). The
+State on 2026-09-19: the local Supabase stack was started (Docker Desktop)
+and migrations 0001–0003 applied (`supabase migration list` shows 0001/0002/0003
+local = remote); `pnpm db:types` generated `lib/types/database.ts`. The
 Supabase CLI (v2.117.0, dev dependency) and `supabase/config.toml` are in place
 (`auto_expose_new_tables = false` to match the privilege baseline of ADR-004;
-storage `file_size_limit = "500MiB"` for FR-K002).
+storage `file_size_limit = "500MiB"` for FR-K002). Hosted projects have not
+received the migrations yet (§ 6, T238).
 
 ## 4. Migration workflow (ADR-002 — SQL migrations, no ORM)
 
