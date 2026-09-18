@@ -1,34 +1,62 @@
 # Tasks: LegacyVault AI — Baseline Product
 
-**Feature**: `specs/001-baseline-product-spec` | **Generated**: 2025-09-16
+**Feature**: `specs/001-baseline-product-spec` | **Generated**: 2026-09-16 | **Revised**: 2026-09-18 r3 (targeted remediation H1/M1–M4/N1 — wording only, task IDs/count unchanged)
 
-**Spec**: [spec.md](./spec.md) | **Plan**: [plan.md](./plan.md) | **Data Model**: [data-model.md](./data-model.md) | **Contracts**: [contracts/api-contracts.md](./contracts/api-contracts.md)
+**Spec**: [spec.md](./spec.md) | **Plan**: [plan.md](./plan.md) | **Data Model**: [data-model.md](./data-model.md) | **Contracts**: [contracts/api-contracts.md](./contracts/api-contracts.md) | **ADRs**: [docs/ARCHITECTURE_DECISIONS.md](../../docs/ARCHITECTURE_DECISIONS.md)
+
+> **Revision 2026-09-18 r1** — Re-baselined to the single Next.js 16 application
+> architecture (ADR-001 … ADR-013, constitution v2.0.1). Task IDs are preserved
+> where the task's purpose survives; retired IDs are in the **Removed Tasks**
+> ledger; r1 added T192–T212.
+>
+> **Revision 2026-09-18 r2 (post-`/speckit-analyze` remediation)** — adds
+> T213–T247: mandatory test tasks (constitution XVII), the write-protection
+> model (ADR-004 r2), unified access tokens + cookie exchange (ADR-014),
+> production malware scanning (ADR-015), AI draft persistence (ADR-016),
+> wizard steps 3–7/11, documentation tasks (constitution XVIII), operational
+> tasks, and phase-ordering fixes (T036 and T155 moved into Phase 2; removal
+> of `@supabase/ssr` and the `db-test` probe moved into T028). Existing task
+> text is updated in place where the design changed.
+> **No task is marked complete** — nothing has been implemented.
+
+**Conventions**: `[P]` = parallelizable (different files, no dependency);
+`[USn]` = user story; paths are relative to the repository root (single app).
+All Route Handlers use `withApi()` (T030); all services receive the
+authenticated app user from `requireUser()` (T036); all data access goes
+through `lib/repositories/*` using the clients in `lib/db/server.ts` (T028);
+every invariant-bearing write goes through a guarded function (T019; see
+`data-model.md` § Write-Protection Model).
 
 ---
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-**Purpose**: Project initialization, tooling, and repository structure
+**Purpose**: Normalize the existing root Next.js 16 scaffold, tooling, and platform configuration
 
-- [ ] T001 Create top-level project structure with `frontend/`, `backend/`, `docs/`, `scripts/`, `.github/workflows/` directories per plan.md project structure
-- [ ] T002 Initialize Next.js 14+ TypeScript project in `frontend/` with App Router (`npx -y create-next-app@latest ./` with TypeScript, Tailwind CSS, ESLint, App Router options)
-- [ ] T003 [P] Install frontend dependencies: `shadcn/ui`, `framer-motion`, `gsap`, `zustand`, `@tanstack/react-query`, `zod`, `@react-pdf/renderer` in `frontend/package.json`
-- [ ] T004 [P] Initialize Express.js TypeScript project in `backend/` with `package.json`, `tsconfig.json`, and configure `ts-node-dev` for development
-- [ ] T005 [P] Install backend dependencies: `express`, `@types/express`, `prisma`, `@prisma/client`, `zod`, `bcrypt`, `jose`, `multer`, `speakeasy`, `qrcode`, `nodemailer`, `winston`, `helmet`, `cors`, `express-rate-limit`, `bullmq`, `ioredis`, `@aws-sdk/client-s3`, `@aws-sdk/s3-request-presigner`, `uuid` in `backend/package.json`
-- [ ] T006 [P] Configure ESLint and Prettier for both `frontend/` and `backend/` with shared TypeScript rules
-- [ ] T007 [P] Create `backend/src/config/env.ts` — environment variable loading with validation using Zod (DATABASE_URL, REDIS_URL, SESSION_SECRET, ENCRYPTION_KEY, S3_BUCKET, S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY, AI_OPENAI_KEY, AI_GEMINI_KEY, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, APP_URL, NODE_ENV, PORT). All secrets from env vars only (Constitution I)
-- [ ] T008 [P] Create `.env.example` at project root with all required environment variables (no actual secrets — Constitution I, XIX)
-- [ ] T009 [P] Update `.gitignore` for Node.js projects: `node_modules/`, `.env`, `.env.local`, `dist/`, `.next/`, `prisma/*.db`, `coverage/`, `*.log`
-- [ ] T010 [P] Configure Tailwind CSS design system in `frontend/tailwind.config.ts` — dark-first theme with blue/purple/cyan accent palette, glassmorphism utilities, custom spacing scale, typography (Inter/Outfit from Google Fonts). Constitution XIII: dark-first, glassmorphism, blue/purple/cyan accents
-- [ ] T011 [P] Create `frontend/src/styles/globals.css` with CSS variables for dark/light themes, glassmorphism classes, gradient utilities, animation base classes (Constitution XIII, XIV)
-- [ ] T012 [P] Initialize shadcn/ui in `frontend/` — configure with dark theme, import base components (Button, Input, Card, Dialog, Sheet, Tabs, Table, Badge, Avatar, Dropdown, Toast, Skeleton, Tooltip)
-- [ ] T013 [P] Create `frontend/src/lib/api-client.ts` — typed API client wrapping fetch with base URL `/api/v1`, credentials: 'include' for cookies, JSON headers, centralized error handling, response type parsing
-- [ ] T014 [P] Create `frontend/src/lib/query-client.ts` — TanStack Query client configuration with default staleTime, retry, and error handling
-- [ ] T015 [P] Set up Vitest configuration for both `frontend/` (`vitest.config.ts`) and `backend/` (`vitest.config.ts`) with TypeScript support
-- [ ] T016 [P] Create `.github/workflows/ci.yml` — GitHub Actions CI pipeline: install → lint → type-check → test (both frontend and backend)
-- [ ] T017 Create `frontend/src/app/layout.tsx` — root layout with dark theme, Google Fonts (Inter, Outfit), QueryClientProvider, metadata (title: "LegacyVault AI", description, favicon)
+- [ ] T001 Create the single-application directory skeleton at the repository root per plan.md: `components/{ui,layout,forms,data-display,feedback,wizard,shared}`, `hooks/`, `stores/`, `styles/`, `emails/`, `lib/{api,auth,db,repositories,services,services/ai,ai,email,storage,jobs,security,security/scanners,audit,observability,config,validators,types}`, `supabase/migrations/`, `scripts/`, `tests/{unit,integration,e2e,helpers}`, `.github/workflows/`. No `frontend/` or `backend/` directories (ADR-001)
+- [ ] T002 Normalize the existing Next.js 16.3 scaffold (created 2026-09-17 at root): replace template content in `app/page.tsx`, set metadata (title "LegacyVault AI", description) in `app/layout.tsx`, remove the `Arial` override in `app/globals.css`, confirm `next.config.ts`/`tsconfig.json`. (The temporary `app/api/db-test/route.ts` and `lib/supabase/*` are removed in T028, not here.) Read `node_modules/next/dist/docs/01-app/` (getting-started, proxy, route handlers, `after`, `maxDuration`, content-security-policy guide) before any framework code (AGENTS.md)
+- [ ] T003 [P] Install UI dependencies: `shadcn/ui` (CLI), `framer-motion`, `gsap`, `zustand`, `@tanstack/react-query`, `zod`, `react-hook-form`, `@hookform/resolvers`, `@react-pdf/renderer`, `tus-js-client`
+- [ ] T005 [P] Install server/platform dependencies in the root `package.json`: `@clerk/nextjs`, `svix`, `@supabase/supabase-js` (present), `supabase` (CLI, dev), `file-type`, `unpdf`, `openai`, `@google/genai`, `resend`, `@react-email/components`, `@sentry/nextjs`, `pino`, `server-only`; dev: `vitest`, `@testing-library/react`, `@playwright/test`, `@axe-core/playwright`, `@clerk/testing`, `jose`, `tsx`, `prettier`. Keep `@supabase/ssr` installed until T028 replaces the scaffold clients (then remove it — Supabase Auth is not used, ADR-003). Justify each in `docs/ARCHITECTURE_DECISIONS.md` references (Constitution IX)
+- [ ] T006 [P] Configure ESLint (extend existing `eslint.config.mjs`) and Prettier for the single project; add `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:integration`, `pnpm test:e2e`, `pnpm db:*` scripts to `package.json`
+- [ ] T007 [P] Create `lib/config/env.ts` — Zod-validated environment loading with `import 'server-only'` for the server schema. Server: `CLERK_SECRET_KEY`, `CLERK_WEBHOOK_SIGNING_SECRET`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `ENCRYPTION_KEY` (32-byte base64, active `keyId`), `ENCRYPTION_KEY_PREVIOUS` (optional, rotation window), `ACCESS_COOKIE_KEY` (32-byte base64, ADR-014), `OPENAI_API_KEY`, `GEMINI_API_KEY`, `AI_DEFAULT_PROVIDER`, `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_WEBHOOK_SECRET`, `SENTRY_DSN`, `CRON_SECRET`, `APP_URL`, `MALWARE_SCANNER_PROVIDER` (`noop|clamav`), `CLAMAV_HOST`, `CLAMAV_PORT`, `CLAMAV_TLS`, `ADMIN_EMAIL`, `NODE_ENV`. Public: `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_SENTRY_DSN`. Fail fast on missing/invalid values; **refuse to start when `NODE_ENV=production` and `MALWARE_SCANNER_PROVIDER=noop`** (ADR-015). No secret may be `NEXT_PUBLIC_` (Constitution I)
+- [ ] T008 [P] Create `.env.example` at the project root listing every variable from T007 with placeholder values only (no real secrets — Constitution I, XIX). `.env.local` is never committed
+- [ ] T009 [P] Complete `.gitignore` (state on 2026-09-18 01:10: `.agents/`, `.agents-backup/`, `.env`, `.env.*`, `!.env.example`, `node_modules/`, `.next/` — the `create-next-app` overwrite has been reverted, but the Next.js entries are missing): add `next-env.d.ts`, `*.tsbuildinfo`, `coverage/`, `/out/`, `/build`, `.vercel`, `*.pem`, `*.log`, `.DS_Store`, `supabase/.temp/`, `test-results/`, `playwright-report/`. Verify with `git check-ignore -v .env.local .agents next-env.d.ts`
+- [ ] T010 [P] Configure the Tailwind CSS v4 design system in `app/globals.css` using `@theme` (CSS-first, no `tailwind.config.ts`): dark-first colour tokens with blue/purple/cyan accents, surface/glass tokens, spacing scale, typography (Geist from `next/font` already wired; add display font if adopted). Constitution XIII
+- [ ] T011 [P] Create `styles/` utilities imported by `app/globals.css`: glassmorphism classes, gradient utilities, animation base classes, `prefers-reduced-motion` guards; light-mode overrides under `[data-theme="light"]` (UX-002, Constitution XIII, XIV)
+- [ ] T012 [P] Initialize shadcn/ui at the root (`components/ui/`), dark theme; add Button, Input, Card, Dialog, Sheet, Tabs, Table, Badge, Avatar, Dropdown, Toast, Skeleton, Tooltip, Progress
+- [ ] T013 [P] Create `lib/api/client.ts` — typed browser fetch client for `/api/v1`: same-origin credentials, JSON headers, envelope parsing (`{ success, data, error, meta }`), 401/403/422/429 handling (429 surfaces `Retry-After`), reverification-required handling (re-throw a typed error the re-auth gate can catch)
+- [ ] T014 [P] Create `lib/api/query-client.ts` — TanStack Query client configuration (staleTime, retry policy that never retries 4xx, error handling) and `components/providers.tsx` (QueryClientProvider)
+- [ ] T015 [P] Set up testing: `vitest.config.ts` (unit + integration projects, TypeScript, React Testing Library, `tests/setup.ts`), `playwright.config.ts` (E2E against `next dev`, `@clerk/testing` for real sessions on a Clerk development instance), `tests/helpers/jwt.ts` (mints HS256 JWTs with the local Supabase JWT secret and Clerk-shaped claims `sub`, `role: authenticated` for RLS/policy tests — ADR-004 r2 §7), `tests/helpers/db.ts` (user-scoped and service clients against the local stack, per-test data reset), one passing smoke test in each project
+- [ ] T016 [P] Create `.github/workflows/ci.yml` — pnpm install → lint → typecheck → unit tests → integration tests (Supabase CLI local stack) → build → `supabase db lint`/migration dry-run; cache pnpm store
+- [ ] T017 Update `app/layout.tsx` — `<ClerkProvider>` (dark appearance), fonts, `components/providers.tsx`, theme attribute handling, metadata ("LegacyVault AI"), favicon; `<html lang="en">` with `suppressHydrationWarning` for theme
+- [ ] T192 [P] Create `proxy.ts` (Next 16 file convention; was `middleware.ts`) — `clerkMiddleware()` protected-first with `createRouteMatcher` public routes: `/`, `/sign-in(.*)`, `/sign-up(.*)`, `/access(.*)`, `/emergency-access/(.*)`, `/api/webhooks/(.*)`, `/api/internal/cron/(.*)`, `/api/v1/health`, `/api/v1/access/(.*)`, `/api/v1/emergency-access/(request|verify|requests/[^/]+/status)`; call `auth.protect()` for everything else; inject a per-request CSP nonce per the Next.js CSP guide; matcher includes `/(api|trpc)(.*)`. Proxy protection is a UX/defense layer only — handlers re-check auth (Constitution III)
+- [ ] T193 [P] Create `vercel.json` — cron definitions: `/api/internal/cron/run-jobs` every 5 minutes, `/api/internal/cron/dms-scan` hourly, `/api/internal/cron/housekeeping` daily 03:00 UTC (ADR-006). Set `maxDuration` on the cron/AI/scan Route Handlers via route segment config
+- [ ] T194 [P] Initialize the Supabase CLI: `supabase init` → `supabase/config.toml`; document `supabase start`/`supabase db reset`/`supabase gen types typescript --local > lib/types/database.ts` in `docs/DEPLOYMENT.md`; add `pnpm db:start`, `db:reset`, `db:migrate:new`, `db:types`, `db:push` scripts (ADR-002)
+- [ ] T195 [P] Clerk application configuration checklist (dashboard, per environment — record in `docs/DEPLOYMENT.md`): email/password enabled; password policy min 12 + upper/lower/number/special; email verification required before sign-in; MFA TOTP + backup codes enabled; session inactivity lifetime 24 h (verify the Clerk plan supports inactivity timeout and session-token customization); attack protection: lockout after 5 failed attempts for 30 min, bot protection on; reverification enabled; Supabase third-party auth integration enabled (adds `role: authenticated` claim); webhook endpoint `/api/webhooks/clerk` with events `user.created|updated|deleted`, `session.created|ended|removed|revoked`; branded emails. FR-A001–A013, A017 (ADR-003)
+- [ ] T196 [P] Supabase project configuration checklist (per environment — record in `docs/DEPLOYMENT.md`): Clerk added as third-party auth provider; private buckets `quarantine`, `documents`, `videos`; global file-size limit ≥ 500 MB (Pro plan) — FR-K002; automated backups on, PITR add-on for production; `pg_cron`/`pg_net` extensions available for the production redundancy trigger; publishable vs secret key usage documented (ADR-002, ADR-005, ADR-011)
+- [ ] T202 [P] Create `docs/DEPLOYMENT.md` (initial) — environment matrix (dev/staging/prod × Vercel/Supabase/Clerk/ClamAV), environment variables (from T007) and where they live, platform prerequisites with verification status (Vercel cron frequency + `maxDuration`, Supabase file-size limit + PITR, Clerk plan features, ClamAV hosting), local development setup, migration workflow. Completed in Phase 25 (T175/T211/T238/T239)
 
-**Checkpoint**: Both projects build and start successfully. CI pipeline configured.
+**Checkpoint**: App builds and starts; Clerk pages render; local Supabase stack reachable; CI configured; prerequisites recorded.
 
 ---
 
@@ -38,136 +66,147 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T018 Create Prisma schema in `backend/prisma/schema.prisma` — define all 21 entities from data-model.md: User (email UNIQUE, role Enum USER/SUPER_ADMIN, mfaEnabled default false, failedLoginAttempts default 0, deletedAt nullable), Session, AuditLog (append-only), Beneficiary (userId+email unique compound), FinancialAsset, PhysicalAsset, DigitalAsset, Document, DocumentVersion, Folder (userId+parentId+name unique compound), LegacyPlan (status Enum DRAFT/FINALIZED, lockVersion default 0), LegacyPlanVersion, VideoMessage (deliveryCondition Enum IMMEDIATE/DEAD_MAN_SWITCH/EMERGENCY_ACCESS), DeadManSwitch (userId UNIQUE, status Enum per state machine), DeadManSwitchEvent, EmergencyAccessConfig, EmergencyAccessRequest (status Enum per state machine), BeneficiaryAssignment (beneficiaryId+resourceType+resourceId unique compound, allocationPercentage CHECK 0-100), AIInteraction, Notification, BeneficiaryAccessToken (tokenHash UNIQUE). Include all indexes, constraints, enums, and relationships from data-model.md
-- [ ] T019 Run `npx prisma migrate dev --name init` to create initial migration in `backend/prisma/migrations/`
-- [ ] T020 [P] Create `backend/src/utils/encryption.ts` — AES-256-GCM encryption/decryption utility using Node.js crypto. Functions: `encrypt(plaintext, key): { ciphertext, iv, authTag }`, `decrypt(ciphertext, iv, authTag, key): plaintext`. Key from ENCRYPTION_KEY env var. Constitution IV: AES-256, keys not hardcoded
-- [ ] T021 [P] Create `backend/src/middleware/error-handler.ts` — centralized Express error handler. Return `{ success: false, error: { code, message } }`. MUST NOT leak stack traces, DB details, or file paths (Constitution X). Log full error server-side with Winston
-- [ ] T022 [P] Create `backend/src/config/logger.ts` — Winston structured logger with correlation ID support, JSON format, console transport (dev), file transport (prod). MUST NOT log passwords, tokens, encryption keys, or sensitive PII (Constitution XVI)
-- [ ] T023 [P] Create `backend/src/middleware/correlation-id.ts` — Express middleware generating UUID correlation ID per request, attaching to `req` and response header `X-Correlation-ID`. Pass to logger context (NFR-OBS-001)
-- [ ] T024 [P] Create `backend/src/middleware/security-headers.ts` — Helmet configuration with HSTS, CSP (script-src 'self'), X-Frame-Options DENY, X-Content-Type-Options nosniff, Referrer-Policy strict-origin-when-cross-origin (Constitution XI, XXI)
-- [ ] T025 [P] Create `backend/src/middleware/rate-limiter.ts` — express-rate-limit configuration. Export factory function `createRateLimiter(windowMs, max, keyGenerator?)`. Default: 100 req/15min. Auth endpoints: 5 req/15min per account + 20 req/15min per IP (FR-A013, Constitution XI)
-- [ ] T026 [P] Create `backend/src/middleware/validate.ts` — Express middleware accepting a Zod schema, validating `req.body`/`req.params`/`req.query`. Return 422 with field-level errors on failure. Constitution X: server-side validation mandatory
-- [ ] T027 [P] Create `backend/src/services/audit.service.ts` — AuditLog service: `log(actorId, actorRole, action, resourceType, resourceId, outcome, metadata?, ipAddress?, userAgent?, correlationId?)`. Insert into AuditLog table. Append-only — no update/delete methods. Constitution XII: actor, timestamp, action, resource, outcome
-- [ ] T028 [P] Create `backend/src/config/database.ts` — Prisma client singleton with connection pooling, logging configuration, and graceful shutdown handler
-- [ ] T029 [P] Create `backend/src/config/storage.ts` — S3 client configuration using `@aws-sdk/client-s3`. Connect to S3_ENDPOINT with S3_ACCESS_KEY/S3_SECRET_KEY. Export functions: `uploadFile`, `getSignedDownloadUrl(key, expiresIn=900)`, `deleteFile`. All buckets private (Constitution IV)
-- [ ] T030 Create `backend/src/app.ts` — Express app setup: CORS (credentials: true, origin from APP_URL), JSON body parser (limit: '50mb'), cookie parser, security headers middleware, correlation ID middleware, rate limiter, API versioned router mount at `/api/v1`, error handler middleware, health check at `/api/v1/health`
-- [ ] T031 Create `backend/src/routes/v1/index.ts` — v1 router aggregating all domain route files. Mount each domain under its path (e.g., `/auth`, `/users`, `/beneficiaries`, etc.)
-- [ ] T032 [P] Create `backend/src/utils/file-validation.ts` — File validation utility: `validateFile(buffer, filename, maxSizeBytes)`. Check: file extension against whitelist, MIME type against whitelist, magic bytes verification (PDF: %PDF, JPEG: FFD8FF, PNG: 89504E47, etc.), size limit. Return `{ valid: boolean, error?: string }`. Constitution XI: type, size, extension, magic bytes
-- [ ] T033 Create seed script `backend/prisma/seed.ts` — Create Super Admin user with seeded credentials from env vars (ADMIN_EMAIL, ADMIN_PASSWORD). Hash password with bcrypt cost ≥12. Set role: SUPER_ADMIN, emailVerified: true
-- [ ] T181 [P] Create `backend/src/utils/malware-scanner.ts` — Pluggable malware-scanning interface: `MalwareScanner` interface with `scan(buffer: Buffer, filename: string): Promise<{ safe: boolean, threat?: string }>`. Export `NoOpScanner` class (development — always returns safe with warning log) and `MalwareScannerFactory` that reads `MALWARE_SCANNER_PROVIDER` env var to select implementation. Production implementations (e.g., ClamAV, cloud API) are injectable via the factory. Files failing scan MUST be quarantined (not stored in user-accessible storage), and scan results MUST be logged to audit trail. FR-H016, FR-Q011
+- [ ] T018 Create `supabase/migrations/0001_init.sql` — all **29 entities** from data-model.md in `snake_case`: `users` (clerk_user_id UNIQUE, email UNIQUE, role enum USER/SUPER_ADMIN default USER, mirrored email_verified/mfa_enabled/name, alternate_email, no credential columns), `beneficiaries` (unique (user_id, email) WHERE deleted_at IS NULL; status enum PENDING/ACTIVE/INACTIVE; invited_at, activated_at), `financial_assets`, `physical_assets`, `digital_assets`, `documents` (storage_bucket, storage_key, encryption_mode enum, encryption_key_id, scan_status enum), `document_versions`, `folders` (`UNIQUE NULLS NOT DISTINCT (user_id, parent_id, name) WHERE deleted_at IS NULL`), `legacy_plans` (status enum, lock_version, **partial unique index on user_id WHERE status='DRAFT'**), `legacy_plan_versions` (snapshot_data, completeness, acknowledged_incomplete, incomplete_sections), `video_messages`, `dead_man_switches` (user_id UNIQUE, status enum, release_scope), `dead_man_switch_contacts` (PK switch+beneficiary), `dead_man_switch_events`, `emergency_access_configs` (beneficiary_id NOT NULL, on_timeout enum WAIT/AUTO_GRANT/DENY, timeout_hours, request_expiry_hours, access_duration_hours), `emergency_access_requests` (otp_hash, request_expires_at, decided_by, access_token_id), `beneficiary_assignments` (unique compound, CHECK 0–100), `document_attachments` (unique document+resource), `access_tokens` (token_hash UNIQUE, grant_type enum with conditional-FK CHECKs), `audit_log`, `ai_interactions` (draft_id), `ai_drafts`, `ai_draft_versions` (encrypted content), `notifications`, `jobs`, `upload_sessions` (status incl. SCANNED_CLEAN), `rate_limits`, `processed_webhook_events`. Include all FKs with explicit ON DELETE, indexes (every FK indexed), `updated_at` triggers, soft-delete columns (ADR-002, ADR-014, ADR-016)
+- [ ] T218 Create `supabase/migrations/0002_rls_and_privileges.sql` — the **privilege baseline and RLS** per data-model.md § Write-Protection Model 1–4: `REVOKE ALL ON ALL TABLES/FUNCTIONS IN SCHEMA public FROM anon, authenticated` + `ALTER DEFAULT PRIVILEGES`; `ENABLE ROW LEVEL SECURITY` on every table; `SELECT` own-row policies for every user-owned table (incl. SELECT-own on audit_log, ai_interactions, upload_sessions, notifications, emergency_access_requests via config, access_tokens via owner, ai_draft_versions via draft); Class A `INSERT`/`UPDATE` policies with `WITH CHECK (owner = self)` **and column grants** exactly as the allow-list table (users, beneficiaries, three asset tables, folders, documents metadata, video metadata, notifications.read_at); **no** write grants on Class B/C tables; `protect_identity_columns` BEFORE UPDATE trigger on `users`; `BEFORE UPDATE OR DELETE` raise trigger on `audit_log`; `storage.objects` policies (INSERT only into `quarantine/<clerk sub>/`). Policy predicates use `(select auth.jwt()->>'sub')` (ADR-004 r2)
+- [ ] T019 Create `supabase/migrations/0003_functions.sql` — every function in data-model.md § Write-Protection Model 5. Guarded `SECURITY DEFINER SET search_path = ''` functions for `authenticated` (`create_legacy_plan`, `save_plan_step`, `finalize_legacy_plan`, `create_plan_draft`, `assign_beneficiary`, `unassign_beneficiary`, `set_beneficiary_status`, `remove_beneficiary`, `attach_document`, `detach_document`, `issue_access_token`, `revoke_access_token`, `delete_document`, `delete_video`, `delete_asset`, `dms_configure`, `dms_pause`, `dms_resume`, `dms_disable`, `dms_check_in`, `dms_cancel_escalation`, `ea_configure_contact`, `ea_update_contact`, `ea_remove_contact`, `ea_decide_request`, `ea_revoke`, `update_ai_draft`, `confirm_ai_draft`, `confirm_analysis_findings`) each implementing the nine mandatory rules (auth prologue, `FOR UPDATE` ownership, typed inputs, no dynamic SQL, no identity columns, invariant under lock, in-transaction audit row, `REVOKE EXECUTE FROM PUBLIC, anon; GRANT EXECUTE TO authenticated`); system `SECURITY INVOKER` functions granted to `service_role` only (`promote_upload` requiring SCANNED_CLEAN, `dms_transition`, `ea_request_access`, `ea_verify_otp`, `ea_transition`, `system_issue_access_token`, `claim_jobs` with `FOR UPDATE SKIP LOCKED`, `rate_limit_hit`, `record_webhook_event`). Apply locally (`supabase db reset`) and generate `lib/types/database.ts`
+- [ ] T020 [P] Create `lib/security/encryption.ts` — AES-256-GCM using Node.js `crypto`: `encrypt(plaintext): { ciphertext, iv, authTag, keyId }`, `decrypt(payload): plaintext`; active key from `ENCRYPTION_KEY`, dual-read from `ENCRYPTION_KEY_PREVIOUS` by `keyId` (rotation window, T240). Constitution IV, FR-Q018
+- [ ] T021 [P] Create `lib/api/errors.ts` — `ApiError` class with safe `code`/`message`/`status`/optional `fields`; `toErrorResponse()` producing `{ success:false, error:{ code, message, fields? } }`; maps PostgreSQL `42501` from guarded functions to `403 FORBIDDEN` and invariant errors (`PLAN_INCOMPLETE`, `ALLOCATION_EXCEEDED`, `INVALID_TRANSITION`) to `422`; MUST NOT include stack traces, database details, file paths or internal identifiers; full error logged server-side and captured in Sentry with correlation id (Constitution X, FR-Q016)
+- [ ] T022 [P] Create `lib/observability/logger.ts` — `pino` structured JSON logger with redaction paths (authorization, cookie, token, password, secret, key, document content fields, `t` query parameter, `/access` and `/emergency-access` request paths), child logger bound to correlation id, environment-aware level. MUST NOT log passwords, tokens, keys, private document content (Constitution XVI, FR-Q017)
+- [ ] T023 [P] Create `lib/api/correlation.ts` — generate/propagate a UUID correlation id per request (honour inbound `X-Correlation-ID` only from trusted internal calls), set response header, bind to logger and Sentry scope, pass to audit rows and guarded functions (`p_correlation_id`) (NFR-OBS-001)
+- [ ] T024 [P] Configure security headers in `next.config.ts` `headers()` — HSTS (preload in prod), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` denying camera, microphone and geolocation (baseline is upload-only for video — Clarifications 2026-09-18); CSP with per-request nonce injected in `proxy.ts` (T192). Constitution XI, XXI, FR-Q015
+- [ ] T025 [P] Create `lib/security/rate-limit.ts` — Postgres-backed fixed-window limiter using `rate_limit_hit()` RPC: `enforceRateLimit({ policy, subject })` returning remaining/reset; policies: `default` 100/15 min per user, `sensitive` 5/15 min per user, `ai` 20/hour per user, `publicEmergency` 5/hour per IP **and** 3/hour per config id, `accessExchange` 10/15 min per IP, `tokenAccess` 60/15 min per access session; client IP taken only from the platform-provided header; 429 with `Retry-After`. Store is an interface so Upstash Redis can replace it later (ADR-007, FR-Q008)
+- [ ] T026 [P] Create `lib/api/validate.ts` — Zod validation of `body`/`query`/`params` used by `withApi()`; on failure return 422 with field-level errors (never echo raw input). Constitution X, FR-Q009
+- [ ] T027 [P] Create `lib/audit/audit.service.ts` — `audit.log({ actorId, actorRole, action, resourceType, resourceId, outcome, metadata?, ipAddress?, userAgent?, correlationId })` inserting into `audit_log` with the service client (used for Class A/C writes and for DENIED/FAILURE outcomes; guarded functions write their own SUCCESS rows); no update/delete methods; helper for previous/new value diffs that redacts encrypted fields. Constitution XII
+- [ ] T028 [P] Create `lib/db/server.ts` — `import 'server-only'`; `createUserClient()` = publishable key + Clerk `getToken()` as `accessToken` (RLS + column grants enforced; used for reads, Class A writes and `rpc()` calls to guarded functions); `createServiceClient()` = `SUPABASE_SECRET_KEY` (RLS bypass; system paths only); both typed with `Database`. Document allowed call sites for the service client in a header comment (ADR-004 r2). **Delete** the scaffold files `lib/supabase/client.ts`, `lib/supabase/server.ts` and `app/api/db-test/route.ts`, then remove `@supabase/ssr` from `package.json`
+- [ ] T029 [P] Create `lib/storage/storage.service.ts` — Supabase Storage wrapper: `createSignedUploadUrl(bucket, path, { expiresIn })`, `createResumableUploadTarget(bucket, path)`, `headObject(bucket, path)`, `readRange(bucket, path, bytes)`, `openReadStream(bucket, path)` (for scanning), `createSignedDownloadUrl(bucket, path, expiresIn=900)`, `promote(fromBucket, toBucket, path)` (copy + delete), `remove(bucket, path)`. Buckets `quarantine`/`documents`/`videos` are private; never returns public URLs (ADR-005, Constitution IV)
+- [ ] T030 Create `lib/api/with-api.ts` — the Route Handler pipeline: options `{ auth: 'public'|'user'|'admin'|'access-cookie'|'cron'|'webhook', reverification?: 'strict'|'multi_factor', rateLimit?: policy, schema?: { body?, query?, params? }, verify?: (rawBody, headers) => Promise<void> /* webhook only */ }`; steps: correlation id → **`Cache-Control: private, no-store` on every response** (Constitution XV) → auth (Clerk `auth()` → `ensureAppUser()` → role check; `access-cookie` = decrypt cookie (T230) + re-check `access_tokens` revoked/expiry + beneficiary status; `cron` verifies `Authorization: Bearer $CRON_SECRET`; `webhook` runs the route's `verify` over the **raw request body** (Svix / provider signature) before any parsing — invalid → 401 with no side effects) → CSRF `Origin`/`Sec-Fetch-Site` same-origin check for POST/PATCH/PUT/DELETE in the cookie/ambient-credential modes `public`/`user`/`admin`/`access-cookie` (FR-Q007); **skipped only for `cron` and `webhook`**, which carry no cookies and are authenticated per request by `CRON_SECRET` / signature, and which still receive the correlation id, `no-store`, safe error mapping and DENIED/FAILURE audit → rate limit → Zod validation → handler(ctx) → `{ success:true, data, meta }` → error mapping (T021) + Sentry + DENIED/FAILURE audit. Create `app/api/v1/health/route.ts`: public response `{ status }` only; detailed `{ status, database, storage, jobs, dmsScan }` when called with `CRON_SECRET` or a Super Admin session (ADR-001, ADR-010)
+- [ ] T032 [P] Create `lib/security/file-validation.ts` — `validateDeclared({ name, mimeType, sizeBytes, kind })` (extension + MIME whitelist: PDF/JPEG/PNG/GIF/WEBP/TXT/DOC/DOCX/XLS/XLSX for documents; MP4/WebM/MOV for videos; size ≤ 50 MB / 500 MB) and `validateActual({ headBytes, actualSize, declared })` using `file-type` magic-byte detection; returns `{ valid, reason }` with clear user-facing reasons. Constitution XI, FR-H002, FR-H003, FR-K002, FR-Q010
+- [ ] T219 [P] Create `lib/security/access-scope.ts` + `lib/validators/access-scope.validators.ts` — the single definition of the access-scope shape used by `access_tokens.scope`, `dead_man_switches.release_scope` and `emergency_access_configs.access_scope` (`{ documents: uuid[], assets: [{ type, id }], videos: uuid[], planSections: sectionKey[] }`), the plan-section key vocabulary (data-model.md §9), `isSubsetScope(requested, allowed)`, `scopeContains(scope, resourceType, id)` used by the access-cookie handlers, and the Zod `accessScopeSchema` reused by T097, T123, T134, T230, T231 (ADR-014)
+- [ ] T033 Create `scripts/seed-admin.ts` + `supabase/seed.sql` — promote the Clerk user whose email equals `ADMIN_EMAIL` to `role = SUPER_ADMIN` in `users` via the service client (creating the row via `ensureAppUser` semantics if missing); no passwords are seeded (Clerk owns credentials). Log an audit row `admin.role_seeded`
+- [ ] T036 [P] Create `lib/auth/` — `require-user.ts` (`requireUser()`: Clerk `auth()` → 401 if none → `ensureAppUser()` → returns app user + role), `require-role.ts` (`requireRole(['SUPER_ADMIN'])` → 403 reading `users.role` from the database), `ensure-app-user.ts` (idempotent upsert by `clerk_user_id` via the service client, mirroring email/name/verified/mfa flags). Used by `withApi()`, the Clerk webhook (T198), Server Components and Server Actions. Constitution III: server-side enforcement; role source of truth = database. *(Moved to Phase 2 in r2 — foundational for T030/T198.)*
+- [ ] T155 [P] Create `lib/services/notification.service.ts` + `lib/jobs/handlers/notification-deliver.ts` — `send(userId, type, title, content, channel, metadata?)` (insert `notifications` via service client; IN_APP immediate; EMAIL via `notification.deliver` job → `EmailService` with retry/backoff 3 attempts; respects `notificationPreferences`), `sendToBeneficiary(beneficiaryId, template, props)` for external recipients (no `notifications` row; audit only), `markRead`, `markAllRead`, `getUnreadCount`, `list(pagination)`; delivery status updated by T209. *(Moved to Phase 2 in r2 so later phases never stub it.)*
+- [ ] T181 [P] Create `lib/security/malware-scanner.ts` — `MalwareScanner` interface `scan(input: { bucket, path } | Buffer, filename): Promise<{ verdict: 'CLEAN'|'INFECTED'|'ERROR', threat?: string }>`; `NoOpScanner` (development only — returns CLEAN with a warning log; forbidden in production by T007); `MalwareScannerFactory` reading `MALWARE_SCANNER_PROVIDER` (`noop|clamav` — T247). INFECTED objects stay in `quarantine` and are deleted by housekeeping; results written to `upload_sessions.status`, `documents.scan_status` / `video_messages.scan_status` and the audit trail. FR-H016, FR-Q011 (ADR-015)
+- [ ] T197 Create `lib/jobs/` — `enqueue(type, payload, { runAt?, idempotencyKey?, maxAttempts? })`, handler `registry.ts` (unknown types stay QUEUED with a warning — never DEAD — so later phases can register handlers), `runner.ts` (claims via `claim_jobs()` RPC, runs handlers within the remaining `maxDuration` budget, exponential backoff, dead-letter after `max_attempts`, sets `finished_at`, updates `progress`), and `app/api/internal/cron/run-jobs/route.ts` (`withApi({ auth:'cron' })`, `maxDuration` set). Handlers MUST be idempotent (ADR-006)
+- [ ] T198 Create `app/api/webhooks/clerk/route.ts` — `withApi({ auth:'webhook', verify })` — Svix signature verified with `CLERK_WEBHOOK_SIGNING_SECRET` over the raw request body before parsing (T030; browser CSRF check not applied — authenticated per request); idempotency via `record_webhook_event('CLERK', svixId, type)` (duplicate → 200 no-op); handle `user.created`/`user.updated`/`user.deleted` → `ensureAppUser`/mirror/soft-delete and `session.created`/`session.ended`/`session.removed`/`session.revoked` → `audit_log` auth events (FR-A014), set `last_login_at`, enqueue `security.new-device-check` with city/country/browser only (FR-A016). Use the service client (ADR-003)
+- [ ] T199 Create `app/api/internal/cron/housekeeping/route.ts` — daily sweeps: expire `access_tokens`; enqueue `ea.auto-decide` (AUTO_GRANT/DENY rules) and `ea.expire` (request expiry and active-access expiry) for due emergency requests; retry failed notifications (enqueue `notification.deliver`); delete stale `quarantine` objects + EXPIRED/REJECTED `upload_sessions` (> 24 h); process account-deletion grace periods (enqueue `user.hard-delete`); run the retention purges of T245; `withApi({ auth:'cron' })`, idempotent
+- [ ] T212 [P] Create `tests/integration/rls.test.ts` — for every user-owned table: user A cannot read/update/delete user B's rows through `createUserClient()`; `anon` key has no access; `audit_log` update/delete raises; SELECT-own works for audit_log/ai_interactions/upload_sessions. Uses `tests/helpers/jwt.ts` (local HS256 JWTs with Clerk-shaped claims — ADR-004 r2 §7). Runs against the local Supabase stack in CI (ADR-004, SC-005)
+- [ ] T213 [P] Create `tests/unit/security/encryption.test.ts` — round-trip, auth-tag tamper detection, distinct IV per call, `keyId` recorded, dual-read of `ENCRYPTION_KEY_PREVIOUS` by `keyId`, decryption failure with wrong key, rotation helper re-encrypts to the active key (Constitution IV, XVII)
+- [ ] T214 [P] Create `tests/unit/api/with-api.test.ts` — pipeline behaviour: 401 without session, 403 wrong role, reverification-required error shape, CSRF rejection on cross-origin mutation, 429 with `Retry-After`, 422 Zod field errors (no raw input echoed), `Cache-Control: private, no-store` on every response, `X-Correlation-ID` present, error envelope never contains stack/DB/path strings, `cron` auth requires the bearer secret, `access-cookie` auth rejects expired/revoked tokens; CSRF/internal-auth matrix: cross-origin mutation with a valid `user` session rejected, with a valid `admin` session rejected, with a valid access cookie rejected, on a `public` mutating route rejected; valid `CRON_SECRET` accepted; valid webhook signature (verified over the raw body) accepted; invalid cron secret → 401; invalid webhook signature → 401; an invalid secret/signature causes no side effects (no DB write, no job enqueued, no `processed_webhook_events` row); `cron`/`webhook` responses still carry `X-Correlation-ID` and `no-store` (Constitution X, XI, XV, XVII)
+- [ ] T215 [P] Create `tests/integration/write-protection.test.ts` — the S1 guarantees: `authenticated` client cannot `UPDATE users.role|email|mfa_enabled|email_verified` (grant + trigger), cannot INSERT/UPDATE `beneficiary_assignments`, `legacy_plans`, `documents.scan_status`, `upload_sessions.status`, `dead_man_switches`, `emergency_access_requests`, `access_tokens`, `ai_drafts` directly; every guarded function raises `42501` when unauthenticated and for another user's rows; `EXECUTE` on system functions is denied to `authenticated`; guarded functions write an `audit_log` row; `anon` can execute nothing (ADR-004 r2, Constitution I, VII, XVII)
+- [ ] T216 [P] Create `tests/unit/security/file-validation.test.ts` and `tests/unit/security/rate-limit.test.ts` — extension/MIME whitelist, magic-byte mismatch (`.exe` renamed `.pdf`), size limits at declaration and actual, video container detection; rate-limit policies, window rollover, per-IP + per-config `publicEmergency`, `Retry-After` computation (FR-H002/H003, FR-K002, FR-Q008, FR-Q010)
+- [ ] T217 [P] Create `tests/integration/jobs.test.ts` — `claim_jobs` under concurrency (SKIP LOCKED, no double claim), exponential backoff, dead-letter after `max_attempts`, idempotency-key conflict handling, unknown job type stays QUEUED, `finished_at` recorded, runner respects the duration budget (ADR-006, NFR-REL-002)
+- [ ] T242 Create `docs/DATABASE_SCHEMA.md` — generated from the applied migrations: entities, relationships, indexes, enums, write classes and column allow-lists, RLS policies, grants, guarded/system function catalog with executor roles (Constitution XVIII)
+- [ ] T246 Extend `.github/workflows/ci.yml` — required checks for merge: unit + integration (local Supabase) + E2E smoke; coverage thresholds for `lib/security`, `lib/services`, `lib/ai` (≥ 80 % lines); tests tagged `@security` (T212–T215, T228, T229, T235, T236) are **blocking** and cannot be skipped (NFR-SEC-003, Constitution XVII)
 
-**Checkpoint**: Foundation ready — database schema created, core middleware operational, utilities available. User story implementation can now begin.
+**Checkpoint**: Schema, privileges/RLS and guarded functions applied; pipeline, auth helpers, audit, storage, jobs, notifications operational; RLS + write-protection + pipeline test suites green; CI gate enforced. User story implementation can now begin.
 
 ---
 
 ## Phase 3: User Story 1 — Secure Registration and Onboarding (Priority: P1) 🏁 MVP
 
-**Goal**: Users can register, verify email, and access the platform
+**Goal**: Users can register, verify email, sign in (Clerk) and reach the dashboard with an app profile
 
-**Independent Test**: Register → verify email → log in → see onboarding/dashboard
+**Independent Test**: Sign up → verify email → sign in → onboarding → dashboard; `users` row exists; audit rows written
 
 ### Implementation for User Story 1
 
-- [ ] T034 [P] [US1] Create `backend/src/validators/auth.validators.ts` — Zod schemas: `registerSchema` (email: string.email, password: string.min(12).regex for uppercase+lowercase+number+special, name: string.min(1).max(100)), `loginSchema` (email, password), `verifyEmailSchema` (token: string), `forgotPasswordSchema` (email), `resetPasswordSchema` (token, newPassword)
-- [ ] T035 [P] [US1] Create `backend/src/services/auth.service.ts` — AuthService class with methods: `register(email, password, name)` → hash password (bcrypt cost≥12), create User, generate email verification token (crypto.randomBytes(32).toString('hex')), set expiry 24h, send verification email, log audit event. `verifyEmail(token)` → validate token not expired, mark emailVerified=true, null out token, log audit. `login(email, password)` → find user, check emailVerified, check lockedUntil, compare password, reset failedLoginAttempts on success, increment+check lockout on failure (5 attempts → 30min lock per FR-A012), create Session, log audit. `logout(sessionId)` → delete session, log audit
-- [ ] T036 [P] [US1] Create `backend/src/middleware/auth.middleware.ts` — `authenticate` middleware: extract session token from httpOnly cookie, look up Session by tokenHash, verify not expired, attach user to `req.user`. `requireRole(roles[])` middleware: check `req.user.role` against allowed roles, return 403 if denied. `requireReAuth` middleware: check session re-auth timestamp within 5 minutes. Constitution III: server-side enforcement
-- [ ] T037 [US1] Create `backend/src/controllers/auth.controller.ts` — Express handlers for: POST `/register`, POST `/login`, POST `/logout`, POST `/verify-email`, POST `/forgot-password`, POST `/reset-password`. Each handler: validate input → call service → format response → handle errors. Set httpOnly secure sameSite=strict cookie on login
-- [ ] T038 [US1] Create `backend/src/routes/v1/auth.routes.ts` — Mount auth controller handlers with appropriate rate limiters (auth endpoints: 5/15min per account per FR-A013)
-- [ ] T039 [P] [US1] Create `backend/src/services/email.service.ts` — EmailService using Nodemailer with configurable transport (SMTP from env vars). Methods: `sendVerificationEmail(to, token, name)`, `sendPasswordResetEmail(to, token, name)`, `sendGenericEmail(to, subject, htmlContent)`. Templates render with sanitized data. Constitution II: no sensitive data in plaintext email bodies
-- [ ] T040 [P] [US1] Create `frontend/src/app/(auth)/login/page.tsx` — Login page with email/password form, shadcn/ui Input + Button, client-side validation (Zod), error display, link to register and forgot-password. Dark theme with glassmorphism card, gradient background, Framer Motion fade-in animation. Constitution XIII
-- [ ] T041 [P] [US1] Create `frontend/src/app/(auth)/register/page.tsx` — Registration page with name/email/password/confirm-password form, password strength indicator, terms checkbox, shadcn/ui components, Framer Motion animations. Dark theme glassmorphism card
-- [ ] T042 [P] [US1] Create `frontend/src/app/(auth)/verify-email/page.tsx` — Email verification page: extract token from URL, call API, show success/error state with appropriate messaging and redirect to login
-- [ ] T043 [P] [US1] Create `frontend/src/app/(auth)/forgot-password/page.tsx` — Forgot password form (email input), success state ("check your email"), error handling
-- [ ] T044 [P] [US1] Create `frontend/src/app/(auth)/reset-password/page.tsx` — Password reset form (new password + confirm), token from URL, success redirect to login
-- [ ] T045 [P] [US1] Create `frontend/src/components/layout/auth-layout.tsx` — Shared auth page layout with centered card, logo, gradient background, glass effect container
-- [ ] T046 [US1] Create `frontend/src/hooks/use-auth.ts` — `useAuth()` hook: manages auth state via Zustand store, provides `login`, `logout`, `register` mutations via TanStack Query, `user` object, `isAuthenticated` boolean, `isLoading` state
-- [ ] T047 [US1] Create `frontend/src/app/(auth)/layout.tsx` — Auth route group layout: redirect authenticated users to dashboard, render auth-layout for unauthenticated users
-- [ ] T048 [US1] Create `frontend/src/app/(dashboard)/layout.tsx` — Dashboard route group layout: redirect unauthenticated users to login, render sidebar + header shell for authenticated users
-- [ ] T049 [P] [US1] Create `frontend/src/components/layout/sidebar.tsx` — Dashboard sidebar navigation with links to all modules (Dashboard, Legacy Plan, Beneficiaries, Assets, Documents, Dead Man Switch, Emergency Access, Video Legacy, AI, Security Center, Settings). Active state highlighting, collapsible on mobile, dark theme with glassmorphism. Framer Motion slide animation
-- [ ] T050 [P] [US1] Create `frontend/src/components/layout/header.tsx` — Dashboard header with user avatar/name dropdown (profile, settings, logout), notification bell with unread count badge, search (future), breadcrumb
-- [ ] T051 [US1] Create `frontend/src/app/(dashboard)/dashboard/page.tsx` — Main dashboard page with welcome message, quick-action cards (Create Plan, Add Beneficiary, Upload Document), recent activity feed, security status summary. Skeleton loading states. Dark theme with gradient cards, Framer Motion staggered card animations
+- [ ] T034 [P] [US1] Create `lib/validators/user.validators.ts` — Zod schemas: `updateProfileSchema` (dateOfBirth, phone, alternateEmail, address object, identificationDetails, familyInfo), `preferencesSchema`, `notificationPreferencesSchema`, `securityPreferencesSchema` (`idleTimeoutMinutes ∈ {15,30,60,240,null}`, `loginNotifications`, `securityReviewReminder`), `onboardingSchema`. (Password/email schemas are not needed — Clerk enforces FR-A002 per T195)
+- [ ] T035 [P] [US1] Create `lib/services/user.service.ts` + `lib/repositories/user.repository.ts` — `getMe(userId)`, `updateProfile(userId, data)` (Class A column allow-list via the user client; encrypt `identificationDetails`; audit with redacted diff), `updatePreferences`, `completeOnboarding`. Uses `ensureAppUser` from T036. Audit `user.profile_updated`
+- [ ] T039 [P] [US1] Create `lib/email/` — `provider.ts` (`EmailProvider.send({ to, subject, react|html, text })`), `providers/resend.ts`, `providers/console.ts` (dev), `send-template.ts` facade, and React Email templates in `emails/` (beneficiary invitation, **access link** (all grant types), DMS check-in, DMS escalation, DMS release, emergency-contact designation with request link, emergency OTP, emergency decision/expiry, document shared, security alert). Templates render sanitized data; no sensitive data in bodies (Constitution II, ADR-009). Clerk sends verification/reset emails itself
+- [ ] T040 [P] [US1] Create `app/(auth)/sign-in/[[...sign-in]]/page.tsx` — Clerk `<SignIn/>` with `appearance` matching the dark glassmorphism design system, gradient background, Framer Motion fade-in; links to sign-up. Constitution XIII
+- [ ] T041 [P] [US1] Create `app/(auth)/sign-up/[[...sign-up]]/page.tsx` — Clerk `<SignUp/>` themed; Clerk handles email verification step (FR-A003/A004) and password policy display
+- [ ] T045 [P] [US1] Create `components/layout/auth-layout.tsx` — Shared auth page layout: centered glass card, logo, gradient background
+- [ ] T046 [US1] Create `hooks/use-current-user.ts` — wraps Clerk `useUser()`/`useAuth()` with a TanStack query for `GET /api/v1/users/me` (app profile, role, onboarding state, security preferences); exposes `user`, `profile`, `isLoaded`, `signOut`. No Zustand auth store (Clerk owns auth state)
+- [ ] T047 [US1] Create `app/(auth)/layout.tsx` — server layout: if `auth()` has a session, redirect to `/dashboard`; otherwise render `auth-layout`
+- [ ] T048 [US1] Create `app/(dashboard)/layout.tsx` — server layout: `auth.protect()` (redirect to sign-in), `ensureAppUser()`, redirect to `/onboarding` when `onboarding_completed_at` is null, mount the idle-timeout provider (T220), render sidebar + header shell; no `use cache`/static prerendering in this group (ADR-001 cache safety)
+- [ ] T049 [P] [US1] Create `components/layout/sidebar.tsx` — navigation to all modules (Dashboard, Legacy Plan, Beneficiaries, Assets, Documents, Dead Man Switch, Emergency Access, Video Legacy, AI, Security Center, Settings; Admin link when role = SUPER_ADMIN — UX only), active state, collapsible on mobile, glassmorphism, Framer Motion slide
+- [ ] T050 [P] [US1] Create `components/layout/header.tsx` — Clerk `<UserButton/>` (themed) or custom avatar menu (profile, settings, sign out), notification bell slot, breadcrumb
+- [ ] T051 [US1] Create `app/(dashboard)/dashboard/page.tsx` — Server Component reading via services: welcome, quick-action cards (Create Plan, Add Beneficiary, Upload Document), recent activity (audit-derived), security status summary; skeleton loading; Framer Motion staggered cards
+- [ ] T200 [US1] Create `app/(dashboard)/onboarding/page.tsx` — first-run onboarding (name confirmation from Clerk, date of birth, country, preferences) posting to `PATCH /api/v1/users/me` and `POST /users/me/onboarding/complete`; target < 3 minutes end to end (SC-001)
 
-**Checkpoint**: Users can register, verify email, log in, and see the dashboard. Auth is server-side enforced.
+**Checkpoint**: Users can sign up, verify email, sign in, complete onboarding and see the dashboard. Auth is Clerk-enforced; authorization is server-side.
 
 ---
 
 ## Phase 4: User Story 16 — Account Login and Session Security (Priority: P1)
 
-**Goal**: Secure login with MFA, session management, and account lockout
+**Goal**: MFA, sessions, lockout, idle timeout and new-device detection operational through Clerk + app audit
 
-**Independent Test**: Login → enable MFA → logout → login with MFA → verify sessions
+**Independent Test**: Sign in → enable MFA → sign out → sign in with TOTP → set idle timeout 15 min → auto sign-out after inactivity → new-device email received. (Session list/revocation is verified in Phase 15.)
 
 ### Implementation for User Story 16
 
-- [ ] T052 [US16] Create `backend/src/services/mfa.service.ts` — MFAService: `generateSecret()` → TOTP secret via speakeasy, return secret + QR code URL. `verifyToken(secret, token)` → verify TOTP token with window=1. `generateBackupCodes(count=10)` → generate and hash 10 backup codes. `verifyBackupCode(hashedCodes, code)` → verify and consume backup code. Constitution III: MFA
-- [ ] T053 [US16] Add MFA endpoints to `backend/src/controllers/auth.controller.ts`: POST `/mfa/setup` (returns QR code data), POST `/mfa/verify` (enable MFA after verification), POST `/mfa/disable` (requires re-auth), POST `/mfa/validate` (during login flow), POST `/mfa/backup-codes` (requires re-auth). POST `/re-authenticate` (verify password, set re-auth timestamp on session)
-- [ ] T054 [US16] Update `backend/src/services/auth.service.ts` login flow — if user.mfaEnabled, return `{ requiresMfa: true, mfaSessionToken }` instead of full session. After MFA validation, create full session. Two-step login per FR-A006
-- [ ] T055 [P] [US16] Create `frontend/src/app/(auth)/login/mfa-step.tsx` — MFA verification step component: 6-digit TOTP input with auto-focus, backup code toggle, countdown timer, Framer Motion slide transition from password step
-- [ ] T056 [P] [US16] Create `frontend/src/app/(dashboard)/settings/mfa/page.tsx` — MFA management page: enable/disable MFA with QR code display, backup codes display (one-time view with copy/download), re-authentication gate before changes
-- [ ] T182 [US16] Add new-device and unusual-location detection to `backend/src/services/auth.service.ts` — On login success: extract device fingerprint (User-Agent parsed via `ua-parser-js`), IP address, and approximate geolocation (IP-based, privacy-safe — city/country level only, no precise coordinates). Compare against user's known device+location history stored in Session records. If device or location is new: set `isNewDevice: true` on the Session record, trigger security notification via NotificationService ("New login from [device] in [city, country]"), log audit event with `action: 'auth.new_device_login'`. Do NOT collect unnecessary location data beyond city/country. FR-A016
+- [ ] T056 [US16] Create `app/(dashboard)/settings/security/page.tsx` — embeds Clerk `<UserProfile/>` security section (MFA enable/disable with QR, backup codes one-time view, password change, connected devices) themed to the design system, plus the application security preferences (idle timeout, login notifications — T220); Clerk enforces reverification for its changes (FR-A006, A017, A018, FR-B006, FR-O005, FR-O006)
+- [ ] T182 [US16] Create `lib/jobs/handlers/security-new-device-check.ts` — job triggered by `session.created` (T198): compare the session's browser/device type/city/country (from Clerk session activity; city/country only — no precise location) with the user's prior `auth.login` audit rows; if new, write audit `auth.new_device_login` and send a security notification ("New sign-in from [browser] on [device] in [city, country]") honouring `securityPreferences.loginNotifications`. FR-A016, Constitution II
+- [ ] T201 [US16] Create `lib/auth/reverification.ts` — `requireReverification(level: 'strict'|'multi_factor')` for `withApi()` using Clerk's `has({ reverification })` and returning the reverification-required error shape; client `components/forms/re-auth-gate.tsx` using Clerk `useReverification()` to wrap sensitive actions (decrypt fields, disable DMS, admin role changes, DMS check-in/cancel, emergency approvals, AI draft confirmation), showing a themed explanatory dialog before Clerk's step-up UI and retrying the original request afterwards. FR-A018, FR-G004, FR-I003, FR-I008
+- [ ] T203 [US16] Verify Clerk coverage of FR-A008 (24 h session lifetime), FR-A011 (all other sessions revoked on password reset), FR-A012/A013 (lockout 5 attempts/30 min) and FR-A014 (event coverage). If failed sign-in attempts are not delivered by webhook, implement a custom sign-in flow (Clerk `useSignIn`) that reports failures to `POST /api/v1/security/events` (server validates payload shape, rate-limits, records `auth.login_failed` with IP/user agent). Document results and configuration in `docs/SECURITY.md` (ADR-003 open item)
+- [ ] T220 [US16] Create `hooks/use-idle-timeout.ts` + `components/providers/idle-timeout-provider.tsx` — application-enforced idle sign-out per `securityPreferences.idleTimeoutMinutes` (15/30/60/240/off): activity listeners, cross-tab sync (BroadcastChannel), 60-second warning dialog, `signOut()` on expiry with audit `auth.idle_timeout` via `POST /api/v1/security/events`; bounded above by the platform 24 h lifetime. Settings UI in T056 (FR-B006, Clarifications 2026-09-18)
 
-**Checkpoint**: Full login flow with MFA, session management, new-device detection, and account lockout operational.
+**Checkpoint**: MFA, sessions, lockout, reverification, idle timeout and new-device detection verified; FR-A014 coverage documented.
 
 ---
 
 ## Phase 5: User Story 2 — Creating a Digital Legacy Plan (Priority: P1)
 
-**Goal**: Users can create, progress through, auto-save, and finalize a legacy plan via multi-step wizard
+**Goal**: Users can create, progress through all eleven steps, auto-save, and finalize a legacy plan (with acknowledged incompleteness) via the multi-step wizard
 
-**Independent Test**: Create plan → fill steps → auto-save → review → finalize → view version history
+**Independent Test**: Create plan → fill steps 1–9 (embedded modules for 3–7) → auto-save → review → finalize (acknowledge incomplete sections) → confirmation → view version history
 
 ### Implementation for User Story 2
 
-- [ ] T057 [P] [US2] Create `backend/src/validators/legacy-plan.validators.ts` — Zod schemas per wizard step: `personalDetailsSchema` (name, dob, address, identification), `familyInfoSchema` (spouse, children array, parents), `witnessDetailsSchema` (witnesses array with name, contact), `specialWishesSchema` (text, instructions), `reviewSchema` (confirmed: boolean.literal(true) required for finalization). Each field with constraints from data-model.md
-- [ ] T058 [P] [US2] Create `backend/src/services/legacy-plan.service.ts` — LegacyPlanService: `create(userId)` → enforce max 1 draft per user (409 on duplicate), create with status DRAFT. `getByUserId(userId)` → return current plan. `updateStep(planId, userId, step, data, lockVersion)` → validate ownership, check lockVersion for optimistic locking (409 on conflict), validate step data, update stepsData JSONB + completionStatus, increment lockVersion. `getReview(planId, userId)` → compile all steps, compute completeness per step, return summary. `finalize(planId, userId, lockVersion)` → validate all required steps complete, set status=FINALIZED, create LegacyPlanVersion snapshot, record finalizedAt, log audit. `createNewDraft(planId, userId)` → copy finalized plan data to new DRAFT, increment version. `getVersionHistory(planId, userId)`
-- [ ] T059 [US2] Create `backend/src/controllers/legacy-plan.controller.ts` — Handlers: GET `/legacy-plans` (list), POST `/legacy-plans` (create draft), GET `/legacy-plans/:id` (get with steps), PATCH `/legacy-plans/:id/steps/:step` (auto-save), POST `/legacy-plans/:id/review` (get review), POST `/legacy-plans/:id/finalize` (finalize with confirmed:true), GET `/legacy-plans/:id/versions`, POST `/legacy-plans/:id/new-draft`. All enforce ownership
-- [ ] T060 [US2] Create `backend/src/routes/v1/legacy-plans.routes.ts` — Mount legacy plan handlers with auth middleware
-- [ ] T061 [P] [US2] Create `frontend/src/components/wizard/wizard-provider.tsx` — Reusable wizard context provider: manages currentStep, stepsData, completionStatus, auto-save timer (debounced 3s), navigation methods (next, previous, goToStep), validation per step, dirty-state tracking
-- [ ] T062 [P] [US2] Create `frontend/src/components/wizard/wizard-stepper.tsx` — Visual step indicator component: numbered steps with labels, completion checkmarks, active step highlight, clickable completed steps, responsive (horizontal desktop, vertical mobile), Framer Motion step transitions
-- [ ] T063 [P] [US2] Create `frontend/src/components/wizard/wizard-step.tsx` — Individual step wrapper: renders step content, handles validation, shows save status indicator ("Saved", "Saving...", "Unsaved changes"), Framer Motion slide animation between steps
-- [ ] T064 [US2] Create `frontend/src/app/(dashboard)/legacy-plan/page.tsx` — Legacy plan page: if no plan exists show "Create Plan" CTA, if draft exists show wizard, if finalized show plan summary with "Create New Version" option
-- [ ] T065 [US2] Create `frontend/src/app/(dashboard)/legacy-plan/steps/personal-details.tsx` — Step 1: Personal details form (name, DOB, address, ID info) with shadcn/ui inputs, inline validation
-- [ ] T066 [P] [US2] Create `frontend/src/app/(dashboard)/legacy-plan/steps/family-info.tsx` — Step 2: Family information (spouse details, children list with add/remove, parent details) with dynamic form arrays
-- [ ] T067 [P] [US2] Create `frontend/src/app/(dashboard)/legacy-plan/steps/witness-details.tsx` — Step 8: Witness details (name, contact, address) with add/remove witness rows
-- [ ] T068 [P] [US2] Create `frontend/src/app/(dashboard)/legacy-plan/steps/special-wishes.tsx` — Step 9: Special wishes and instructions textarea with optional structured fields
-- [ ] T069 [US2] Create `frontend/src/app/(dashboard)/legacy-plan/steps/review.tsx` — Review step: display all entered data organized by section, highlight incomplete/missing sections with warnings, completeness percentage, explicit "Finalize" button with confirmation dialog (shadcn Dialog). FR-C007: review screen with completeness
-- [ ] T070 [US2] Create `frontend/src/app/(dashboard)/legacy-plan/versions/page.tsx` — Version history page: list finalized versions with timestamps, view read-only version details
+- [ ] T057 [P] [US2] Create `lib/validators/legacy-plan.validators.ts` — Zod schemas per section key: `personalDetailsSchema` (legal name, DOB, address, ID info), `familyInformationSchema`, `beneficiariesStepSchema` (beneficiary ids), `assetsStepSchema` (asset ids per class), `witnessDetailsSchema`, `specialWishesSchema`, `documentAttachmentsStepSchema` (document ids), `stepUpdateSchema` (section key + data + `lockVersion`), `finalizeSchema` (`confirmed: z.literal(true)`, `lockVersion`, `acknowledgeIncomplete: z.boolean().optional()`). Constraints from data-model.md
+- [ ] T058 [P] [US2] Create `lib/services/legacy-plan.service.ts` + `lib/repositories/legacy-plan.repository.ts` — thin wrappers over the guarded functions via the user client: `create` (`create_legacy_plan()`, 409 if a DRAFT exists), `getForUser`, `updateStep` (`save_plan_step()`; 409 on lock conflict; 422 field errors), `getReview` (per-section completeness + cross-entity checks), `finalize` (`finalize_legacy_plan()`; surfaces `PLAN_INCOMPLETE` with `incompleteSections` unless `acknowledgeIncomplete`; `PERSONAL_DETAILS_REQUIRED` always), `createNewDraft` (`create_plan_draft()`), `getVersionHistory`, `getVersion`. NFR-REL-001, US20 scenario 2
+- [ ] T059 [US2] Create Route Handlers `app/api/v1/legacy-plans/route.ts` (GET list, POST create), `[id]/route.ts` (GET), `[id]/steps/[step]/route.ts` (PATCH auto-save), `[id]/documents/route.ts` (GET, POST) + `[id]/documents/[documentId]/route.ts` (DELETE) via T227 attachments service, `[id]/review/route.ts` (POST), `[id]/finalize/route.ts` (POST), `[id]/versions/route.ts` (GET), `[id]/versions/[versionId]/route.ts` (GET), `[id]/new-draft/route.ts` (POST) — all via `withApi({ auth:'user', schema })`
+- [ ] T061 [P] [US2] Create `components/wizard/wizard-provider.tsx` — wizard context: currentStep, stepsData, completionStatus, `lockVersion`, debounced auto-save (3 s) via TanStack mutation, navigation (next/previous/goToStep), per-step validation, dirty-state tracking, conflict (409) handling with reload prompt
+- [ ] T062 [P] [US2] Create `components/wizard/wizard-stepper.tsx` — step indicator for eleven steps: numbered steps, completion checkmarks, active highlight, clickable completed steps, horizontal (desktop) / vertical (mobile), Framer Motion transitions
+- [ ] T063 [P] [US2] Create `components/wizard/wizard-step.tsx` — step wrapper: content slot, validation display, save status ("Saved", "Saving…", "Unsaved changes"), slide animation
+- [ ] T064 [US2] Create `app/(dashboard)/legacy-plan/page.tsx` — no plan → "Create Plan" CTA; DRAFT → wizard with all eleven steps (T065–T069, T221–T224); FINALIZED → summary with "Create New Version"
+- [ ] T065 [US2] Create `app/(dashboard)/legacy-plan/steps/personal-details.tsx` — Step 1 form (legal name for the plan — distinct from the Clerk display name —, DOB, address, ID info) with inline validation (react-hook-form + Zod)
+- [ ] T066 [P] [US2] Create `app/(dashboard)/legacy-plan/steps/family-information.tsx` — Step 2 (spouse, children add/remove, parents, dependents) with dynamic arrays
+- [ ] T221 [P] [US2] Create `app/(dashboard)/legacy-plan/steps/beneficiaries.tsx` — Step 3: embeds the beneficiary module (list + add dialog from T075) inside `wizard-step`; the step stores selected beneficiary ids in `stepsData.beneficiaries`; completeness = at least one ACTIVE/PENDING beneficiary (FR-C001)
+- [ ] T222 [P] [US2] Create `app/(dashboard)/legacy-plan/steps/{financial-assets,physical-assets,digital-assets}.tsx` — Steps 4–6: embedded asset module views (tables + add/edit dialogs from T083/T086/T088) with per-asset beneficiary assignment shortcuts; steps store asset ids; completeness = user marked the class "none" or ≥ 1 asset with an assignment (FR-C001, FR-C005)
+- [ ] T067 [P] [US2] Create `app/(dashboard)/legacy-plan/steps/witness-details.tsx` — Step 7 in the wizard order defined by FR-C001 (witness rows add/remove)
+- [ ] T068 [P] [US2] Create `app/(dashboard)/legacy-plan/steps/special-wishes.tsx` — Step 8 (wishes/instructions)
+- [ ] T223 [P] [US2] Create `app/(dashboard)/legacy-plan/steps/document-attachments.tsx` — Step 9: attach vault documents to the plan (`POST /legacy-plans/:id/documents`) or upload inline via `components/shared/file-upload.tsx` (T096) then attach; lists attachments with detach; completeness = ≥ 1 attachment or explicit "none" (FR-C001)
+- [ ] T069 [US2] Create `app/(dashboard)/legacy-plan/steps/review.tsx` — Step 10: review by section, incomplete-section warnings, completeness %, "Finalize" dialog that lists incomplete sections and requires the acknowledgment checkbox when any exist (Personal Details cannot be acknowledged away) (FR-C006, FR-C007, US20 scenario 2)
+- [ ] T224 [US2] Create `app/(dashboard)/legacy-plan/steps/confirmation.tsx` — Step 11: post-finalization confirmation (version number, finalized timestamp, acknowledged sections if any, export/print entry point, "Create new draft" and "Share with beneficiaries" next steps) (FR-C001)
+- [ ] T070 [US2] Create `app/(dashboard)/legacy-plan/versions/page.tsx` — finalized versions list with timestamps, `acknowledgedIncomplete` badge, read-only version view
+- [ ] T225 [US2] Create `tests/integration/legacy-plan.test.ts` — `create_legacy_plan` one-DRAFT rule (409), `save_plan_step` lock conflict (409) and step validation, finalize without `confirmed` (400), `PERSONAL_DETAILS_REQUIRED`, `PLAN_INCOMPLETE` without acknowledgment then success with acknowledgment (snapshot records `acknowledgedIncomplete` + list), version snapshot resolves references by value, `create_plan_draft` increments version, cross-user access denied (Constitution VII, XVII)
 
-**Checkpoint**: Users can create and finalize a legacy plan through a multi-step wizard with auto-save.
+**Checkpoint**: Users can create and finalize a legacy plan through the full eleven-step wizard with auto-save, acknowledged-incomplete finalization and atomic versioning.
 
 ---
 
 ## Phase 6: User Story 3 — Adding and Managing Beneficiaries (Priority: P1)
 
-**Goal**: Users can add, edit, remove beneficiaries with duplicate detection and audit logging
+**Goal**: Users can add, edit, deactivate and remove beneficiaries with duplicate detection, lifecycle rules and audit logging
 
-**Independent Test**: Add beneficiary → attempt duplicate → edit → remove → verify audit trail
+**Independent Test**: Add beneficiary → attempt duplicate → edit → deactivate → remove (cascade) → verify audit trail
 
 ### Implementation for User Story 3
 
-- [ ] T071 [P] [US3] Create `backend/src/validators/beneficiary.validators.ts` — Zod schemas: `createBeneficiarySchema` (name: string.min(1).max(100), relationship: string.min(1), email: string.email, phone: string.optional, isEmergencyBeneficiary: boolean.default(false), notes: string.optional), `updateBeneficiarySchema` (partial of create + confirmed: boolean for authoritative changes per FR-D008)
-- [ ] T072 [P] [US3] Create `backend/src/services/beneficiary.service.ts` — BeneficiaryService: `create(userId, data)` → check duplicate email per user (409), create Beneficiary, log audit. `update(id, userId, data)` → verify ownership, require `confirmed: true` for name/email/allocation changes (FR-D008), update, log audit with previous values. `remove(id, userId)` → soft delete, log audit. `list(userId)` → return all non-deleted. `getById(id, userId)` → ownership check. Constitution VII: confirmation before authoritative changes
-- [ ] T073 [US3] Create `backend/src/controllers/beneficiary.controller.ts` — Handlers: GET `/beneficiaries`, POST `/beneficiaries`, GET `/beneficiaries/:id`, PATCH `/beneficiaries/:id`, DELETE `/beneficiaries/:id`. All enforce user ownership
-- [ ] T074 [US3] Create `backend/src/routes/v1/beneficiaries.routes.ts` — Mount with auth middleware
-- [ ] T075 [P] [US3] Create `frontend/src/app/(dashboard)/beneficiaries/page.tsx` — Beneficiary list page: data table with name, relationship, email, status columns. Add Beneficiary button → dialog form. Edit/Delete actions per row. Empty state with guidance. Skeleton loading. Dark theme cards with Framer Motion list animation
-- [ ] T076 [US3] Create `frontend/src/app/(dashboard)/beneficiaries/[id]/page.tsx` — Beneficiary detail page: full info display, edit form, assignment list (assets/documents assigned to this beneficiary), confirmation dialog for authoritative changes
+- [ ] T071 [P] [US3] Create `lib/validators/beneficiary.validators.ts` — `createBeneficiarySchema` (name 1–100, relationship, email, phone?, notes?), `updateBeneficiarySchema` (partial contact fields + `confirmed: boolean` required for name/email changes per FR-D008), `statusSchema` (`status: ACTIVE|INACTIVE`, `confirmed: true`), `removeSchema` (`confirmed: true`)
+- [ ] T072 [P] [US3] Create `lib/services/beneficiary.service.ts` + repository — `create` (Class A insert via user client; 409 on duplicate email; audit), `update` (contact fields only; `confirmed: true` for name/email; audit with previous values), `setStatus` (`set_beneficiary_status()` — INACTIVE revokes tokens), `remove` (`remove_beneficiary()` cascade: assignments, tokens, DMS contact links, EA configs, soft delete — Clarifications 2026-09-18), `list` (with derived roles: assignment count, trusted contact, emergency contact), `getById`, `invite` (invitation email via T039; sets `invitedAt`). Constitution VII
+- [ ] T073 [US3] Create Route Handlers `app/api/v1/beneficiaries/route.ts` (GET, POST), `[id]/route.ts` (GET, PATCH, DELETE), `[id]/status/route.ts` (POST), `[id]/invite/route.ts` (POST) via `withApi`
+- [ ] T075 [P] [US3] Create `app/(dashboard)/beneficiaries/page.tsx` — data table (name, relationship, email, status badge, roles), add dialog, edit/deactivate/remove actions with confirmation, empty state, skeletons, Framer Motion list animation
+- [ ] T076 [US3] Create `app/(dashboard)/beneficiaries/[id]/page.tsx` — detail: info, edit form, status control, assignments list, access tokens list (issue/revoke — T097), DMS/EA role indicators, confirmation dialog for authoritative changes
+- [ ] T226 [US3] Create `tests/integration/beneficiaries.test.ts` — duplicate email 409, PENDING → ACTIVE on first token exchange, owner ACTIVE ⇄ INACTIVE (tokens revoked; assignments/tokens refused for INACTIVE), `remove_beneficiary()` cascade removes assignments, revokes tokens, unlinks DMS contact, deactivates EA config, soft-deletes, writes audit rows for each step; cross-user denied (FR-D003, FR-D007, US3 scenario 4, Constitution XVII)
 
-**Checkpoint**: Complete beneficiary management with validation, duplicate detection, and audit trail.
+**Checkpoint**: Complete beneficiary management with validation, duplicate detection, lifecycle, removal cascade and audit trail.
 
 ---
 
 ## Phase 7: User Story 17 — Account Recovery (Priority: P2)
 
-**Goal**: Users can recover accounts via password reset and MFA backup codes
+**Goal**: Users can recover accounts via Clerk password reset and MFA backup codes; support path exists for total loss
 
-**Independent Test**: Forgot password → reset email → reset → login with new password
+**Independent Test**: Forgot password → reset email → reset → sign in (other sessions revoked) → sign in with backup code
 
 ### Implementation for User Story 17
 
-- [ ] T077 [US17] Add password reset methods to `backend/src/services/auth.service.ts` — `forgotPassword(email)` → generate reset token (crypto.randomBytes(32)), set 1-hour expiry, invalidate previous tokens, send reset email, log audit. Always return success (prevent email enumeration per FR-A010). `resetPassword(token, newPassword)` → validate token not expired, hash new password, update user, null out token, invalidate ALL sessions for user, log audit (FR-A011)
-- [ ] T078 [US17] Add `backend/src/services/mfa.service.ts` — `useBackupCode(userId, code)` method: find user, verify hashed backup code, remove used code, log audit. If all backup codes exhausted, flag for admin support
+- [ ] T204 [US17] Verify Clerk account-recovery flows end to end (forgot password with sign-out of other sessions — FR-A010/A011; backup-code sign-in — FR-A017) and document the manual identity-verification support process for users who lose both password and MFA device (spec edge case "Lost account access") in `docs/SUPPORT_RUNBOOK.md`; admin path uses `POST /admin/users/:id/reset-mfa` (T148). Audit rows for `auth.password_reset` and `auth.backup_code_used` confirmed present via the webhook handler (T198)
 
-**Checkpoint**: Account recovery via password reset and MFA backup codes operational.
+**Checkpoint**: Account recovery operational through Clerk with documented support fallback.
 
 ---
 
@@ -175,18 +214,17 @@
 
 **Goal**: Users can add, categorize, and manage financial assets with encrypted sensitive fields
 
-**Independent Test**: Create financial asset → fill category-specific fields → verify encrypted storage → decrypt with re-auth
+**Independent Test**: Create financial asset → verify encrypted storage → masked display → decrypt with reverification → audit row
 
 ### Implementation for User Story 4
 
-- [ ] T079 [P] [US4] Create `backend/src/validators/asset.validators.ts` — Zod schemas: `createFinancialAssetSchema` (name: string.min(1).max(200), category: enum BANK_ACCOUNT|FIXED_DEPOSIT|MUTUAL_FUND|STOCK|INSURANCE|RETIREMENT, institution: string.optional, accountNumber: string.optional, policyNumber: string.optional, estimatedValue: number.positive.optional, currency: string.length(3).default("USD"), notes: string.optional, metadata: object.optional), `updateFinancialAssetSchema` (partial), `createPhysicalAssetSchema`, `updatePhysicalAssetSchema`, `createDigitalAssetSchema`, `updateDigitalAssetSchema`
-- [ ] T080 [P] [US4] Create `backend/src/services/asset.service.ts` — AssetService: `createFinancial(userId, data)` → encrypt accountNumber and policyNumber with AES-256-GCM before storage, create FinancialAsset, log audit. `getFinancial(id, userId)` → ownership check, return with encrypted fields masked as "••••••". `decryptFinancialField(id, userId, field)` → re-auth required, decrypt field, log credential view in audit (FR-G005). `updateFinancial(id, userId, data)` → re-encrypt if sensitive fields changed, log audit with changes. `deleteFinancial(id, userId)` → soft delete, log audit. `listFinancial(userId)` → return all with masked sensitive fields. Same pattern for Physical and Digital assets
-- [ ] T081 [US4] Create `backend/src/controllers/asset.controller.ts` — Handlers for GET/POST/PATCH/DELETE for `/assets/financial`, `/assets/physical`, `/assets/digital`, plus GET `/assets/:type/:id/decrypt` with requireReAuth middleware
-- [ ] T082 [US4] Create `backend/src/routes/v1/assets.routes.ts` — Mount with auth middleware, `/decrypt` endpoints with requireReAuth
-- [ ] T083 [P] [US4] Create `frontend/src/app/(dashboard)/assets/financial/page.tsx` — Financial assets list: categorized view (tabs or filter by category), data table with name, category, institution, estimated value. Add button → category-specific form dialog. Edit/delete actions. Masked sensitive fields with "Reveal" button triggering re-auth
-- [ ] T084 [US4] Create `frontend/src/components/forms/re-auth-dialog.tsx` — Re-authentication dialog: password input (+ MFA if enabled), used before decrypting sensitive fields or performing sensitive operations. Framer Motion scale-in animation
+- [ ] T079 [P] [US4] Create `lib/validators/asset.validators.ts` — `createFinancialAssetSchema` (name, category enum BANK_ACCOUNT|FIXED_DEPOSIT|MUTUAL_FUND|STOCK|INSURANCE|RETIREMENT, institution?, accountNumber?, policyNumber?, estimatedValue?, currency ISO-4217 default "USD", notes?, metadata?), `updateFinancialAssetSchema`, `createPhysicalAssetSchema`, `updatePhysicalAssetSchema`, `createDigitalAssetSchema`, `updateDigitalAssetSchema`
+- [ ] T080 [P] [US4] Create `lib/services/asset.service.ts` + repositories — Class A writes via the user client: `createFinancial` (encrypt accountNumber/policyNumber via T020, audit), `getFinancial` (masked "••••••"), `decryptFinancialField` (requires reverification context; decrypt; audit `asset.credential_viewed`), `updateFinancial` (re-encrypt changed fields, audit diff), `deleteFinancial` → `delete_asset('FINANCIAL_ASSET', id)` RPC (one transaction: ownership + row lock, assignments and attachments removed, soft delete, audit row; direct `deletedAt` writes are denied), `listFinancial` (masked, with attachment and assignment counts). Same pattern for physical/digital in T085/T087
+- [ ] T081 [US4] Create Route Handlers `app/api/v1/assets/financial/route.ts` (GET, POST), `financial/[id]/route.ts` (GET, PATCH, DELETE), `financial/[id]/decrypt/route.ts` (GET, `withApi({ reverification:'strict', rateLimit:'sensitive' })`); mirror for `physical/` and `digital/` (with `decrypt`)
+- [ ] T083 [P] [US4] Create `app/(dashboard)/assets/financial/page.tsx` — categorized list (tabs), table (name, category, institution, value), add/edit dialogs with category-specific fields, masked fields with "Reveal" through the re-auth gate (T201), attached documents panel (T227)
+- [ ] T084 [US4] Apply the re-auth gate (T201) across the asset UIs — "Reveal" for encrypted fields, delete confirmations that require reverification when the asset has assignments; consistent explanatory copy (FR-A018, FR-G004)
 
-**Checkpoint**: Financial assets fully manageable with encrypted sensitive fields and re-auth gates.
+**Checkpoint**: Financial assets fully manageable with encrypted sensitive fields and reverification gates.
 
 ---
 
@@ -194,12 +232,12 @@
 
 **Goal**: Users can add and manage physical assets with category-specific metadata
 
-**Independent Test**: Create physical assets across categories → verify metadata → document attachment links
+**Independent Test**: Create physical assets across categories → verify metadata → attach documents
 
 ### Implementation for User Story 5
 
-- [ ] T085 [P] [US5] Add physical asset methods to `backend/src/services/asset.service.ts` — `createPhysical(userId, data)`, `getPhysical`, `updatePhysical`, `deletePhysical`, `listPhysical`. Categories from data-model.md: REAL_ESTATE, VEHICLE, GOLD_JEWELRY, PERSONAL_PROPERTY, BUSINESS_ASSET
-- [ ] T086 [US5] Create `frontend/src/app/(dashboard)/assets/physical/page.tsx` — Physical assets list and management UI: category tabs, add/edit dialogs with category-specific fields (location for real estate, registration for vehicles, etc.), document attachment links
+- [ ] T085 [P] [US5] Add physical asset methods to `lib/services/asset.service.ts` — `createPhysical`, `getPhysical`, `updatePhysical`, `deletePhysical` (→ `delete_asset('PHYSICAL_ASSET', id)`), `listPhysical`; categories REAL_ESTATE, VEHICLE, GOLD_JEWELRY, PERSONAL_PROPERTY, BUSINESS_ASSET; multiple document attachments via T227 (FR-F003)
+- [ ] T086 [US5] Create `app/(dashboard)/assets/physical/page.tsx` — category tabs, add/edit dialogs with category-specific fields, attached documents panel
 
 **Checkpoint**: Physical asset management complete.
 
@@ -209,13 +247,13 @@
 
 **Goal**: Users can manage digital assets with encrypted credentials and masked display
 
-**Independent Test**: Create digital asset with credentials → verify masked → re-auth → view plaintext → verify audit log
+**Independent Test**: Create digital asset with credentials → masked → reverify → plaintext → audit row
 
 ### Implementation for User Story 6
 
-- [ ] T087 [P] [US6] Add digital asset methods to `backend/src/services/asset.service.ts` — `createDigital(userId, data)` → encrypt credentials and recoveryInfo with AES-256-GCM. `decryptDigitalField(id, userId, field)` → re-auth gate, decrypt, log credential view in audit trail (FR-G005). Categories: CRYPTO_WALLET, ONLINE_ACCOUNT, DOMAIN, SUBSCRIPTION, SOCIAL_MEDIA, OTHER
-- [ ] T088 [US6] Create `frontend/src/app/(dashboard)/assets/digital/page.tsx` — Digital assets list: platform icons/logos, masked credentials (••••••), "Reveal" button with re-auth dialog, category filter, add/edit with credential input fields (auto-mask on save)
-- [ ] T089 [US6] Create `frontend/src/app/(dashboard)/assets/page.tsx` — Assets overview page: summary cards for financial/physical/digital counts and total estimated values, quick navigation to sub-pages, recent changes feed
+- [ ] T087 [P] [US6] Add digital asset methods to `lib/services/asset.service.ts` — `createDigital` (encrypt credentials + recoveryInfo), `decryptDigitalField` (reverification, audit `asset.credential_viewed` — FR-G005), `deleteDigital` (→ `delete_asset('DIGITAL_ASSET', id)`); categories CRYPTO_WALLET, ONLINE_ACCOUNT, DOMAIN, SUBSCRIPTION, SOCIAL_MEDIA, OTHER
+- [ ] T088 [US6] Create `app/(dashboard)/assets/digital/page.tsx` — platform icons, masked credentials, "Reveal" via re-auth gate, category filter, add/edit with credential fields, attached documents panel
+- [ ] T089 [US6] Create `app/(dashboard)/assets/page.tsx` — overview: counts and totals per asset class, unassigned-asset warnings, navigation, recent changes
 
 **Checkpoint**: All three asset categories complete with encryption and audit logging.
 
@@ -223,52 +261,57 @@
 
 ## Phase 11: User Story 7 — Secure Document Vault (Priority: P2)
 
-**Goal**: Users can upload, organize, encrypt, and manage documents with versioning and permissions
+**Goal**: Users can upload (direct-to-storage), validate, scan, organize, version, attach, share and download documents securely
 
-**Independent Test**: Upload file → validate types → encrypt → organize in folders → download via signed URL → version → share with beneficiary
+**Independent Test**: Create upload session → PUT to signed URL → complete → scan → download via signed URL → new version → attach to an asset → share with beneficiary; spoofed/oversized/infected files rejected
 
 ### Implementation for User Story 7
 
-- [ ] T090 [P] [US7] Create `backend/src/services/document.service.ts` — DocumentService: `upload(userId, file, folderId?)` → validate file (validateFile util: type whitelist PDF/JPEG/PNG/GIF/WEBP/TXT/DOC/DOCX/XLS/XLSX, extension, magic bytes, size ≤ 50MB per FR-H002), encrypt file with AES-256-GCM, upload to S3 with private ACL, create Document + DocumentVersion records, log audit. `download(id, userId)` → ownership check, generate signed URL (15min expiry per contracts), log access in audit. `preview(id, userId)` → generate preview data for PDF/images. `updateMetadata(id, userId, data)`. `delete(id, userId)` → soft delete, log audit. `uploadNewVersion(id, userId, file)` → validate, encrypt, store, create DocumentVersion, update currentVersionId. `listVersions(id, userId)`. `share(id, userId, beneficiaryId)` → create BeneficiaryAssignment, log audit. `unshare(id, userId, beneficiaryId)`. `listByFolder(userId, folderId?)`
-- [ ] T091 [P] [US7] Create `backend/src/services/folder.service.ts` — FolderService: `create(userId, name, parentId?)` → enforce unique name per parent per user (userId+parentId+name constraint). `rename(id, userId, name)`. `move(id, userId, newParentId)`. `delete(id, userId)` → soft delete (check for documents inside, require confirmation). `list(userId)` → return folder tree
-- [ ] T092 [P] [US7] Create `backend/src/middleware/upload.middleware.ts` — Multer configuration: memory storage, file size limit 50MB for documents (500MB for videos), single file upload. File filter rejecting executables
-- [ ] T093 [US7] Create `backend/src/controllers/document.controller.ts` — Handlers for all document and folder endpoints per api-contracts.md. Upload endpoint uses multipart/form-data with upload middleware
-- [ ] T094 [US7] Create `backend/src/routes/v1/documents.routes.ts` — Mount with auth middleware and upload middleware for upload endpoints
-- [ ] T095 [P] [US7] Create `frontend/src/app/(dashboard)/documents/page.tsx` — Document vault UI: folder tree sidebar, document grid/list view (toggle), upload dropzone with drag-and-drop, file type icons, size display, upload progress bar, folder creation dialog, document actions (download, share, delete, version history). Empty state guidance. Skeleton loading. Dark theme with glassmorphism cards
-- [ ] T096 [US7] Create `frontend/src/components/shared/file-upload.tsx` — Reusable file upload component: drag-and-drop zone, file type/size validation preview, upload progress, error display, Framer Motion animation for drop state
+- [ ] T205 [P] [US7] Create `lib/storage/upload-session.ts` — `upload_sessions` state helpers (PENDING → UPLOADED → VALIDATING → SCANNING → SCANNED_CLEAN → PROMOTED | REJECTED | EXPIRED) via the service client; storage policies for `storage.objects` are part of T218 (ADR-005)
+- [ ] T090 [P] [US7] Create `lib/services/document.service.ts` + repository — `createUploadSession(user, { name, mimeType, sizeBytes, folderId?, documentId? })` (T032 declared checks, ownership of folder/document, insert `upload_sessions`, signed upload URL to `quarantine/{clerkUserId}/{uploadId}`, 1 h expiry), `completeUpload(user, uploadId)` (session ownership + state, `headObject` actual size ≤ 50 MB, `readRange` magic bytes (T032), malware scan (T181/T247; inline ≤ 10 MB else enqueue `file.scan` and return 202) → SCANNED_CLEAN → `promote_upload()` RPC → `documents` + `document_versions`, audit `document.uploaded`), `getUploadStatus`, `getDownloadUrl` (authorize owner / access-cookie scope → signed URL 15 min → audit `document.downloaded`), `getPreviewUrl` (audit `document.viewed`), `updateMetadata` (Class A allow-list), `delete` (`delete_document()` — soft delete, enqueue `storage.remove-object`, removes shares/attachments, audit — FR-H017), `listVersions`, `share`/`unshare` (assignments via `assign_beneficiary`/`unassign_beneficiary` with resourceType DOCUMENT, audit), `listByFolder`
+- [ ] T091 [P] [US7] Create `lib/services/folder.service.ts` — `create` (unique per parent per user, NULLS NOT DISTINCT), `rename`, `move`, `delete` (soft; requires confirmation when non-empty), `list` (tree)
+- [ ] T093 [US7] Create Route Handlers `app/api/v1/documents/route.ts` (GET), `uploads/route.ts` (POST), `uploads/[uploadId]/route.ts` (GET status), `uploads/[uploadId]/complete/route.ts` (POST), `[id]/route.ts` (GET, PATCH, DELETE), `[id]/download/route.ts`, `[id]/preview/route.ts`, `[id]/versions/route.ts`, `[id]/share/route.ts` (POST), `[id]/share/[beneficiaryId]/route.ts` (DELETE), `folders/route.ts`, `folders/[id]/route.ts` per api-contracts.md
+- [ ] T227 [US7] Create `lib/services/attachment.service.ts` + Route Handlers `app/api/v1/assets/[type]/[id]/documents/route.ts` (GET, POST) and `documents/[documentId]/route.ts` (DELETE), plus the legacy-plan attachment handlers wired in T059 — `attach(user, documentId, resourceType, resourceId)` → `attach_document()`, `detach` → `detach_document()`, `listForResource`, `listForDocument`; `components/shared/attached-documents.tsx` panel used by asset pages and the wizard step (FR-E004, FR-F003, FR-G002, analysis finding I2)
+- [ ] T247 [US7] Create `lib/security/scanners/clamav.ts` — `ClamAvScanner` implementing `MalwareScanner` over clamd `INSTREAM` (TLS endpoint from `CLAMAV_HOST/PORT/TLS`), streaming the quarantine object in chunks, timeouts, `ERROR` verdict on connection failure (never CLEAN by default); register in the factory; `lib/jobs/handlers/file-scan.ts` uses it and records verdicts on `upload_sessions`, `documents.scan_status` / `video_messages.scan_status` and the audit log; INFECTED objects deleted from quarantine (ADR-015, FR-H016, FR-Q011)
+- [ ] T095 [P] [US7] Create `app/(dashboard)/documents/page.tsx` — folder tree, grid/list toggle, upload dropzone (T096), file-type icons, upload/scan status, folder dialog, actions (download, share, attach to asset/plan, delete, versions), empty state, skeletons
+- [ ] T096 [US7] Create `components/shared/file-upload.tsx` — drag-and-drop; client-side pre-check of type/size (UX only); calls `POST /documents/uploads`, PUTs the file to the signed URL with progress, then calls `complete`; polls status while SCANNING; shows clear rejection reasons (FR-H003)
+- [ ] T228 [US7] Create `tests/integration/document-permissions.test.ts` — owner can read/download; other user 403 by id; access-cookie scope allows only listed documents and denies others; expired/revoked token denied; signed URL expiry; upload rejections (extension/MIME mismatch, magic bytes, oversize at declaration and at completion); `promote_upload()` refuses non-SCANNED_CLEAN; INFECTED verdict blocks promotion and audits; `delete_document()` removes shares/attachments and keeps audit rows; video delivery-condition strict mapping (IMMEDIATE playable through any grant that includes the video; DEAD_MAN_SWITCH only through DMS_RELEASE; EMERGENCY_ACCESS only through EMERGENCY_ACCESS; every other combination → 422 `DELIVERY_CONDITION_MISMATCH` on access and at token/scope configuration time); DIRECT_SHARE token scope never exceeds the beneficiary's current assignments (FR-H002–H005, H011–H017, FR-K006, FR-D011, Constitution XVII)
 
-**Checkpoint**: Secure document vault with upload validation, encryption, folders, versioning, and signed URL downloads.
+**Checkpoint**: Secure document vault with direct-to-storage upload, validation/scan gating (production scanner), folders, versioning, attachments and signed URL downloads.
 
 ---
 
 ## Phase 12: User Story 18 — Assigning Assets and Documents to Beneficiaries (Priority: P2)
 
-**Goal**: Users can assign beneficiaries to assets/documents with allocation constraints
+**Goal**: Users can assign beneficiaries to resources with allocation constraints; recipients access via scoped tokens exchanged for an access cookie
 
-**Independent Test**: Assign beneficiary to asset → set allocation → attempt over-allocation → verify constraint → token generation
+**Independent Test**: Assign → set allocation → over-allocate (422) → issue token → open `/access?t=…` → exchange → cookie-scoped resources incl. plan section → scope enforced
 
 ### Implementation for User Story 18
 
-- [ ] T097 [P] [US18] Create `backend/src/services/assignment.service.ts` — AssignmentService: `assign(userId, beneficiaryId, resourceType, resourceId, allocationPercentage?)` → verify ownership of both beneficiary and resource, check existing allocations sum + new ≤ 100% (422 on violation per FR-D005), create BeneficiaryAssignment, log audit. `unassign(assignmentId, userId)` → verify ownership, delete, log audit. `listByResource(resourceType, resourceId, userId)`. `listByBeneficiary(beneficiaryId, userId)`. `generateAccessToken(beneficiaryId, userId, scope)` → generate crypto random token, hash with SHA-256, store BeneficiaryAccessToken with scope JSONB (resource IDs and types), set expiry (configurable, default 7 days), return unhashed token to caller. `revokeToken(tokenId, userId)` → set revokedAt. Constitution VII: allocation constraints
-- [ ] T098 [US18] Create `backend/src/controllers/assignment.controller.ts` — Handlers: POST `/assets/:type/:id/assign`, DELETE `/assets/:type/:id/assign/:assignmentId`, GET `/assets/:type/:id/assignments`, POST `/beneficiaries/:id/tokens`, DELETE `/beneficiaries/:id/tokens/:tokenId`
-- [ ] T099 [US18] Add assignment UI to `frontend/src/app/(dashboard)/beneficiaries/[id]/page.tsx` — "Assign to Asset" dialog: select asset type (financial/physical/digital/document), select specific asset, set allocation percentage. Display current assignments with allocation bars. Warning when approaching 100%
-- [ ] T100 [US18] Create `backend/src/routes/v1/beneficiary-access.routes.ts` — Token-based beneficiary access routes (NO auth middleware — token-based): GET `/access/:token` (validate token → list accessible resources), GET `/access/:token/documents/:id` (verify resource in token scope → signed download URL), GET `/access/:token/assets/:type/:id` (verify scope → return asset data masked appropriately). All access logged to audit trail
-- [ ] T101 [US18] Create `frontend/src/app/(beneficiary)/access/[token]/page.tsx` — Beneficiary access page (public, no login required): validate token via API, display accessible resources list, download buttons for documents, read-only asset views. Clean, simple UI with LegacyVault branding. Show expiry timer
+- [ ] T097 [P] [US18] Create `lib/services/assignment.service.ts` + `lib/security/tokens.ts` — `assign(user, beneficiaryId, resourceType, resourceId, allocation?)` via `assign_beneficiary()` RPC (ownership of both, Σ ≤ 100 % per resource → 422 `ALLOCATION_EXCEEDED` with remaining %, INACTIVE beneficiary refused, audit), `unassign`, `listByResource` (with remaining %), `listByBeneficiary`, `issueAccessToken(user, beneficiaryId, scope, ttlDays ≤ 30)` (crypto-random token, SHA-256 hash → `issue_access_token()`, which enforces FR-D011: every `documents`/`assets`/`videos` id in scope must be owned by the caller **and currently assigned to that beneficiary in `beneficiary_assignments`**, `planSections` must be empty (not assignable) — otherwise 422 `SCOPE_NOT_ASSIGNED`; videos in scope must have delivery condition IMMEDIATE — otherwise 422 `DELIVERY_CONDITION_MISMATCH`; plaintext link emailed via T039 and returned once), `listTokens`, `revokeToken` (`revoke_access_token()`). Constitution VII, FR-D011, ADR-014
+- [ ] T098 [US18] Create Route Handlers `app/api/v1/assets/[type]/[id]/assign/route.ts` (POST), `assign/[assignmentId]/route.ts` (DELETE), `assignments/route.ts` (GET), `app/api/v1/beneficiaries/[id]/tokens/route.ts` (GET, POST), `tokens/[tokenId]/route.ts` (DELETE)
+- [ ] T099 [US18] Add assignment UI to `app/(dashboard)/beneficiaries/[id]/page.tsx` — "Assign to Resource" dialog (type → resource → allocation %), allocation bars, remaining-percentage display, informational per-beneficiary aggregate (FR-D005, Clarifications 2026-09-18)
+- [ ] T230 [US18] Create `lib/security/access-session.ts` + `app/api/v1/access/exchange/route.ts` + `app/api/v1/access/logout/route.ts` — `exchange(token)`: hash lookup, expiry/revocation/beneficiary-status checks, sets `used_at`/`last_used_at`, PENDING → ACTIVE, audit `access.exchanged`; mints the stateless access cookie (`{ tokenId, exp }` AES-GCM-encrypted with `ACCESS_COOKIE_KEY`, `httpOnly; Secure; SameSite=Strict; Path=/api/v1/access`, 30-min sliding, ≤ token expiry); `readAccessSession(req)` used by `withApi({ auth:'access-cookie' })` re-checking `access_tokens` on every call; `rateLimit:'accessExchange'` (ADR-014, analysis finding S2)
+- [ ] T100 [US18] Create access-cookie Route Handlers `app/api/v1/access/resources/route.ts` (GET scoped list + grant type + expiry), `access/documents/[id]/route.ts` + `download/route.ts`, `access/assets/[type]/[id]/route.ts` (encrypted fields never returned), `access/videos/[id]/route.ts` (delivery condition ↔ grant type enforced on every access per data-model § 11 strict mapping: IMMEDIATE → any grant whose scope includes the video, DEAD_MAN_SWITCH → DMS_RELEASE only, EMERGENCY_ACCESS → EMERGENCY_ACCESS only; mismatch → 422 `DELIVERY_CONDITION_MISMATCH`) — `withApi({ auth:'access-cookie', rateLimit:'tokenAccess' })`, service client with token-scope authorization, read-only, every access audited with the beneficiary as actor (FR-D011, FR-H015, FR-K008)
+- [ ] T231 [US18] Create `app/api/v1/access/plan-sections/[section]/route.ts` + `lib/services/plan-section-renderer.ts` — validates the section key against the scope, reads the owner's **latest finalized** `legacy_plan_versions` snapshot, returns a read-only rendering of that section (never a draft); audited (FR-I012, FR-J001, Clarifications 2026-09-18, analysis finding I7)
+- [ ] T101 [US18] Create `app/(public)/access/page.tsx` — public page: reads `?t=`, immediately `POST /access/exchange`, strips the token from the URL (`history.replaceState`), then renders the scoped resource list (documents with download, read-only asset views, videos, plan sections), grant type, expiry timer, clear expired/revoked/INACTIVE states, logout
+- [ ] T229 [US18] Create `tests/integration/allocation.test.ts` — Σ allocation ≤ 100 per resource (second assignment 60 % after 50 % → 422 with remaining 50), concurrent assignments race under `FOR UPDATE` never exceed 100, direct INSERT into `beneficiary_assignments` denied to `authenticated`, unassign frees allocation, INACTIVE beneficiary refused, cross-user resource refused, audit rows written; `delete_asset()` removes the asset's assignments and attachments and soft-deletes it atomically (rolled back as a whole on failure) while direct `UPDATE … SET deleted_at` on asset tables by `authenticated` is denied; `issue_access_token()` (DIRECT_SHARE) rejects any scope id not currently assigned to the beneficiary (422 `SCOPE_NOT_ASSIGNED`) and accepts a scope that is a subset of its assignments (FR-D004/D005, FR-D011, Constitution VII, XVII)
 
-**Checkpoint**: Beneficiary assignments with allocation constraints and token-based access fully operational.
+**Checkpoint**: Assignments with allocation constraints and cookie-scoped access (incl. plan sections) fully operational.
 
 ---
 
 ## Phase 13: User Story 20 — Final Review and Legacy Plan Completion (Priority: P2)
 
-**Goal**: Users can perform a comprehensive final review ensuring completeness
+**Goal**: Comprehensive final review ensuring completeness
 
-**Independent Test**: Complete plan with beneficiaries + assets + documents → review → verify completeness indicators → finalize
+**Independent Test**: Plan with beneficiaries + assets + documents → review → completeness indicators → finalize (with/without acknowledgment)
 
 ### Implementation for User Story 20
 
-- [ ] T102 [US20] Extend `backend/src/services/legacy-plan.service.ts` `getReview()` method — compute cross-entity completeness: check beneficiary count, asset assignment coverage, document attachment status, allocation totals per asset, incomplete wizard steps. Return structured completeness report with section-level scores and warnings
-- [ ] T103 [US20] Update `frontend/src/app/(dashboard)/legacy-plan/steps/review.tsx` — Enhanced review step: show cross-entity completeness (beneficiary list with allocations, asset coverage chart, document attachment status), section-level completion percentages, warning badges for incomplete items, actionable links ("Add more beneficiaries", "Complete financial assets"), summary statistics card
+- [ ] T102 [US20] Extend `lib/services/legacy-plan.service.ts` `getReview()` — cross-entity completeness: beneficiary count/status, asset assignment coverage, unassigned assets, beneficiaries without allocations, document attachments, allocation totals per resource, incomplete steps; structured report with section scores, warnings and the exact `incompleteSections` list the finalize function will use
+- [ ] T103 [US20] Update `app/(dashboard)/legacy-plan/steps/review.tsx` — cross-entity completeness (beneficiaries with allocations, asset coverage, document status), section percentages, warning badges, actionable links, summary card; acknowledgment flow consistent with T069
 
 **Checkpoint**: Comprehensive review with cross-entity completeness indicators operational.
 
@@ -276,150 +319,152 @@
 
 ## Phase 14: User Story 8 — AI Assistant for Legacy Planning (Priority: P2)
 
-**Goal**: AI-powered conversational assistant providing legacy planning guidance
+**Goal**: Conversational assistant with server-side provider abstraction, validation, disclaimers and persistent draft infrastructure
 
-**Independent Test**: Open assistant → ask about legacy planning → receive guidance with disclaimer → verify server-side AI call
+**Independent Test**: Ask about legacy planning → streamed guidance with disclaimer → provider switched via env → outage → graceful error
 
 ### Implementation for User Story 8
 
-- [ ] T104 [P] [US8] Create `backend/src/services/ai/ai-provider.interface.ts` — AIProvider interface: `generateResponse(prompt: string, options?: { systemPrompt?, temperature?, maxTokens?, model? }): Promise<{ content: string, tokenCount: number, model: string, provider: string }>`. AIProviderConfig type. Constitution VI: provider abstraction
-- [ ] T105 [P] [US8] Create `backend/src/services/ai/openai.provider.ts` — OpenAIProvider implementing AIProvider: uses openai SDK, reads OPENAI_API_KEY from env (never client-side per Constitution VI), handles rate limits, retries with backoff, error mapping
-- [ ] T106 [P] [US8] Create `backend/src/services/ai/gemini.provider.ts` — GeminiProvider implementing AIProvider: uses @google/generative-ai SDK, reads GEMINI_API_KEY from env, handles rate limits, retries, error mapping
-- [ ] T107 [US8] Create `backend/src/services/ai/ai-provider.factory.ts` — Factory function: `getProvider(providerName?: string): AIProvider`. Default from AI_DEFAULT_PROVIDER env var. Fallback logic if primary provider fails (FR-R010)
-- [ ] T108 [P] [US8] Create `backend/src/services/ai/ai-validation.service.ts` — AIValidationService: `validateResponse(response, context)` → check for hallucination indicators (fabricated references, unsupported claims), flag uncertainty, assess completeness, return `{ isValid: boolean, warnings: string[], confidenceScore: number }`. Constitution VI: detect unsupported claims, hallucinations
-- [ ] T109 [US8] Create `backend/src/services/ai/ai-assistant.service.ts` — AIAssistantService: `chat(userId, message, conversationHistory?)` → construct system prompt (legacy planning domain expert, never claim to be a lawyer, always recommend professional legal counsel), call AI provider, validate response, create AIInteraction record (sanitized — no raw PII in logs per Constitution XVI), return response with disclaimer. FR-L007: disclaimer in every response
-- [ ] T110 [US8] Create `backend/src/controllers/ai.controller.ts` — Handlers: POST `/ai/assistant/message`, GET `/ai/assistant/history`. Rate limited (AI cost control)
-- [ ] T111 [US8] Create `backend/src/routes/v1/ai.routes.ts` — Mount with auth middleware and AI-specific rate limiter
-- [ ] T112 [P] [US8] Create `frontend/src/app/(dashboard)/ai/assistant/page.tsx` — AI chat interface: message list with user/assistant bubbles, input with send button, streaming response display, disclaimer banner at top ("AI Assistant — not legal advice"), conversation history, loading skeleton, dark theme with glassmorphism message cards, Framer Motion message animations. Constitution XIII
-- [ ] T113 [P] [US8] Create `frontend/src/components/shared/ai-disclaimer.tsx` — Reusable AI disclaimer component: "This AI assistant provides informational guidance only. It does not constitute legal advice. Consult a qualified attorney for legal matters." Styled as a subtle but always-visible banner
+- [ ] T104 [P] [US8] Create `lib/ai/provider.ts` — `AIProvider` interface: `generateText(req)`, `generateStructured<T>(req, zodSchema): Promise<{ data: T, usage, model, provider }>` (provider structured-output mode + Zod parse on receipt), `stream(req)`; `AIRequest` (system, messages, temperature, maxTokens, model?); `AIUsage` (tokens, estimated cost). Constitution VI, FR-R001
+- [ ] T105 [P] [US8] Create `lib/ai/providers/openai.ts` — `openai` SDK; `OPENAI_API_KEY` server-only; structured outputs via JSON schema derived from Zod; retries with backoff; error mapping; never logs prompt content containing user data (FR-R002)
+- [ ] T106 [P] [US8] Create `lib/ai/providers/gemini.ts` — `@google/genai`; `GEMINI_API_KEY`; `responseSchema` for structured outputs; retries; error mapping
+- [ ] T107 [US8] Create `lib/ai/factory.ts` — `getProvider(name?)` defaulting to `AI_DEFAULT_PROVIDER`; fallback to the secondary provider on outage; `AIUnavailableError` → 503 `AI_UNAVAILABLE` for graceful degradation (FR-R010)
+- [ ] T108 [P] [US8] Create `lib/ai/validation.ts` — `validateResponse(output, context)`: completeness checks, unsupported-claim and fabricated-reference heuristics (citations, statutes, case names), uncertainty markers → `{ isValid, warnings[], confidence: 0–1, flaggedSpans[] }` (FR-R003–R005)
+- [ ] T206 [P] [US8] Create `lib/ai/prompts/` (versioned templates with `promptVersion`) and `lib/ai/schemas/` (Zod output schemas: assistant reply with `disclaimer` + `confidence`, will-draft sections with per-section confidence, extraction schema for NL input, document findings). Usage/cost recorded on `ai_interactions` (ADR-008)
+- [ ] T233 [US8] Create `lib/services/ai/draft.service.ts` + `lib/repositories/ai-draft.repository.ts` — `createDraft(kind, links)`, `addAiVersion(draftId, content, sectionConfidence, usage)` (service client; content encrypted with T020; links the `ai_interactions` row), `addUserVersion` (→ `update_ai_draft()` via user client), `getDraft`/`listVersions` (decrypt for owner), `confirmWill` (→ `confirm_ai_draft()`), `confirmAnalysis` (→ `confirm_analysis_findings()`), `reject`, `supersede`; `ai_interactions` never receives content (ADR-016)
+- [ ] T109 [US8] Create `lib/services/ai/assistant.service.ts` — `chat(user, message, clientHistory?)` — `clientHistory` is the **client-held, session-scoped** prior turns (max 20 turns, bounded per-turn length, Zod-validated; used only to build the prompt, never persisted): system prompt (legacy-planning guide, never claims to be a lawyer, recommends professional counsel, answers product/process questions — FR-L006), context from the user's plan (missing-information detection — FR-L004), provider call (stream), validation, `ai_interactions` row with sanitized metadata only (no message text, no raw PII — Constitution XVI, ADR-016), disclaimer in every response (FR-L007)
+- [ ] T110 [US8] Create Route Handlers `app/api/v1/ai/assistant/message/route.ts` (POST `{ message, history?: Turn[] }` — `history` = client-held prior turns, max 20, bounded per-turn length; streaming response, `withApi({ rateLimit:'ai' })`, `maxDuration` set; message/history text is **not persisted**) and `interactions/route.ts` (GET — sanitized `ai_interactions` records of the current user only; never conversation or message content)
+- [ ] T112 [P] [US8] Create `app/(dashboard)/ai/assistant/page.tsx` — chat UI (streaming), persistent disclaimer banner, in-session history kept as **client-held state only** (sent as `history` with each message, cleared on sign-out and on idle timeout, never persisted server-side), skeletons, glassmorphism message cards, Framer Motion
+- [ ] T113 [P] [US8] Create `components/shared/ai-disclaimer.tsx` — always-visible disclaimer ("informational guidance only, not legal advice; consult a qualified attorney") and "AI-generated" label component (FR-M013, FR-R009)
+- [ ] T232 [US8] Create `tests/unit/ai/validation.test.ts` + `tests/unit/ai/factory.test.ts` + `tests/integration/ai-drafts.test.ts` — fabricated citation/statute detection, unsupported-claim flags, confidence scoring, disclaimer presence, structured-output schema failure handling, provider fallback on outage and `AI_UNAVAILABLE` when both fail, no prompt content in logs; draft versioning (AI/USER), content encrypted at rest, `ai_interactions` contains no content, `confirm_ai_draft()` requires ownership and supersedes prior confirmed, `confirm_analysis_findings()` creates records atomically (FR-R003–R010, FR-M010/M011, FR-N007/N008, Constitution XVII)
+- [ ] T244 [US8] Create `docs/AI_MODULE.md` — provider abstraction, prompt/schema versioning, validation heuristics, confidence semantics, draft persistence and confirmation model, cost controls, outage behaviour (Constitution XVIII)
 
-**Checkpoint**: AI assistant providing conversational guidance with provider abstraction and disclaimers.
+**Checkpoint**: AI assistant with provider abstraction, structured/validated outputs, disclaimers, draft persistence and graceful degradation.
 
 ---
 
 ## Phase 15: User Story 14 — Security Center (Priority: P2)
 
-**Goal**: Users can view and manage their security posture — sessions, login history, MFA, password
+**Goal**: Users can view and manage their security posture — sessions, login history, MFA, password, idle timeout
 
-**Independent Test**: View active sessions → revoke one → view login history → change password → verify MFA management
+**Independent Test**: Sign in from two browsers → Security Center shows both → revoke one → login history present → security score updates when MFA enabled
 
 ### Implementation for User Story 14
 
-- [ ] T114 [P] [US14] Create `backend/src/services/security.service.ts` — SecurityService: `getActiveSessions(userId)` → list active sessions with device info, IP, location, lastActive. `revokeSession(sessionId, userId)` → verify ownership, delete session, log audit. `getLoginHistory(userId, pagination)` → query AuditLog for auth events. `getSecurityAuditHistory(userId, pagination)` → query AuditLog for security-sensitive events. `getSecurityStatus(userId)` → compute security score (MFA enabled +30, email verified +20, strong password +20, recent sessions reviewed +15, backup codes generated +15). FR-O009: security score
-- [ ] T115 [US14] Create `backend/src/controllers/security.controller.ts` — Handlers: GET `/security/sessions`, DELETE `/security/sessions/:id`, GET `/security/login-history`, GET `/security/audit-history`, GET `/security/status`
-- [ ] T116 [US14] Create `backend/src/routes/v1/security.routes.ts` — Mount with auth middleware
-- [ ] T117 [P] [US14] Create `frontend/src/app/(dashboard)/security-center/page.tsx` — Security Center dashboard: security score ring/gauge with breakdown, active sessions list with device icons and revoke buttons, recent login timeline, quick-action cards (change password, manage MFA, review backup codes). Dark theme with blue/cyan accent highlights, Framer Motion number counter animation for score
-- [ ] T118 [US14] Create `frontend/src/app/(dashboard)/settings/page.tsx` — Settings page: profile management (name, email with re-auth), password change form (current + new + confirm with re-auth), notification preferences toggles, display preferences (theme, date format, currency)
+- [ ] T114 [P] [US14] Create `lib/services/security.service.ts` — `getActiveSessions(user)` (Clerk Backend API `sessions.getSessionList({ userId })` → browser/device/city/country/last active), `revokeSession(user, sessionId)` (verify session belongs to user → Clerk revoke → audit `auth.session_revoked`), `getLoginHistory(user, pagination)` (audit auth events), `getSecurityAuditHistory`, `getSecurityStatus(user)` (score: MFA +30, verified email +20, backup codes +15, recent security review +15, no unresolved new-device alerts +20), `recordClientEvent` (T203/T220). FR-O001–O009
+- [ ] T115 [US14] Create Route Handlers `app/api/v1/security/sessions/route.ts` (GET), `sessions/[id]/route.ts` (DELETE), `login-history/route.ts`, `audit-history/route.ts`, `status/route.ts`, `events/route.ts` (POST — idle-timeout events from T220 and, if T203 requires, failed sign-in reports)
+- [ ] T117 [P] [US14] Create `app/(dashboard)/security-center/page.tsx` — score gauge with breakdown, sessions list with revoke, login timeline, alerts, quick actions (open Clerk security settings, review backup codes, set idle timeout), cyan accents, Framer Motion counter
+- [ ] T118 [US14] Create `app/(dashboard)/settings/page.tsx` — app profile fields (incl. alternate email), preferences (theme, date format, currency), notification preferences; links to `settings/security` (Clerk-managed email/password/MFA — FR-B007 enforced by Clerk reverification)
 
-**Checkpoint**: Security Center with session management, login history, and security score operational.
+**Checkpoint**: Security Center with Clerk-backed session management, login history, and security score operational.
 
 ---
 
 ## Phase 16: User Story 9 — AI Will Generator (Priority: P3)
 
-**Goal**: AI generates will drafts from user's plan data with editing, confirmation, and PDF export
+**Goal**: AI generates versioned will drafts from NL input + plan data with editing, confirmation, and PDF export
 
-**Independent Test**: Generate draft → review → edit → regenerate → confirm → export PDF
+**Independent Test**: Provide NL input → generate → review → edit (USER version) → regenerate → confirm (reverified) → export PDF → versions listed
 
 ### Implementation for User Story 9
 
-- [ ] T119 [P] [US9] Create `backend/src/services/ai/ai-will-generator.service.ts` — AIWillGeneratorService: `generateDraft(userId)` → load user's legacy plan + beneficiaries + assets, construct structured prompt, call AI provider, validate response for hallucinations and unsupported claims, create AIInteraction with confirmationStatus=PENDING, return draft with confidence indicators. `editDraft(interactionId, userId, edits)` → update draft content. `regenerateDraft(interactionId, userId, instructions?)` → re-generate with optional user instructions. `confirmDraft(interactionId, userId)` → set confirmationStatus=CONFIRMED, persist as part of legacy plan, log audit. FR-M010: explicit confirmation. `exportPdf(interactionId, userId)` → render draft to PDF using @react-pdf/renderer. Constitution V: never claim legal validity
-- [ ] T120 [US9] Add AI Will Generator handlers to `backend/src/controllers/ai.controller.ts` — POST `/ai/will-generator/generate`, PATCH `/ai/will-generator/:id/edit`, POST `/ai/will-generator/:id/regenerate`, POST `/ai/will-generator/:id/confirm`, GET `/ai/will-generator/:id/export`
-- [ ] T121 [P] [US9] Create `frontend/src/app/(dashboard)/ai/will-generator/page.tsx` — Will generator page: "Generate Draft" CTA (if no draft), draft viewer with section-by-section display, inline editing, confidence indicators per section, "Regenerate" button with optional instructions, "Confirm and Save" with confirmation dialog, "Export PDF" button. AI-generated content labels (FR-M013). Legal disclaimer banner (FR-M014). Dark theme with subtle gradient sections
-- [ ] T122 [US9] Create `backend/src/services/ai/pdf-export.service.ts` — PDFExportService: render confirmed will draft to PDF with header (LegacyVault AI branding), sections, beneficiary details, asset lists, signature lines, disclaimer footer ("AI-generated draft — consult legal counsel"), timestamp
+- [ ] T119 [P] [US9] Create `lib/services/ai/will-generator.service.ts` — `generate(user, { input?, instructions? })` (extract structured info from NL input with the extraction schema — FR-M001/M002; load plan + beneficiaries + assets + attachments; `generateStructured` with the will-draft schema; validation for hallucinations/unsupported claims and internal consistency — names match records, assets exist, allocations valid (FR-M009); creates the draft + AI version via T233 with per-section confidence), `edit` (USER version), `regenerate(instructions?)` (new AI version), `confirm(versionId)` (→ `confirm_ai_draft()`, audit — FR-M010/M011), `listVersions`; never claims legal validity (Constitution V)
+- [ ] T120 [US9] Create Route Handlers `app/api/v1/ai/will-generator/drafts/route.ts` (GET, POST), `drafts/[draftId]/route.ts` (GET, PATCH), `drafts/[draftId]/versions/route.ts` (GET), `drafts/[draftId]/regenerate/route.ts` (POST), `drafts/[draftId]/confirm/route.ts` (POST, `reverification:'strict'`, `confirmed: true`), `drafts/[draftId]/export/route.ts` (GET PDF; `runtime = 'nodejs'`) — `rateLimit:'ai'`
+- [ ] T121 [P] [US9] Create `app/(dashboard)/ai/will-generator/page.tsx` — NL input + generate CTA, draft viewer with version selector, section-by-section display with inline editing, confidence indicators, regenerate with instructions, "Confirm and Save" through the re-auth gate, "Export PDF" (confirmed version), AI-generated labels (FR-M013), disclaimer (FR-M014)
+- [ ] T122 [US9] Create `lib/services/ai/pdf-export.service.ts` — `@react-pdf/renderer` document from the confirmed version: header/branding, sections, beneficiaries, assets, signature lines, footer disclaimer ("AI-generated draft — consult legal counsel"), timestamp, draft version number
 
-**Checkpoint**: AI-powered will generation with editing, confirmation gates, and PDF export.
+**Checkpoint**: AI-powered will generation with NL input, versioning, editing, confirmation gates, and PDF export.
 
 ---
 
 ## Phase 17: User Story 10 — Dead Man Switch Configuration (Priority: P3)
 
-**Goal**: Users can configure the Dead Man Switch state machine with check-in parameters and release scope
+**Goal**: Users can configure the Dead Man Switch state machine with check-in parameters, trusted contacts (beneficiaries) and release scope
 
-**Independent Test**: Configure DMS → set schedule → select release scope → verify status display
+**Independent Test**: Configure DMS → schedule → select contacts and release scope (incl. plan sections) → status shows next check-in
 
 ### Implementation for User Story 10
 
-- [ ] T123 [P] [US10] Create `backend/src/validators/dms.validators.ts` — Zod schemas: `configureDeadManSwitchSchema` (inactivityPeriodDays: number.int.min(7).max(365), checkInFrequencyDays: number.int.min(1).max(90), escalationDelayHours: number.int.min(1).max(168).default(24), trustedContacts: array of { name, email, phone? }.min(1), releaseScope: { documentIds: uuid[], assetIds: uuid[], planSections: string[] }), `updateDeadManSwitchSchema` (partial)
-- [ ] T124 [P] [US10] Create `backend/src/services/dead-man-switch.service.ts` — DeadManSwitchService: `configure(userId, data)` → validate releaseScope references valid owned resources, create/update DeadManSwitch (userId UNIQUE constraint — one per user), set status ACTIVE, calculate nextCheckInAt, create DeadManSwitchEvent (CONFIG_CHANGE), schedule first check-in job, log audit. `getConfig(userId)`. `updateConfig(userId, data)` → re-validate scope, update, log event. `pause(userId)` → set status PAUSED, record pausedAt, cancel scheduled jobs, log event. `resume(userId)` → set status ACTIVE, calculate nextCheckInAt, schedule job, log event. `disable(userId)` → requireReAuth, set status INACTIVE, cancel jobs, log event. `getEvents(userId)` → list DMS events. State machine transitions per data-model.md
-- [ ] T125 [US10] Create `backend/src/controllers/dms.controller.ts` — Handlers per api-contracts.md: GET, POST, PATCH, POST `/pause`, POST `/resume`, DELETE (with re-auth), GET `/events`
-- [ ] T126 [US10] Create `backend/src/routes/v1/dead-man-switch.routes.ts` — Mount with auth middleware, DELETE with requireReAuth
-- [ ] T127 [P] [US10] Create `frontend/src/app/(dashboard)/dead-man-switch/page.tsx` — DMS configuration page: setup form (inactivity period slider, check-in frequency, trusted contacts list with add/remove, release scope resource selector), status dashboard (current state badge, next check-in countdown timer, event timeline), action buttons (pause/resume/disable). Dark theme with cyan accent for timer, Framer Motion countdown animation
+- [ ] T123 [P] [US10] Create `lib/validators/dms.validators.ts` — `configureDeadManSwitchSchema` (inactivityPeriodDays 7–365, checkInFrequencyDays 1–90, escalationDelayHours 1–168 default 24, `contactBeneficiaryIds: uuid[]` ≥ 1, releaseScope `{ documents: uuid[], assets: [{type,id}], videos: uuid[], planSections: sectionKey[] }`, escalationRules), `updateDeadManSwitchSchema`, `checkInSchema`, `cancelEscalationSchema`
+- [ ] T124 [P] [US10] Create `lib/services/dead-man-switch.service.ts` + repository — wrappers over guarded functions via the user client: `configure` (`dms_configure()` — validates contacts are the caller's non-INACTIVE beneficiaries and scope ids are owned; one switch per user; status ACTIVE; computes `next_check_in_at`; CONFIG_CHANGE event; audit), `getConfig` (with contacts and scope resolved), `pause` / `resume` / `disable` (`dms_pause/resume/disable()`; disable behind reverification), `getEvents`. Scheduling is data-driven (`next_check_in_at`) — the hourly `dms-scan` picks it up (ADR-006). State machine per data-model.md
+- [ ] T125 [US10] Create Route Handlers `app/api/v1/dead-man-switch/route.ts` (GET, POST, PATCH, DELETE with `reverification:'strict'`), `pause/route.ts`, `resume/route.ts`, `events/route.ts`
+- [ ] T127 [P] [US10] Create `app/(dashboard)/dead-man-switch/page.tsx` — setup form (inactivity slider, frequency, trusted-contact picker from beneficiaries, release-scope selector for documents/assets/videos/plan sections), status dashboard (state badge, next check-in countdown, event timeline), pause/resume/disable (disable through re-auth gate)
 
-**Checkpoint**: Dead Man Switch configurable with state machine and release scope selection.
+**Checkpoint**: Dead Man Switch configurable with beneficiary contacts, state machine and release scope selection.
 
 ---
 
 ## Phase 18: User Story 19 — Responding to Dead Man Switch Check-ins (Priority: P3)
 
-**Goal**: Background jobs send check-in reminders; users can check in; missed check-ins trigger escalation
+**Goal**: Scheduled scan sends check-ins; users check in with identity verification; missed check-ins escalate; scoped release to beneficiary contacts; health monitored
 
-**Independent Test**: DMS active → check-in notification → respond → verify timer reset. Simulate miss → verify escalation
+**Independent Test**: DMS active → scan enqueues check-in → email → check in (reverified) → timer reset. Simulate miss (test clock) → escalation → recovery cancels. Simulate scan stall → CRITICAL audit + alert
 
 ### Implementation for User Story 19
 
-- [ ] T128 [P] [US19] Create `backend/src/jobs/dms-checkin.job.ts` — BullMQ job handler: query DeadManSwitch records where status=ACTIVE and nextCheckInAt ≤ now, for each: send check-in reminder notification, update status to REMINDER_SENT, create DeadManSwitchEvent. Job must be idempotent (safe to retry). Schedule as recurring job (runs every hour)
-- [ ] T129 [P] [US19] Create `backend/src/jobs/dms-escalation.job.ts` — BullMQ job handler: query DeadManSwitch where status in (REMINDER_SENT, GRACE_PERIOD, ESCALATING), check if deadline passed, advance state machine per data-model.md. REMINDER_SENT past window → GRACE_PERIOD. GRACE_PERIOD expired → ESCALATING (send trusted contact notifications). ESCALATING steps exhausted → RELEASING (execute conditional release of scoped resources). Create DeadManSwitchEvent for each transition. Job must be idempotent
-- [ ] T130 [US19] Create `backend/src/services/dead-man-switch.service.ts` check-in method — `checkIn(userId, verificationData)` → verify identity (password/MFA), update status to ACTIVE, reset nextCheckInAt, reset currentEscalationStep, create DeadManSwitchEvent (CHECK_IN), log audit. `cancelEscalation(userId, verificationData)` → verify identity, set status ACTIVE, reset escalation state, create event (RECOVERY), log audit. FR-I007: recovery at every stage
-- [ ] T131 [US19] Create `backend/src/jobs/dms-release.job.ts` — BullMQ job handler: for DeadManSwitch in RELEASING state, read releaseScope, generate BeneficiaryAccessTokens for each trusted contact scoped to selected resources, send release notification emails with access links, update status to RELEASED, create DeadManSwitchEvent (RELEASE), log audit. Release ONLY pre-authorized resources (FR-I012). Never full account access
-- [ ] T132 [US19] Create `backend/src/config/queue.ts` — BullMQ queue configuration: connect to Redis, create named queues (dms-checkin, dms-escalation, dms-release, notifications), configure default job options (attempts: 3, backoff: exponential), worker setup
-- [ ] T133 [US19] Add check-in response UI to `frontend/src/app/(dashboard)/dead-man-switch/page.tsx` — "Check In Now" button with identity verification dialog (password + MFA if enabled), success confirmation with timer reset display, escalation warning banner if in grace period or escalating state
-- [ ] T183 [P] [US19] Create `backend/src/jobs/dms-health-check.job.ts` — BullMQ recurring job (runs every 15 minutes): verify dms-checkin and dms-escalation jobs are running and not stalled. If a scheduled job has not executed within 2× its expected interval, log a CRITICAL audit event (`action: 'dms.job_health_failure'`), send alert notification to Super Admin. Prevents silent DMS failures that could cause false escalations. NFR-AVL-002
+- [ ] T128 [P] [US19] Create `app/api/internal/cron/dms-scan/route.ts` + `lib/jobs/handlers/dms-scan.ts` + `lib/jobs/handlers/dms-send-checkin.ts` — the hourly endpoint **only enqueues one** idempotent `dms.scan` job (`idempotency_key = dms.scan:{YYYY-MM-DDTHH}`, so concurrent Vercel Cron / `pg_cron` triggers within the same hour are no-ops); the `dms.scan` handler performs the scan — selects switches `status = ACTIVE AND next_check_in_at <= now()` (and the T129 deadlines) and enqueues the per-switch transition jobs, e.g. `dms.send-checkin` with `idempotency_key = dms:{id}:{next_check_in_at}` — then completes; the runner writes `jobs.finished_at`, and that SUCCEEDED `dms.scan` row is the scheduler heartbeat read by T183 (no other heartbeat mechanism); the send-checkin handler sends the check-in notification (email + in-app, link to T207), transitions ACTIVE → REMINDER_SENT via `dms_transition()`, records the event. Idempotent, retry-safe (FR-I002)
+- [ ] T129 [P] [US19] Create `lib/jobs/handlers/dms-advance.ts` — enqueued by the scan for switches in REMINDER_SENT/GRACE_PERIOD/ESCALATING whose deadline passed: REMINDER_SENT → GRACE_PERIOD (secondary reminder), GRACE_PERIOD → ESCALATING (trusted-contact notification to the linked beneficiaries, `current_escalation_step`++ with `escalation_delay_hours` between steps), steps exhausted → RELEASING (enqueue `dms.release`). Each transition via `dms_transition()` + event + audit (FR-I005, FR-I006)
+- [ ] T130 [US19] Add `checkIn(user)` and `cancelEscalation(user)` to `lib/services/dead-man-switch.service.ts` — call `dms_check_in()` / `dms_cancel_escalation()`; Route Handlers `app/api/v1/dead-man-switch/check-in/route.ts` and `cancel-escalation/route.ts` enforce Clerk reverification (`multi_factor` when MFA enabled, else `strict`); check-in → ACTIVE, reset `next_check_in_at` and escalation step, CHECK_IN event; cancel → ACTIVE (also from RELEASED: revokes DMS_RELEASE tokens), RECOVERY event; audit both (FR-I003, FR-I004, FR-I007, FR-I008)
+- [ ] T131 [US19] Create `lib/jobs/handlers/dms-release.ts` — for RELEASING switches: `system_issue_access_token(grant_type = DMS_RELEASE)` for each `dead_man_switch_contacts` beneficiary scoped **exactly** to `release_scope` (documents, assets, videos, plan sections), send release emails with access links (`/access?t=…`), transition → RELEASED, RELEASE event, audit. Never grants account access (FR-I012, ADR-014)
+- [ ] T133 [US19] Add check-in UI to `app/(dashboard)/dead-man-switch/page.tsx` — "Check In Now" through the re-auth gate, success state with reset timer, escalation warning banner in GRACE_PERIOD/ESCALATING/RELEASED with "Cancel escalation"
+- [ ] T183 [P] [US19] Create `lib/observability/dms-health.ts` — evaluated by `GET /api/v1/health` (detailed mode) and by `run-jobs`: if the most recent SUCCEEDED `dms.scan` job (enqueued hourly by the T128 endpoint; `jobs.finished_at` written by the job runner) is older than 2× the scan interval, write CRITICAL audit `dms.job_health_failure`, alert Super Admins (email) and Sentry. Production redundancy trigger in T211. NFR-AVL-002
+- [ ] T207 [US19] Create `app/(dashboard)/dead-man-switch/check-in/page.tsx` — landing page for check-in email links: requires sign-in (proxy) + reverification, one-click check-in, "This wasn't me" path to Security Center; handles already-checked-in/paused states
+- [ ] T235 [US19] Create `tests/integration/dead-man-switch.test.ts` — with a controllable clock: configure (contacts must be owned beneficiaries; scope must be owned; plan-section keys validated), scan enqueues idempotently (re-run creates no duplicates), REMINDER_SENT → GRACE_PERIOD → ESCALATING → RELEASING → RELEASED with correct deadlines, invalid transitions raise `INVALID_TRANSITION`, `dms_check_in`/`dms_cancel_escalation` recover at every stage and revoke release tokens from RELEASED, release tokens carry exactly the release scope and nothing else, direct writes to `dead_man_switches` denied, health check flags a stalled scan and writes the CRITICAL audit row (FR-I001–I012, NFR-AVL-002, Constitution VII, XVII)
 
-**Checkpoint**: Full DMS lifecycle operational with background jobs, check-ins, escalation, scoped release, and job health monitoring.
+**Checkpoint**: Full DMS lifecycle operational on the job table with scheduled scans, reverified check-ins, escalation, scoped release to beneficiary contacts, and health monitoring.
 
 ---
 
 ## Phase 19: User Story 11 — Emergency Access (Priority: P3)
 
-**Goal**: Emergency contacts can request time-limited, scoped access with multi-step verification
+**Goal**: Designated beneficiaries can request time-limited, scoped access with email-OTP verification, owner decision or configured timeout rule
 
-**Independent Test**: Configure contact → request access (as contact) → verify OTP → owner approves → access resources → verify expiry
+**Independent Test**: Designate contact (email with request link) → request (public) → OTP → owner approves (reverified) → access via `/access` → expiry via housekeeping; repeat with AUTO_GRANT, DENY and WAIT rules
 
 ### Implementation for User Story 11
 
-- [ ] T134 [P] [US11] Create `backend/src/validators/emergency-access.validators.ts` — Zod schemas: `configureContactSchema` (contactName, contactEmail, contactPhone?, accessScope: { documentIds, assetIds }, verificationMethod: enum EMAIL_OTP|MFA default EMAIL_OTP, autoGrantTimeoutHours: number.int.min(1).max(168).optional), `requestAccessSchema` (configId, requesterEmail), `verifyAccessSchema` (requestId, verificationCode: string.length(6))
-- [ ] T135 [P] [US11] Create `backend/src/services/emergency-access.service.ts` — EmergencyAccessService: `configureContact(userId, data)` → create EmergencyAccessConfig, log audit. `updateContact(id, userId, data)`. `removeContact(id, userId)` → soft delete. `listContacts(userId)`. `requestAccess(configId, requesterEmail)` → validate email matches config, generate OTP (6-digit), hash and store, set 15-min expiry, send OTP email, create EmergencyAccessRequest (PENDING → VERIFYING), notify owner, log audit. `verifyAccess(requestId, code)` → verify OTP (max 3 attempts per FR edge case), set status VERIFIED, log audit. `approveRequest(requestId, userId)` → verify owner, set status APPROVED → ACTIVE, calculate expiresAt (configurable), generate scoped BeneficiaryAccessToken, log audit. `denyRequest(requestId, userId)`. `revokeAccess(requestId, userId)`. State machine per data-model.md
-- [ ] T136 [US11] Create `backend/src/jobs/emergency-access-timeout.job.ts` — BullMQ job: query VERIFIED requests where autoGrantTimeout has passed and owner hasn't responded → set status AUTO_GRANTED → ACTIVE, generate scoped token, notify contact, log audit (FR-J006)
-- [ ] T137 [US11] Create `backend/src/jobs/emergency-access-expiry.job.ts` — BullMQ job: query ACTIVE emergency access where expiresAt ≤ now → set status EXPIRED, revoke tokens, log audit (FR-J008)
-- [ ] T138 [US11] Create `backend/src/controllers/emergency-access.controller.ts` — All handlers per api-contracts.md including public request/verify endpoints (no auth) and owner management endpoints (auth required)
-- [ ] T139 [US11] Create `backend/src/routes/v1/emergency-access.routes.ts` — Mount: public routes (request, verify) without auth, owner routes with auth
-- [ ] T140 [P] [US11] Create `frontend/src/app/(dashboard)/emergency-access/page.tsx` — Emergency access config page: contact list with access scope display, add/edit contact dialog with resource scope selector, pending requests section with approve/deny buttons, active access list with revoke buttons, event history timeline
+- [ ] T134 [P] [US11] Create `lib/validators/emergency-access.validators.ts` — `configureContactSchema` (`beneficiaryId`, `accessScope` (same shape as token scope), `onTimeout: WAIT|AUTO_GRANT|DENY` default WAIT, `timeoutHours 1–168` required unless WAIT, `requestExpiryHours` default 72, `accessDurationHours` default 72), `updateContactSchema`, `requestAccessSchema` (`configId`, `requesterEmail`), `verifyAccessSchema` (`requestId`, `code` length 6), `decisionSchema`
+- [ ] T135 [P] [US11] Create `lib/services/emergency-access.service.ts` + repository — owner: `configureContact` (`ea_configure_contact()`; sends designation email with the personal request link `/emergency-access/request?c=<configId>`; sets `lastDesignationSentAt`), `updateContact`, `removeContact`, `resendDesignation` (rate-limited), `listContacts`, `listRequests`, `approve` (`ea_decide_request(APPROVE)` → app generates token, passes hash → EMERGENCY_ACCESS token; access link emailed), `deny`, `revoke` (`ea_revoke()`); public (service client): `requestAccess(configId, email)` (`ea_request_access()` — email must match the beneficiary; 6-digit OTP hashed, 15-min expiry; owner notified; generic response), `verifyOtp(requestId, code)` (`ea_verify_otp()` — ≤ 3 attempts → FAILED), `getRequesterStatus`. State machine per data-model.md (Clarifications 2026-09-18)
+- [ ] T136 [US11] Create `lib/jobs/handlers/ea-auto-decide.ts` — enqueued by housekeeping for VERIFIED requests past `timeout_hours` without an owner decision: `AUTO_GRANT` → AUTO_GRANTED → ACTIVE with token (notify contact + owner), `DENY` → DENIED (notify both), `WAIT` → no action; all via `ea_transition()` and audited (FR-J006)
+- [ ] T137 [US11] Create `lib/jobs/handlers/ea-expire.ts` — enqueued by housekeeping: PENDING/VERIFYING/VERIFIED requests past `request_expires_at` → EXPIRED; ACTIVE requests past `expires_at` → EXPIRED with token revoked; audit (FR-J007)
+- [ ] T138 [US11] Create Route Handlers: owner `app/api/v1/emergency-access/contacts/route.ts` (GET, POST), `contacts/[id]/route.ts` (PATCH, DELETE), `contacts/[id]/resend/route.ts` (POST), `requests/route.ts` (GET), `requests/[id]/approve/route.ts` (POST, `reverification:'strict'`), `requests/[id]/deny/route.ts`, `requests/[id]/revoke/route.ts`; public `request/route.ts`, `verify/route.ts`, `requests/[id]/status/route.ts` (`withApi({ auth:'public', rateLimit:'publicEmergency' })`). Granted access uses the shared `/access` endpoints (T100/T230)
+- [ ] T140 [P] [US11] Create `app/(dashboard)/emergency-access/page.tsx` — contacts (beneficiary picker) with scope selector and timeout rule, resend designation, pending requests (approve through re-auth gate / deny), active access (revoke), event timeline
+- [ ] T208 [US11] Create public pages `app/(public)/emergency-access/request/page.tsx` (prefilled `configId` from the link, email field), `verify/page.tsx` (OTP entry, attempts feedback), `status/page.tsx` (pending owner decision / approved with access link sent / denied / expired — generic wording); no sign-in required
+- [ ] T236 [US11] Create `tests/integration/emergency-access.test.ts` — designation requires an owned non-INACTIVE beneficiary and owned scope; request with mismatched email → generic response, no OTP; OTP wrong ×3 → FAILED; expired OTP; owner approve issues an EMERGENCY_ACCESS token scoped exactly to `accessScope` and consumable via `/access/exchange`; deny; timeout rules AUTO_GRANT / DENY / WAIT with a test clock; request expiry → EXPIRED; active-access expiry revokes the token; owner revoke; contact cannot access out-of-scope resources (403); all events audited; direct writes to `emergency_access_*` denied (FR-J001–J010, Constitution VII, XVII)
 
-**Checkpoint**: Emergency access with multi-step verification, owner approval, time-limited access, and auto-expiry.
+**Checkpoint**: Emergency access with designation link, email-OTP verification, owner decision, configurable timeout rules, time-limited scoped access and expiry.
 
 ---
 
 ## Phase 20: User Story 12 — Video Legacy (Priority: P3)
 
-**Goal**: Users can upload, encrypt, and assign video messages with delivery conditions
+**Goal**: Users can upload (resumable, direct-to-storage), validate, scan, assign and deliver video messages (upload-only baseline)
 
-**Independent Test**: Upload video → assign to beneficiary → set delivery condition → verify encrypted storage
+**Independent Test**: Create upload session → TUS upload 300 MB → complete → processing job (scan) → assign → delivery condition enforced; > 500 MB rejected
 
 ### Implementation for User Story 12
 
-- [ ] T141 [P] [US12] Create `backend/src/services/video-legacy.service.ts` — VideoLegacyService: `upload(userId, file)` → validate (MP4/WebM/MOV, ≤500MB per FR-K002, magic bytes), encrypt with AES-256-GCM, upload to S3 (multipart for large files), create VideoMessage record, log audit. `getById(id, userId)`. `updateMetadata(id, userId, data)`. `delete(id, userId)` → soft delete. `list(userId)`. `assignBeneficiary(videoId, userId, beneficiaryId, deliveryCondition)` → create BeneficiaryAssignment with resourceType=VIDEO_MESSAGE. `unassignBeneficiary(videoId, userId, beneficiaryId)`
-- [ ] T142 [US12] Create `backend/src/controllers/video-legacy.controller.ts` — Handlers: POST `/videos/upload` (multipart, upload middleware with 500MB limit), GET/PATCH/DELETE `/videos/:id`, POST/DELETE `/videos/:id/assign`
-- [ ] T143 [US12] Create `backend/src/routes/v1/video-legacy.routes.ts` — Mount with auth and upload middleware (500MB limit)
-- [ ] T144 [P] [US12] Create `frontend/src/app/(dashboard)/video-legacy/page.tsx` — Video legacy page: video grid with thumbnails (generated or placeholder), upload with progress bar and chunked upload for large files, metadata editor dialog (title, description, recipient, delivery condition dropdown), beneficiary assignment, delivery condition badges. Dark theme with video player modal
+- [ ] T141 [P] [US12] Create `lib/services/video.service.ts` + repository — `createUploadSession(user, { title, mimeType MP4/WebM/MOV, sizeBytes ≤ 500 MB })` → resumable TUS target in `quarantine/{clerkUserId}/{uploadId}` (Clerk JWT + T218 storage policy), `completeUpload` (actual size ≤ 500 MB, container magic bytes, enqueue `video.process`), `lib/jobs/handlers/video-process.ts` (malware scan via T247 streaming, metadata probe, SCANNED_CLEAN → `promote_upload()` → `videos`, audit), `getStreamUrl` (authorize — owner by ownership, recipient only through a grant whose type satisfies the data-model § 11 delivery-condition strict mapping, evaluated on every access, mismatch → 422 `DELIVERY_CONDITION_MISMATCH` — + signed URL 15 min + audit — FR-K006–K008), `updateMetadata` (Class A allow-list), `delete` (`delete_video()`), `list`, `assignBeneficiary`/`unassignBeneficiary` (assignments, FR-K005). Upload-only (Clarifications 2026-09-18)
+- [ ] T142 [US12] Create Route Handlers `app/api/v1/videos/route.ts`, `uploads/route.ts`, `uploads/[uploadId]/route.ts`, `uploads/[uploadId]/complete/route.ts`, `[id]/route.ts`, `[id]/stream/route.ts`, `[id]/assign/route.ts`, `[id]/assign/[beneficiaryId]/route.ts`
+- [ ] T144 [P] [US12] Create `app/(dashboard)/video-legacy/page.tsx` — grid with thumbnails/placeholders, `tus-js-client` upload with progress and resume, processing status, metadata dialog (title, description, recipient, delivery condition), assignment, player modal using the signed stream URL
 
-**Checkpoint**: Video upload, encryption, assignment, and delivery condition management complete.
+**Checkpoint**: Video upload, validation/scanning, assignment, and delivery-condition management complete.
 
 ---
 
 ## Phase 21: User Story 13 — AI Document Analysis (Priority: P3)
 
-**Goal**: AI analyzes uploaded documents to extract assets, beneficiaries, dates, and figures
+**Goal**: AI analyzes vault documents into a versioned DOCUMENT_ANALYSIS draft with confidence and selective confirmation
 
-**Independent Test**: Upload document → analyze → view extracted findings with confidence → confirm selected findings
+**Independent Test**: Select document → analyze (202) → poll → findings with confidence → confirm selected → records created; nothing persisted without confirmation; reject purges per retention
 
 ### Implementation for User Story 13
 
-- [ ] T145 [P] [US13] Create `backend/src/services/ai/ai-document-analysis.service.ts` — AIDocumentAnalysisService: `analyze(userId, documentId)` → verify document ownership, retrieve document from vault, extract text content (PDF text extraction, OCR hook for images per FR-N003), construct analysis prompt, call AI provider, validate response, return findings with confidence indicators (FR-N006). Findings structure: `{ assets: [], beneficiaries: [], dates: [], figures: [], summary: string, confidence: number }`. Create AIInteraction with confirmationStatus=PENDING. `confirmFindings(interactionId, userId, selectedFindings)` → persist selected findings to user's plan/assets (FR-N007), set confirmationStatus=CONFIRMED, log audit. FR-N008: no auto-persistence
-- [ ] T146 [US13] Add document analysis handlers to `backend/src/controllers/ai.controller.ts` — POST `/ai/document-analysis/analyze` (accepts documentId), POST `/ai/document-analysis/:id/confirm`
-- [ ] T147 [P] [US13] Create `frontend/src/app/(dashboard)/ai/document-analysis/page.tsx` — Document analysis page: document selector (from vault), "Analyze" button, results display with categorized findings (assets, beneficiaries, dates, figures), confidence bars per finding, checkboxes to select findings for import, "Confirm Selected" button, summary view. AI disclaimer banner
+- [ ] T145 [P] [US13] Create `lib/services/ai/document-analysis.service.ts` + `lib/jobs/handlers/ai-analyze-document.ts` — `analyze(user, documentId)` (ownership; creates an `ai_drafts` row (kind DOCUMENT_ANALYSIS) via T233; enqueues job; returns 202 `{ draftId }`), job: download from private bucket (service client), text extraction (`unpdf`) / OCR hook (pluggable; Gemini vision acceptable) (FR-N003), `generateStructured` with the findings schema `{ summary, assets[], beneficiaries[], dates[], figures[] }`, validation + per-finding confidence (FR-N006), stores the encrypted AI version, updates `progress`; `getStatus`; `confirm(user, draftId, selected)` → `confirm_analysis_findings()` creates asset/beneficiary rows atomically, CONFIRMED, audit (FR-N007, FR-N008); `reject`. Document content never logged; `ai_interactions` stays sanitized
+- [ ] T146 [US13] Create Route Handlers `app/api/v1/ai/document-analysis/analyses/route.ts` (POST, 202), `analyses/[draftId]/route.ts` (GET status/findings), `analyses/[draftId]/confirm/route.ts` (POST), `analyses/[draftId]/reject/route.ts` (POST) — `rateLimit:'ai'`
+- [ ] T147 [P] [US13] Create `app/(dashboard)/ai/document-analysis/page.tsx` — document selector, analyze with progress indicator (NFR-PER-004), categorized findings with confidence bars, selection checkboxes, "Confirm Selected", reject, summary, AI disclaimer
 
-**Checkpoint**: AI document analysis with confidence indicators and selective confirmation.
+**Checkpoint**: AI document analysis as a background job with persistent findings, confidence indicators and selective confirmation.
 
 ---
 
@@ -427,32 +472,30 @@
 
 **Goal**: Super Admin dashboard for user management, audit logs, analytics, and support
 
-**Independent Test**: Login as Super Admin → manage users → view audit logs → view analytics → perform support operations
+**Independent Test**: Regular user → /admin and /api/v1/admin → 403. Super Admin → manage users → audit logs → analytics → unlock/reset MFA (audited)
 
 ### Implementation for User Story 15
 
-- [ ] T148 [P] [US15] Create `backend/src/services/admin.service.ts` — AdminService: `listUsers(filters, pagination)` → search/filter users (email, name, role, status). `getUserById(id)` → full user details (masked sensitive fields). `assignRole(id, role)` → update user role, log audit (FR-P004). `unlockAccount(id)` → reset failedLoginAttempts=0, lockedUntil=null, log audit (FR-P007). `resetUserMfa(id)` → disable MFA, clear secret/backup codes, log audit (FR-P007). `getAnalytics()` → user registrations (by day/week/month), active users, total storage usage, plan statistics. `getPlatformAuditLogs(filters, pagination)` → query all AuditLog entries with filters
-- [ ] T149 [US15] Create `backend/src/controllers/admin.controller.ts` — Handlers: GET `/admin/users`, GET `/admin/users/:id`, PATCH `/admin/users/:id/role`, POST `/admin/users/:id/unlock`, POST `/admin/users/:id/reset-mfa`, GET `/admin/analytics`, GET `/admin/analytics/registrations`, GET `/admin/analytics/storage`. All require Super Admin role
-- [ ] T150 [US15] Create `backend/src/routes/v1/admin.routes.ts` — Mount with auth + requireRole(['SUPER_ADMIN']) middleware on all routes (FR-P012: backend authorization)
-- [ ] T151 [P] [US15] Create `frontend/src/app/(admin)/admin/page.tsx` — Admin dashboard: user count card, active users card, storage usage card, recent registrations chart (line/bar), quick-action links. Dark theme admin layout with purple accents
-- [ ] T152 [P] [US15] Create `frontend/src/app/(admin)/admin/users/page.tsx` — User management: searchable data table (name, email, role, status, last login), row actions (assign role, unlock, reset MFA), role assignment dialog, bulk actions
-- [ ] T153 [P] [US15] Create `frontend/src/app/(admin)/admin/audit-logs/page.tsx` — Platform audit log viewer: filterable table (actor, action, resource, outcome, date), date range picker, action type filter, export capability
-- [ ] T154 [US15] Create `frontend/src/app/(admin)/layout.tsx` — Admin route group layout: verify Super Admin role client-side (UX only — backend enforces), admin-specific sidebar navigation, redirect non-admins to dashboard
+- [ ] T148 [P] [US15] Create `lib/services/admin.service.ts` — `listUsers(filters, pagination)`, `getUserById` (masked sensitive fields), `assignRole(admin, id, role)` (service-client update of `users.role` — the only write path for that column; audit — FR-P004), `unlockAccount(admin, id)` (Clerk Backend API unlock, audit — FR-P007), `resetUserMfa(admin, id)` (Clerk Backend API disable TOTP/backup codes, audit, notify user — FR-P007), `getAnalytics()` (registrations by period, active users from audit, storage usage from `documents`/`video_messages` sizes), `getPlatformAuditLogs(filters, pagination)`. Service client + explicit `SUPER_ADMIN` check
+- [ ] T149 [US15] Create Route Handlers `app/api/v1/admin/users/route.ts`, `users/[id]/route.ts`, `users/[id]/role/route.ts` (PATCH, `reverification:'strict'`), `users/[id]/unlock/route.ts`, `users/[id]/reset-mfa/route.ts` (`reverification:'strict'`), `analytics/route.ts`, `analytics/registrations/route.ts`, `analytics/storage/route.ts`, and `app/api/v1/audit-logs/admin/route.ts` — all `withApi({ auth:'admin' })` (FR-P012)
+- [ ] T151 [P] [US15] Create `app/(admin)/admin/page.tsx` — user/active/storage cards, registrations chart, quick links; purple accents
+- [ ] T152 [P] [US15] Create `app/(admin)/admin/users/page.tsx` — searchable table (name, email, role, status, last login), actions (assign role, unlock, reset MFA) through the re-auth gate, dialogs
+- [ ] T153 [P] [US15] Create `app/(admin)/admin/audit-logs/page.tsx` — filterable platform audit table (actor, action, resource, outcome, date range), export
+- [ ] T154 [US15] Create `app/(admin)/layout.tsx` — server layout: `requireRole(['SUPER_ADMIN'])` redirect for UX (API re-enforces), admin sidebar; no static prerendering
 
-**Checkpoint**: Super Admin can manage users, view analytics, and access platform-wide audit logs.
+**Checkpoint**: Super Admin can manage users, view analytics, and access platform-wide audit logs; RBAC enforced server-side.
 
 ---
 
 ## Phase 23: Notifications System
 
-**Purpose**: Implement notification abstraction and all notification events
+**Purpose**: Notification endpoints, UI and event wiring (the service itself is T155 in Phase 2)
 
-- [ ] T155 [P] Create `backend/src/services/notification.service.ts` — NotificationService: `send(userId, type, title, content, channel, metadata?)` → create Notification record, dispatch to channel (email via EmailService, in-app via DB insert). `markRead(id, userId)`. `markAllRead(userId)`. `getUnreadCount(userId)`. `list(userId, pagination)`. Retry with exponential backoff (3 attempts) for email delivery failures
-- [ ] T156 Create `backend/src/controllers/notification.controller.ts` — Handlers: GET `/notifications`, GET `/notifications/unread-count`, PATCH `/notifications/:id/read`, POST `/notifications/read-all`
-- [ ] T157 Create `backend/src/routes/v1/notifications.routes.ts` — Mount with auth middleware
-- [ ] T158 [P] Create `frontend/src/components/layout/notification-bell.tsx` — Notification bell component in header: unread count badge, dropdown panel with notification list, mark-as-read action, "View All" link, real-time count update via polling (30s interval). Framer Motion badge bounce animation
-- [ ] T159 Create `frontend/src/app/(dashboard)/notifications/page.tsx` — Full notifications page: notification list with type icons, timestamps, read/unread styling, mark-all-read button, infinite scroll pagination
-- [ ] T160 Wire notification events throughout existing services — Add notification calls to: auth.service (new device login, failed attempts), beneficiary.service (invitation), dead-man-switch.service (check-in reminders, escalation), emergency-access.service (request received, access granted/denied), document.service (shared with beneficiary), dms-release (conditional release)
+- [ ] T156 Create Route Handlers `app/api/v1/notifications/route.ts` (GET), `unread-count/route.ts`, `[id]/read/route.ts` (PATCH — Class A `readAt`), `read-all/route.ts` (POST)
+- [ ] T158 [P] Create `components/layout/notification-bell.tsx` — unread badge, dropdown list, mark-as-read, "View All", 30 s polling, Framer Motion badge bounce
+- [ ] T159 Create `app/(dashboard)/notifications/page.tsx` — list with type icons, timestamps, read/unread styling, mark-all-read, infinite scroll
+- [ ] T160 Wire notification events across services — Clerk webhook handler (new device, MFA change, password change), beneficiary invitations and access links, DMS check-in/escalation/release, emergency access (designation, request, decision, grant, expiry), document shared, AI job completion; verify each event has a template (T039) and honours preferences
+- [ ] T209 [P] Create `app/api/webhooks/email/route.ts` — `withApi({ auth:'webhook', verify })` — provider signature (`EMAIL_WEBHOOK_SECRET`) verified over the raw request body before parsing (T030; browser CSRF check not applied — authenticated per request), `record_webhook_event('EMAIL', …)` idempotency, map delivery events (delivered, bounced, complained) to `notifications.delivery_status` by `providerMessageId`, audit bounces for security-relevant emails (ADR-009)
 
 **Checkpoint**: Notification system operational with email and in-app channels across all modules.
 
@@ -462,9 +505,8 @@
 
 **Purpose**: Users can view their own audit trail
 
-- [ ] T161 Create `backend/src/controllers/audit-log.controller.ts` — Handler: GET `/audit-logs` with pagination + filters (action type, date range, resource type). Scoped to authenticated user's own logs only
-- [ ] T162 Create `backend/src/routes/v1/audit-logs.routes.ts` — Mount with auth middleware
-- [ ] T163 Create `frontend/src/app/(dashboard)/settings/audit-log/page.tsx` — User audit log page: filterable timeline/table view of user's own actions, date range picker, action type filter, expandable details per entry
+- [ ] T161 Create Route Handler `app/api/v1/audit-logs/route.ts` — GET with pagination + filters (action type, date range, resource type), scoped to the caller's own rows (service check + RLS SELECT-own)
+- [ ] T163 Create `app/(dashboard)/settings/audit-log/page.tsx` — filterable timeline/table of the user's own actions, date range, action filter, expandable details
 
 **Checkpoint**: Users can view their own activity history.
 
@@ -472,35 +514,44 @@
 
 ## Phase 25: Polish & Cross-Cutting Concerns
 
-**Purpose**: UI refinement, performance optimization, security hardening
+**Purpose**: UI refinement, performance, security hardening, operations, documentation
 
-- [ ] T164 [P] Create `frontend/src/components/shared/page-transition.tsx` — Framer Motion page transition wrapper with fade + slide animation for route changes (UX-010)
-- [ ] T165 [P] Create `frontend/src/components/shared/skeleton-loader.tsx` — Reusable skeleton loading components matching each data layout (card skeleton, table skeleton, list skeleton, form skeleton). Used across all pages (UX-012)
-- [ ] T166 [P] Create `frontend/src/components/shared/empty-state.tsx` — Reusable empty state component with illustration, message, and action CTA. Used for: no beneficiaries, no assets, no documents, no notifications, no plans
-- [ ] T167 [P] Create `frontend/src/components/shared/confirmation-dialog.tsx` — Reusable confirmation dialog for destructive/authoritative actions: title, description, confirm/cancel buttons, optional warning icon. Used for: delete, finalize, revoke, disable
-- [ ] T168 [P] Add `prefers-reduced-motion` media query check to all Framer Motion and GSAP animations in `frontend/src/hooks/use-reduced-motion.ts`. Constitution XIV: respect user preferences
-- [ ] T169 [P] Create `frontend/src/app/page.tsx` — Landing page: hero section with animated gradient, feature highlights (3-4 cards with icons), security badges, CTA buttons (Register, Learn More), responsive layout. Premium dark design with GSAP scroll animations
-- [ ] T170 Perform responsive layout audit on all pages — verify proper display on desktop (1440px), tablet (768px), and mobile (375px) breakpoints. Fix any overflow, truncation, or layout issues. Constitution XIV
-- [ ] T171 [P] Audit all API error responses across all controllers — verify no stack traces, no database details, no file paths, no internal variable names in error responses. Constitution X
-- [ ] T172 [P] Audit all log statements across backend — verify no passwords, tokens, encryption keys, or sensitive PII logged. Constitution XVI
-- [ ] T173 Add keyboard navigation support to all interactive elements — tab order, focus styles, enter/escape handling on dialogs, arrow key navigation on lists. Constitution XIV: full keyboard navigation
-- [ ] T174 Run `npm audit` and resolve all high/critical dependency vulnerabilities in both `frontend/` and `backend/`
-- [ ] T175 Create `docs/SYSTEM_ARCHITECTURE.md` — architecture overview with component diagram, data flow, technology stack, security layers
-- [ ] T176 Create `docs/API_SPECIFICATION.md` — full API documentation derived from contracts and implemented endpoints
-- [ ] T177 Create `docs/RBAC.md` — role definitions, permission matrix, authorization flow
-- [ ] T178 Create `docs/SECURITY.md` — security architecture, encryption approach, session management, threat model
-- [ ] T179 [P] Run quickstart.md validation scenarios end-to-end — verify all documented scenarios pass
-- [ ] T180 Update `docs/BRAIN.md` with current implemented state, technology decisions from research.md, and architecture from plan.md
-- [ ] T184 [P] Implement dark/light theme toggle in `frontend/src/components/layout/theme-toggle.tsx` — Toggle button in dashboard header, persist preference to user's `preferences.theme` field via API and localStorage fallback. Apply `dark`/`light` class to `<html>` element. Default: dark. Respect system `prefers-color-scheme` on first visit. UX-002
-- [ ] T185 Conduct pre-production security review checklist covering: authentication flows (registration, login, MFA, password reset), authorization (RBAC enforcement on every endpoint), cross-user data isolation (verify no user can access another user's resources via direct ID manipulation), file access controls (signed URLs, private buckets, no public access), token security (session tokens, beneficiary access tokens, emergency access OTPs), rate limiting (auth endpoints, AI endpoints, sensitive operations), secrets management (no secrets in source control, env vars only), secure HTTP headers (HSTS, CSP, X-Frame-Options, X-Content-Type-Options), error handling (no stack traces/DB details/file paths in responses), OWASP Top 10 (injection, XSS, CSRF, broken auth, security misconfiguration, sensitive data exposure, etc.), dependency vulnerabilities (`npm audit`). Document findings in `docs/SECURITY_REVIEW.md`. NFR-SEC-002
-- [ ] T186 [P] Create `scripts/backup-database.sh` — Automated PostgreSQL backup script using `pg_dump`: full database backup with compression, upload to S3 backup bucket, configurable retention policy (default: 30 daily, 12 weekly, 12 monthly), verification step (restore to temp DB and validate table count). Create `scripts/restore-database.sh` for point-in-time restore. NFR-DR-001
-- [ ] T187 [P] Create `docs/DISASTER_RECOVERY.md` — Disaster recovery runbook: backup schedule, retention policy, restore procedure (step-by-step), RTO/RPO targets, escalation contacts, restore testing schedule (quarterly), data verification steps post-restore. NFR-DR-002
-- [ ] T188 [P] Integrate production error monitoring in `backend/src/config/error-monitoring.ts` — Configure error monitoring service (Sentry or equivalent) with: environment-based DSN from env var (`ERROR_MONITORING_DSN`), release tagging, breadcrumb collection (sanitized — no PII per Constitution XVI), alert rules for error rate spikes, source map upload for stack trace deobfuscation. Attach to Express error handler middleware. NFR-OBS-002
-- [ ] T189 Create `backend/src/controllers/user-data.controller.ts` — User data export and account deletion endpoints: GET `/users/me/export` → compile all user data (profile, beneficiaries, assets, documents metadata, plans, AI interactions, audit logs) into structured JSON export, stream as download. DELETE `/users/me` → require re-authentication + confirmation (`confirmed: true`), soft-delete user account (set `deletedAt`), revoke all sessions, cancel active DMS, log audit event. Implement 30-day grace period before hard delete via scheduled job. POST `/users/me/cancel-deletion` → cancel pending deletion within grace period. NFR-CMP-001
-- [ ] T190 [P] Create `backend/src/routes/v1/user-data.routes.ts` — Mount user data export/deletion endpoints with auth + requireReAuth middleware
-- [ ] T191 [P] Create load test script in `scripts/load-test.ts` — Basic load test using Artillery or k6: simulate 100+ concurrent users performing CRUD operations (create asset, upload document, fetch dashboard), measure p95 response times, verify under 500ms for CRUD operations (SC-004, NFR-PER-002, NFR-SCL-002). Output summary report
+- [ ] T164 [P] Create `components/shared/page-transition.tsx` — Framer Motion route transition wrapper (fade + slide) (UX-010)
+- [ ] T165 [P] Create `components/shared/skeleton-loader.tsx` — card/table/list/form skeletons (UX-012)
+- [ ] T166 [P] Create `components/shared/empty-state.tsx` — illustration, message, CTA (beneficiaries, assets, documents, notifications, plans)
+- [ ] T167 [P] Create `components/shared/confirmation-dialog.tsx` — destructive/authoritative confirmation (delete, finalize, revoke, disable)
+- [ ] T168 [P] Create `hooks/use-reduced-motion.ts` and apply to all Framer Motion and GSAP animations (UX-009, Constitution XIV)
+- [ ] T169 [P] Create `app/(marketing)/page.tsx` — landing: animated gradient hero, feature cards, security badges, CTAs (Sign up, Learn more), GSAP scroll animations, responsive
+- [ ] T170 Responsive layout audit on all pages (1440 / 768 / 375 px); fix overflow/truncation (Constitution XIV)
+- [ ] T171 [P] Audit all Route Handler error responses — no stack traces, database details, file paths, internal names; envelope shape consistent; `Cache-Control: private, no-store` present (Constitution X, XV)
+- [ ] T172 [P] Audit all log statements and Sentry breadcrumbs — no passwords, tokens, keys, document content, access tokens/cookies, unnecessary PII (Constitution XVI)
+- [ ] T173 Keyboard navigation support across interactive elements — tab order, focus styles, Enter/Escape on dialogs, arrow keys on lists (Constitution XIV)
+- [ ] T174 Run `pnpm audit` and resolve high/critical vulnerabilities; add to CI
+- [ ] T175 Create `docs/SYSTEM_ARCHITECTURE.md` — single-app architecture, request pipeline (incl. access-cookie mode), write-protection model, job flow, platform boundaries (Clerk/Supabase/Vercel/ClamAV), security layers, diagrams; finalize `docs/DEPLOYMENT.md`
+- [ ] T176 Create `docs/API_SPECIFICATION.md` — full API documentation derived from contracts and implemented handlers, including access-cookie, internal webhooks/cron
+- [ ] T177 Create `docs/RBAC.md` — roles, permission matrix, service-layer + RLS + column-grant + guarded-function authorization flow, reverification levels
+- [ ] T178 Create `docs/SECURITY.md` — security architecture, Clerk configuration, write-protection model, key management and rotation (T240), token/cookie model, threat model, T203 outcome
+- [ ] T179 [P] Run quickstart.md validation scenarios end to end — all documented scenarios pass
+- [ ] T180 Update `docs/BRAIN.md` and `docs/PROJECT_STATUS.md` with implemented state per phase (Constitution XVIII)
+- [ ] T184 [P] Implement dark/light theme toggle in `components/layout/theme-toggle.tsx` — persist to `preferences.theme` via API with localStorage fallback, `data-theme` on `<html>`, default dark, respect `prefers-color-scheme` on first visit (UX-002)
+- [ ] T185 Pre-production security review (NFR-SEC-002) — authentication (Clerk configuration: policy, verification, MFA, lockout, session lifetime, reverification), authorization (service checks, RLS policies, column grants, guarded functions per table — evidence from T215), cross-user isolation (ID manipulation), storage (bucket privacy, `storage.objects` policies, signed URL expiry, quarantine gating, production scanner active), tokens/OTPs/access cookies (hashing, expiry, scope, no tokens in paths/logs), webhooks/cron secrets, rate limiting (all layers), secrets management (Vercel env only, no `NEXT_PUBLIC_` secrets), headers/CSP, cache safety (no-store; no `use cache` on user data), error handling, OWASP Top 10, dependency vulnerabilities, ADR-013 activation decision. Document in `docs/SECURITY_REVIEW.md`
+- [ ] T186 [P] Create `scripts/backup-database.sh` / `scripts/restore-database.sh` — `pg_dump` via the Supabase pooled connection string (from env, never committed) with compression, upload to a separate private backup bucket **with provider encryption at rest and access limited to the operations role**, retention (30 daily / 12 weekly / 12 monthly), restore verification to a scratch database; document Supabase automated backups + PITR (prod) as primary. NFR-DR-001
+- [ ] T187 [P] Create `docs/DISASTER_RECOVERY.md` — backup schedule (Supabase + off-platform), retention, restore procedures (PITR and `pg_restore`), RTO/RPO targets, escalation contacts, quarterly restore drill, post-restore verification. NFR-DR-002
+- [ ] T188 [P] Integrate Sentry via `@sentry/nextjs` — `instrumentation.ts`, `instrumentation-client.ts`, server/edge configs; DSN from env; release tagging + source maps in CI; PII scrubbing (`beforeSend`, strip `t` query params and cookies); capture in `withApi()` and the job runner; alert rules for error-rate spikes and `dms.job_health_failure`. NFR-OBS-002 (ADR-010)
+- [ ] T189 Create user data export/deletion — `app/api/v1/users/me/export/route.ts` (GET, `reverification:'strict'`: profile, beneficiaries, assets with decrypted sensitive fields, document metadata, plans + versions, confirmed AI drafts, own audit rows → JSON download; audited), `app/api/v1/users/me/route.ts` DELETE (`reverification:'strict'`, `confirmed: true`: set `deletion_requested_at` via service client, revoke Clerk sessions via Backend API, pause DMS, revoke access tokens, audit), `cancel-deletion/route.ts` (POST); `lib/jobs/handlers/user-hard-delete.ts` after 30-day grace (enqueued by housekeeping): delete storage objects, anonymize/soft-delete rows, delete the Clerk user via Backend API, retain audit rows. NFR-CMP-001
+- [ ] T191 [P] Create `scripts/load-test.ts` (k6) — 100+ concurrent users performing CRUD (asset create, dashboard fetch, document metadata) against a preview deployment; p95 < 500 ms for CRUD (SC-004, NFR-PER-002, NFR-SCL-002); summary report
+- [ ] T210 [P] Verify platform prerequisites and configure edge protections — Vercel plan supports minute-level cron and the `maxDuration` needed for job/AI/scan handlers (largest video scan); Supabase file-size limit ≥ 500 MB and PITR (prod); Clerk plan supports inactivity timeout, session-token customization and reverification; ClamAV endpoint reachable from Vercel functions; Vercel WAF rate-limit rules for `/api/v1/emergency-access/{request,verify}`, `/api/v1/access/*`, `/api/v1/ai/*`; record outcomes in `docs/DEPLOYMENT.md` (ADR-007, ADR-011, ADR-015)
+- [ ] T211 Enable the production redundancy trigger — Supabase `pg_cron` + `pg_net` schedules calling `/api/internal/cron/run-jobs` and `dms-scan` with `CRON_SECRET` (stored in Vault/settings, not in SQL files); verify both triggers are idempotent together; document in `docs/DEPLOYMENT.md` (ADR-006, NFR-AVL-002)
+- [ ] T234 [P] Create the remaining planned documentation — `docs/PRD.md`, `docs/FRD.md` (derived from spec.md), `docs/UI_UX_GUIDELINES.md`, `docs/ROADMAP.md`, `docs/CHANGELOG.md`, `docs/FEATURES.md` (status per module) per plan.md Documentation Plan
+- [ ] T237 [P] Automated accessibility testing — `@axe-core/playwright` across every route in `tests/e2e/a11y.spec.ts` (no serious/critical violations), contrast check against WCAG 2.1 AA tokens, reduced-motion verification, focus-order checks; plus a documented manual screen-reader pass (NVDA/VoiceOver) on the wizard, vault and access pages (NFR-ACC-001, SC-008, AC-UX1–UX4)
+- [ ] T238 Create `.github/workflows/deploy.yml` — preview deployment per PR (Vercel), staging on merge to main (Supabase staging project), production behind a manual approval gate; gated `supabase db push` with migration dry-run diff; smoke tests after each deploy; documented and drilled rollback (revert deploy + down-migration policy) (Constitution XXI)
+- [ ] T239 Production operations — external uptime monitor on `/api/v1/health`, Vercel log drains to a retained store with access control, Sentry alert routing (error-rate spikes, `dms.job_health_failure`, DEAD job count, scanner ERROR rate), on-call/escalation notes in `docs/DEPLOYMENT.md` (SC-010, NFR-OBS-002)
+- [ ] T240 Encryption key rotation — `scripts/rotate-encryption-key.ts` (re-encrypt all `ENCRYPTED` columns and `ai_draft_versions.content` from `ENCRYPTION_KEY_PREVIOUS` to the active key in batches with progress and audit), dual-read window procedure, `ACCESS_COOKIE_KEY` rotation (invalidates access sessions), runbook in `docs/SECURITY.md` (Constitution IV)
+- [ ] T241 Create `tests/e2e/*.spec.ts` (Playwright, Clerk testing tokens) — critical journeys: registration → onboarding; will → finalize (with acknowledgment); beneficiary → assign → token → `/access` exchange → download; upload → scan → share; DMS lifecycle with test clock; emergency access lifecycle; AI assistant; AI will → confirm → export; plus `tests/integration/authorization-matrix.test.ts` (role × resource × operation at service and RLS layers, token/cookie scopes, admin routes 403 for users) (Constitution XVII, Phase 12)
+- [ ] T243 Create `docs/BUSINESS_RULES.md` — allocation rules (per resource), beneficiary lifecycle and removal cascade, finalization minimum + acknowledgment, DMS state machine and release scope, emergency-access verification/timeout rules, access-token/cookie rules, retention policy (Constitution XVIII)
+- [ ] T245 Implement the retention/purge policy from data-model.md § Retention in housekeeping (T199) — `ai_drafts` REJECTED/SUPERSEDED purge (90 d), soft-deleted domain rows (30 d), access tokens (90 d after expiry), notifications (180 d), `ai_interactions` (12 months), `processed_webhook_events` (30 d); each purge audited in aggregate; audit-log retention remains an owner/legal decision
 
-**Checkpoint**: All features polished, security audited, backups configured, monitoring integrated, documentation complete, validation scenarios passing.
+**Checkpoint**: All features polished, security reviewed, backups/DR documented, monitoring and CD in place, platform prerequisites verified, documentation complete, validation scenarios and test suites passing.
 
 ---
 
@@ -508,104 +559,140 @@
 
 ### Phase Dependencies
 
-- **Setup (Phase 1)**: No dependencies — can start immediately
-- **Foundational (Phase 2)**: Depends on Setup completion — BLOCKS all user stories
+- **Setup (Phase 1)**: No dependencies — can start immediately (scaffold exists)
+- **Foundational (Phase 2)**: Depends on Setup — BLOCKS all user stories (schema T018, privileges/RLS T218, functions T019, pipeline T030, auth helpers T036, audit, storage, jobs T197, notifications T155, Clerk webhook T198, test suites T212–T217, CI gate T246)
 - **US1 Registration (Phase 3)**: Depends on Foundational
-- **US16 Login/MFA (Phase 4)**: Depends on US1 (auth service exists)
-- **US2 Legacy Plan (Phase 5)**: Depends on US1 (auth required)
-- **US3 Beneficiaries (Phase 6)**: Depends on US1 (auth required)
-- **US17 Account Recovery (Phase 7)**: Depends on US1 (auth service extension)
-- **US4 Financial Assets (Phase 8)**: Depends on US1 (auth)
-- **US5 Physical Assets (Phase 9)**: Depends on US4 (shared asset service)
-- **US6 Digital Assets (Phase 10)**: Depends on US4 (shared asset service)
-- **US7 Document Vault (Phase 11)**: Depends on US1 (auth), storage config (Phase 2)
-- **US18 Assignments (Phase 12)**: Depends on US3 (beneficiaries) + US4-6 (assets) + US7 (documents)
-- **US20 Final Review (Phase 13)**: Depends on US2 (plan) + US3 (beneficiaries) + US4-6 (assets)
-- **US8 AI Assistant (Phase 14)**: Depends on US1 (auth)
-- **US14 Security Center (Phase 15)**: Depends on US1 (auth) + US16 (MFA)
-- **US9 AI Will Gen (Phase 16)**: Depends on US2 (plan) + US8 (AI infrastructure)
-- **US10 DMS Config (Phase 17)**: Depends on US3 (beneficiaries) + US7 (documents)
-- **US19 DMS Check-ins (Phase 18)**: Depends on US10 (DMS config)
-- **US11 Emergency Access (Phase 19)**: Depends on US3 (beneficiaries) + US7 (documents)
-- **US12 Video Legacy (Phase 20)**: Depends on US3 (beneficiaries), storage config
-- **US13 AI Doc Analysis (Phase 21)**: Depends on US7 (vault) + US8 (AI infra)
-- **US15 Admin (Phase 22)**: Depends on US1 (auth + RBAC)
-- **Notifications (Phase 23)**: Depends on most features (wires events)
-- **Audit Access (Phase 24)**: Depends on Phase 2 (audit service)
+- **US16 Login/MFA (Phase 4)**: Depends on US1
+- **US2 Legacy Plan (Phase 5)**: Depends on US1; step 3 (T221) depends on US3, steps 4–6 (T222) on US4–6, step 9 (T223) and the plan-attachment handlers in T059 on US7/T227 — build steps 1, 2, 7, 8, 10, 11 and the core handlers first, embed 3–6 and 9 as those modules land
+- **US3 Beneficiaries (Phase 6)**: Depends on US1
+- **US17 Account Recovery (Phase 7)**: Depends on US16
+- **US4 Financial Assets (Phase 8)**: Depends on US1 + T201; attachments panel depends on T227 (US7)
+- **US5 / US6 (Phases 9–10)**: Depend on US4
+- **US7 Document Vault (Phase 11)**: Depends on US1, storage (T029), jobs (T197), scanner (T181/T247)
+- **US18 Assignments & Access (Phase 12)**: Depends on US3 + US4–6 + US7
+- **US20 Final Review (Phase 13)**: Depends on US2 + US3 + US4–6 + US18
+- **US8 AI Assistant (Phase 14)**: Depends on US1; T233 depends on T018/T019
+- **US14 Security Center (Phase 15)**: Depends on US1 + US16
+- **US9 AI Will Gen (Phase 16)**: Depends on US2 + US8 (T233)
+- **US10 DMS Config (Phase 17)**: Depends on US3 + US7
+- **US19 DMS Check-ins (Phase 18)**: Depends on US10 + jobs + notifications (T155, Phase 2) + access exchange (T230)
+- **US11 Emergency Access (Phase 19)**: Depends on US3 + US7 + housekeeping (T199) + access exchange (T230)
+- **US12 Video Legacy (Phase 20)**: Depends on US3, storage policies (T218), jobs, scanner (T247)
+- **US13 AI Doc Analysis (Phase 21)**: Depends on US7 + US8 (T233) + jobs
+- **US15 Admin (Phase 22)**: Depends on US1 (+ Clerk Backend API usage from US14)
+- **Notifications (Phase 23)**: endpoints/UI depend on Phase 2 (T155); event wiring depends on the features it wires
+- **Audit Access (Phase 24)**: Depends on Phase 2
 - **Polish (Phase 25)**: Depends on all user stories
 
 ### User Story Dependencies
 
 ```
-US1 (Registration) ──┬── US16 (Login/MFA)
-                     ├── US2 (Legacy Plan) ──── US20 (Final Review)
-                     ├── US3 (Beneficiaries) ─┬── US18 (Assignments)
-                     │                        ├── US10 (DMS Config) ── US19 (DMS Check-ins)
-                     │                        └── US11 (Emergency Access)
-                     ├── US4 (Financial) ─┬── US5 (Physical)
-                     │                    └── US6 (Digital)
-                     ├── US7 (Document Vault) ── US13 (AI Doc Analysis)
-                     ├── US8 (AI Assistant) ─── US9 (AI Will Gen)
-                     ├── US14 (Security Center)
-                     ├── US12 (Video Legacy)
-                     ├── US15 (Admin)
-                     └── US17 (Account Recovery)
+US1 (Registration/Onboarding) ──┬── US16 (Login/MFA/Idle timeout) ── US17 (Recovery)
+                                ├── US2 (Legacy Plan) ──── US20 (Final Review)
+                                ├── US3 (Beneficiaries) ─┬── US18 (Assignments + /access exchange)
+                                │                        ├── US10 (DMS Config) ── US19 (DMS Check-ins)
+                                │                        └── US11 (Emergency Access)
+                                ├── US4 (Financial) ─┬── US5 (Physical)
+                                │                    └── US6 (Digital)
+                                ├── US7 (Document Vault + attachments + scanner) ─┬── US13 (AI Doc Analysis)
+                                │                                                 └── US12 (Video Legacy)
+                                ├── US8 (AI Assistant + drafts) ─── US9 (AI Will Gen)
+                                ├── US14 (Security Center)
+                                └── US15 (Admin)
 ```
 
 ### Parallel Opportunities
 
-- **Phase 1**: T003, T004, T005, T006, T007, T008, T009, T010, T011, T012, T013, T014, T015, T016 (all parallel after T001-T002)
-- **Phase 2**: T020, T021, T022, T023, T024, T025, T026, T027, T028, T029, T032 (all parallel after T018-T019)
-- **Phase 3**: T034, T035, T036, T039, T040-T045 (models/services/pages parallel)
-- **After Phase 3**: US4-US6 can run parallel with US7 and US8
+- **Phase 1**: T003, T005–T016, T192–T196, T202 (all parallel after T001–T002)
+- **Phase 2**: T020–T029, T032, T036, T155, T181, T219 (parallel after T018/T218/T019); T197–T199 after T028/T030; T212–T217 after T019; T242 after T019; T246 after T015/T016
+- **Phase 3**: T034, T035, T039, T040, T041, T045, T049, T050 in parallel
+- **After Phase 3**: US4–US6 ∥ US7 ∥ US8 ∥ US14
 
 ---
 
 ## Implementation Strategy
 
-### MVP First (Phase 1-3 Only)
+### MVP First (Phases 1–3 Only)
 
-1. Complete Phase 1: Setup
-2. Complete Phase 2: Foundational (CRITICAL — blocks all)
-3. Complete Phase 3: User Story 1 (Registration)
-4. **STOP and VALIDATE**: Test registration → verify → login → dashboard
-5. Deploy/demo if ready — this is the minimum viable slice
+1. Complete Phase 1: Setup (scaffold normalization + platform checklists)
+2. Complete Phase 2: Foundational (CRITICAL — blocks all; includes the write-protection model and its tests)
+3. Complete Phase 3: User Story 1 (Clerk registration → onboarding → dashboard)
+4. **STOP and VALIDATE**: sign up → verify → sign in → onboarding → dashboard; audit rows present; RLS + write-protection + pipeline suites green
+5. Deploy a Vercel preview — this is the minimum viable slice
 
 ### Incremental Delivery
 
 1. Setup + Foundational → foundation ready
-2. US1 Registration → **MVP deployed**
-3. US16 Login/MFA + US2 Legacy Plan + US3 Beneficiaries → core value delivered
-4. US4-6 Assets + US7 Vault → asset management layer
-5. US18 Assignments + US20 Review → cross-entity integration
-6. US8 AI Assistant + US14 Security → intelligence + security layer
-7. US9-US13 Advanced features → full feature set
-8. US15 Admin + Notifications + Polish → production-ready
+2. US1 → **MVP deployed**
+3. US16 + US2 (steps 1, 2, 7–11) + US3 → core value delivered
+4. US4–6 + US7 (with attachments and production scanner) → asset management layer; embed wizard steps 3–7
+5. US18 (assignments + `/access` exchange) + US20 → cross-entity integration
+6. US8 (with draft persistence) + US14 → intelligence + security layer
+7. US9–US13 → advanced features (jobs proven under DMS/EA/video/AI load)
+8. US15 + Notifications + Polish/Operations → production-ready
 
 ### Parallel Team Strategy
-
-With multiple developers:
 
 1. Team completes Setup + Foundational together
 2. Once Foundational is done:
    - Developer A: US1 → US16 → US14 → US15
    - Developer B: US2 → US20 → US9
-   - Developer C: US3 → US4-6 → US18
+   - Developer C: US3 → US4–6 → US18
    - Developer D: US7 → US12 → US13
    - Developer E: US8 → US10 → US19 → US11
 3. Stories integrate independently
 
 ---
 
+## Removed Tasks (2026-09-18 re-baseline)
+
+Task IDs retired because their purpose no longer exists under ADR-001…016.
+IDs are **not** reused. Requirement coverage moved as indicated.
+
+| ID | Original purpose | Superseded by |
+|----|------------------|---------------|
+| T004 | Initialize Express.js project in `backend/` | ADR-001 — single Next.js app; T001/T002 |
+| T031 | `backend/src/routes/v1/index.ts` router aggregator | File-based Route Handlers (`app/api/v1/**`) |
+| T037 | Express auth controller (register/login/logout/verify/forgot/reset) | Clerk (T040, T041, T195) |
+| T038 | Express auth routes with rate limiters | Clerk attack protection (T195) + `withApi` rate limits (T025) |
+| T042 | Custom verify-email page | Clerk `<SignUp/>` verification step (T041, T195) |
+| T043 | Custom forgot-password page | Clerk `<SignIn/>` forgot-password flow (T040, T195, T204) |
+| T044 | Custom reset-password page | Clerk flow (T195, T204) |
+| T052 | speakeasy MFA service | Clerk MFA (T056, T195) |
+| T053 | MFA endpoints + `/re-authenticate` | Clerk MFA + reverification (T056, T201) |
+| T054 | Two-step login with `mfaSessionToken` | Clerk second-factor flow |
+| T055 | Custom MFA step component | Clerk `<SignIn/>` |
+| T060 | `legacy-plans.routes.ts` | Route Handlers (T059) |
+| T074 | `beneficiaries.routes.ts` | Route Handlers (T073) |
+| T077 | Custom password-reset service methods | Clerk (T204) |
+| T078 | Custom backup-code consumption | Clerk backup codes (T204) |
+| T082 | `assets.routes.ts` | Route Handlers (T081) |
+| T092 | Multer upload middleware | Direct-to-storage upload flow (T090, T205, T096) |
+| T094 | `documents.routes.ts` | Route Handlers (T093) |
+| T111 | `ai.routes.ts` | Route Handlers (T110) |
+| T116 | `security.routes.ts` | Route Handlers (T115) |
+| T126 | `dead-man-switch.routes.ts` | Route Handlers (T125, T130) |
+| T132 | BullMQ queue configuration (Redis) | Postgres job table + Vercel Cron (T197, T193) — ADR-006 |
+| T139 | `emergency-access.routes.ts` | Route Handlers (T138) |
+| T143 | `video-legacy.routes.ts` + 500 MB Multer limit | Route Handlers (T142) + resumable direct upload (T141) |
+| T150 | `admin.routes.ts` | Route Handlers (T149) |
+| T157 | `notifications.routes.ts` | Route Handlers (T156) |
+| T162 | `audit-logs.routes.ts` | Route Handlers (T161) |
+| T190 | `user-data.routes.ts` | Route Handlers (T189) |
+
+---
+
 ## Notes
 
-- **Total tasks: 191** (T001–T191)
-- Tasks T181–T191 were added to resolve findings from `/speckit-analyze` report
-- [P] tasks = different files, no dependencies
-- [Story] label maps task to specific user story for traceability
+- **Total active tasks: 219** — original IDs T001–T191 minus 28 removed (listed above), plus 21 added in r1 (T192–T212) and 35 added in r2 (T213–T247)
+- Tasks T181–T191 were added on 2026-09-16 to resolve findings from `/speckit-analyze`; T192–T212 on 2026-09-18 r1 for the architecture re-baseline; T213–T247 on 2026-09-18 r2 for the post-analysis remediation (constitution XVII test coverage, write-protection model, unified access tokens, malware scanning, AI drafts, wizard completeness, documentation and operations)
+- Moved in r2 without renumbering: T036 and T155 (Phase 3/23 → Phase 2); T084 rephrased (apply the gate defined in T201)
+- `[P]` tasks = different files, no dependencies
+- `[Story]` label maps task to specific user story for traceability
 - Each user story should be independently completable and testable
 - Commit after each task or logical group
 - Stop at any checkpoint to validate story independently
-- All test tasks omitted — spec does not request TDD. Tests are addressed in Phase 25 (quickstart validation) and can be added per story via `/speckit-tasks` with TDD flag
-- FR-L010 (AI voice input) is SHOULD-level and deferred to post-baseline roadmap
-- SC-001 (registration < 3min) and SC-002 (90% first-attempt completion) are UX validation metrics — verified via usability testing, not implementation tasks
+- **Automated tests are mandatory** (constitution XVII): T212–T217 (foundation), T225, T226, T228, T229, T232, T235, T236, T241; the CI gate T246 blocks merges on failing security-tagged suites (NFR-SEC-003)
+- FR-L010 (AI voice input) is SHOULD-level and deferred to the post-baseline roadmap; in-browser video recording is deferred (Clarifications 2026-09-18)
+- SC-001 and SC-002 are UX validation metrics — verified via usability testing, not implementation tasks
+- **Nothing in this file is implemented yet.** The only application code in the repository is the Next.js scaffold and a temporary Supabase connectivity probe (see `docs/PROJECT_STATUS.md`)

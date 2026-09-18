@@ -1,5 +1,37 @@
 <!--
 SYNC IMPACT REPORT
+Version change: 2.0.0 → 2.0.1 (same day)
+Bump rationale: PATCH — clarification only. Principle IX wording "all frontend
+  and backend code" → "all application code (presentation and server-side)" to
+  match the single-application architecture. No requirement changed.
+
+---- Report for 2.0.0 ----
+Version change: 1.0.0 → 2.0.0
+Amendment date: 2026-09-18
+Proposal / rationale: docs/ARCHITECTURE_DECISIONS.md ADR-012 (with ADR-001..011)
+Bump rationale: MAJOR — Principle VIII and the Technology Stack section are
+  redefined: the mandated separate Express.js backend is REMOVED in favour of a
+  single Next.js application whose Route Handlers serve the versioned REST API.
+
+Modified principles:
+  - III. Authentication and Authorization — ADDED: delegation of
+    authentication to a managed identity provider (Clerk) is permitted;
+    authorization remains enforced by this platform's server code.
+  - VIII. Architecture — REDEFINED: one Next.js 16 application; backend =
+    Route Handlers / Server Components / Server Actions on the Node.js runtime;
+    layering (handlers → services → repositories) and versioned REST retained.
+  - Technology Stack — REDEFINED: adds Clerk, Supabase PostgreSQL, Supabase
+    Storage, Postgres job table + Vercel Cron, Resend, Sentry, Vercel; removes
+    Express.js as a mandated component.
+Removed sections: none
+Unchanged: I, II, IV–VII, IX–XXII, Development Workflow Process, Governance
+  (no functional or security requirement removed or weakened).
+Ratified date corrected: 2025-09-16 → 2026-09-16 (typo; initial commit is
+  dated 2026-09-16 per git history).
+Follow-up TODOs: T203 (verify Clerk event coverage for FR-A014 failed sign-in
+  logging) — see specs/001-baseline-product-spec/tasks.md.
+
+---- Previous report (1.0.0) ----
 Version change: 0.0.0 → 1.0.0
 Bump rationale: MAJOR — initial adoption of the project constitution.
 
@@ -86,6 +118,12 @@ Access control is non-negotiable and MUST be enforced server-side.
   Organization Admin, Team Manager, and Employee/User roles where applicable.
 - Frontend route protection MUST NOT be considered a substitute for backend
   authorization. Frontend guards are UX affordances only.
+- Authentication MAY be delegated to a managed identity provider (baseline:
+  Clerk). Exactly one application authentication system MUST exist.
+  Delegation does not delegate authorization: role and resource-ownership
+  checks, audit logging, and step-up re-verification for sensitive operations
+  MUST be enforced by this platform's own server-side code on every protected
+  operation.
 
 ### IV. Encryption and Secure Storage
 
@@ -152,25 +190,38 @@ Critical business operations MUST be correct, consistent, and recoverable.
 
 ### VIII. Architecture
 
-Maintain strict separation of concerns between frontend and backend.
+Maintain strict separation of concerns between presentation and server-side
+business logic, within a single Next.js application.
 
-- **Frontend**: Next.js, TypeScript, Tailwind CSS, shadcn/ui, Framer Motion,
-  GSAP.
-- **Backend**: Node.js, Express.js, TypeScript.
-- Backend MUST use a modular layered architecture: controllers → services →
-  repositories/models, with middleware, validators, configuration, utilities,
-  and AI service modules.
-- MUST expose versioned REST APIs (e.g., `/api/v1/...`).
-- Business logic MUST NOT reside in UI components or API route handlers
-  directly; it MUST live in service modules.
+- **Application**: one Next.js 16+ (App Router) + React + TypeScript
+  application at the repository root. There is no separate backend service
+  in the baseline release.
+- **Frontend**: React Server/Client Components, Tailwind CSS, shadcn/ui,
+  Framer Motion, GSAP.
+- **Backend**: Next.js Route Handlers (Node.js runtime) serving the versioned
+  REST API, plus Server Components and Server Actions, all in TypeScript.
+- Server-side code MUST use a modular layered architecture: route handlers
+  (thin) → services → repositories, with shared request pipeline (auth, CSRF
+  check, rate limiting, validation, error mapping), validators, configuration,
+  utilities, background-job handlers, and AI service modules.
+- MUST expose versioned REST APIs under `/api/v1/...` via Route Handlers.
+- Business logic MUST NOT reside in UI components, Route Handlers, Server
+  Components, or Server Actions directly; it MUST live in service modules.
+  Server Components and Server Actions MUST call the same service layer the
+  API uses.
+- Managed platform services (identity, database, object storage, email,
+  monitoring) MUST be accessed only through server-side adapter modules so
+  they can be replaced without rewriting business logic.
 - MUST prefer reusable, testable, composable modules over monolithic
   implementations.
+- Architecture changes MUST be recorded in `docs/ARCHITECTURE_DECISIONS.md`
+  before implementation.
 
 ### IX. Code Quality
 
 Code MUST be clear, maintainable, and consistently structured.
 
-- MUST use TypeScript for all frontend and backend code.
+- MUST use TypeScript for all application code (presentation and server-side).
 - MUST prefer strongly typed interfaces and explicit contracts over implicit
   `any` types.
 - MUST follow consistent naming conventions and folder structures across the
@@ -355,17 +406,36 @@ that compromises security or data integrity is unacceptable.
 
 ## Technology Stack
 
-| Layer       | Technologies                                                |
-|-------------|-------------------------------------------------------------|
-| Frontend    | Next.js, TypeScript, Tailwind CSS, shadcn/ui, Framer Motion, GSAP |
-| Backend     | Node.js, Express.js, TypeScript                             |
-| AI          | OpenAI, Google Gemini (via provider-abstraction layer)      |
-| Validation  | Zod (or equivalent schema validation library)               |
-| API Style   | Versioned REST (`/api/v1/...`)                              |
+Baseline (v1) stack. Rationale and alternatives for each row are recorded in
+`docs/ARCHITECTURE_DECISIONS.md` (ADR numbers in the last column).
+
+| Layer                 | Technologies                                                                 | ADR |
+|-----------------------|------------------------------------------------------------------------------|-----|
+| Application           | Next.js 16+ (App Router), React, TypeScript — single application             | 001 |
+| Frontend              | Tailwind CSS, shadcn/ui, Framer Motion, GSAP, TanStack Query, Zustand        | 001 |
+| API                   | Next.js Route Handlers, versioned REST (`/api/v1/...`), JSON envelope        | 001 |
+| Validation            | Zod (server-side mandatory; shared with client forms)                        | 001 |
+| Authentication        | Clerk (sole application auth provider: sessions, MFA, reverification)        | 003 |
+| Authorization         | Server-side service-layer checks (primary) + PostgreSQL RLS (defense-in-depth) | 004 |
+| Database              | PostgreSQL (Supabase-managed), SQL migrations via Supabase CLI, no ORM       | 002 |
+| Object storage        | Supabase Storage, private buckets, signed URLs, quarantine → promote flow    | 005 |
+| Background processing | PostgreSQL job table + Vercel Cron (+ `pg_cron` redundancy); no Redis/BullMQ | 006 |
+| Rate limiting         | Clerk attack protection + Vercel WAF + Postgres-backed app limiter           | 007 |
+| AI                    | OpenAI, Google Gemini via in-house provider abstraction; structured outputs  | 008 |
+| Email                 | Provider abstraction; Resend baseline (React Email templates)                | 009 |
+| Monitoring            | Sentry, structured JSON logging with correlation IDs, health checks, metrics | 010 |
+| Deployment            | Vercel (app) + Supabase (database/storage) + Clerk; GitHub Actions CI        | 011 |
+
+Components explicitly **not** part of the baseline: a separate Express.js
+service, Prisma, AWS S3/MinIO, Redis/BullMQ, Supabase Auth, MongoDB. Any of
+these may be introduced only through a new ADR that cites a concrete
+requirement.
 
 New dependencies MUST be justified, reviewed, and documented before adoption.
 Framework or library upgrades MUST be tested against the existing test suite
-before merging.
+before merging. Because Next.js 16 differs from earlier majors, contributors
+and agents MUST consult `node_modules/next/dist/docs/` before writing
+framework-facing code (see `AGENTS.md`).
 
 ## Development Workflow Process
 
@@ -416,4 +486,4 @@ comply with these principles.
   read and comply with this constitution before making changes. Agents MUST NOT
   introduce code that violates these principles.
 
-**Version**: 1.0.0 | **Ratified**: 2025-09-16 | **Last Amended**: 2025-09-16
+**Version**: 2.0.1 | **Ratified**: 2026-09-16 | **Last Amended**: 2026-09-18

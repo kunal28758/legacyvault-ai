@@ -2,7 +2,7 @@
 
 **Feature Directory**: `specs/001-baseline-product-spec`
 
-**Created**: 2025-09-16
+**Created**: 2026-09-16
 
 **Status**: Draft
 
@@ -14,12 +14,25 @@ analysis, security center, and administration.
 
 ## Clarifications
 
-### Session 2025-09-16
+### Session 2026-09-16
 
 - Q: Should the baseline release include multi-tenancy (organizations, teams, team managers) or focus exclusively on individual users? → A: Individual-user baseline; defer organizations/teams to a later phase; only Super Admin and User roles in v1.
 - Q: When the Dead Man Switch triggers conditional release, what exactly is released to trusted contacts? → A: Only the specific documents, assets, and plan sections the user explicitly selected during Dead Man Switch configuration.
 - Q: Do beneficiaries create platform accounts or receive access through external channels? → A: Beneficiaries receive secure, time-limited email links with scoped access tokens. No platform account required for beneficiaries in v1.
 - Q: What are the maximum file size limits for document and video uploads? → A: Documents: 50 MB max; Videos: 500 MB max.
+
+### Session 2026-09-18 (post-analysis remediation)
+
+- Q: Are Dead Man Switch trusted contacts and emergency contacts separate concepts from beneficiaries? → A: No. Every external recipient — beneficiary, trusted contact, emergency contact — is a **Beneficiary record** owned by the user. A trusted contact is a beneficiary linked to the Dead Man Switch; an emergency contact is a beneficiary with an Emergency Access configuration ("emergency beneficiary" in FR-D010 means exactly this). All scoped access, regardless of trigger (direct share, Dead Man Switch release, emergency grant), is delivered through the same time-limited scoped access-token mechanism.
+- Q: At what level are beneficiary allocation percentages recorded? → A: Per **resource assignment** (a specific financial/physical/digital asset, document, or video). The sum of allocations for one resource MUST NOT exceed 100 %. Beneficiary-level ("this beneficiary gets 40 % of everything") and category-level ("50 % of all financial assets") percentages are **not modeled** in the baseline; the UI MAY show a beneficiary's aggregate as an informational summary only. FR-D002 and FR-D004 are read accordingly.
+- Q: What do beneficiary statuses mean and what happens on removal? → A: `PENDING` = created/invited, the beneficiary has not yet used any access link; `ACTIVE` = the beneficiary has successfully used an access link at least once, or the owner explicitly marked them active; `INACTIVE` = deactivated by the owner — no new access tokens may be issued and existing tokens are revoked. Removing a beneficiary (FR-D001, US3 scenario 4) MUST atomically delete their resource assignments, revoke their access tokens, remove them as a Dead Man Switch trusted contact, deactivate any Emergency Access configuration for them, soft-delete the record, and audit every step.
+- Q: Can a user finalize a legacy plan that still has incomplete sections (US20 scenario 2 vs FR-C004)? → A: Yes, with explicit acknowledgment. Minimum for finalization: the Personal Details step is complete and the user has confirmed. All other incomplete sections MUST be listed to the user and finalization MUST record `acknowledgedIncomplete = true` together with the list of incomplete sections in the version snapshot and the audit entry. FR-C004 governs validation of data *entered* in a step, not mandatory completion of every step.
+- Q: FR-B006 lists "session timeout" as a user security preference; the identity provider applies session lifetime instance-wide. How is this satisfied? → A: The server-side session lifetime remains a platform-wide setting (24 h inactivity). The user preference is an **application-enforced idle timeout**: the user selects 15 min / 30 min / 1 h / 4 h / off; the application signs the user out client-side after that idle period, bounded above by the platform lifetime. FR-B006 is satisfied by this idle-timeout preference plus login-notification and MFA settings.
+- Q: How does an emergency contact start a request, which verification methods exist, and what happens when the owner does not respond? → A: (1) When an owner designates an emergency contact, the contact receives a designation email containing their personal request link; the same link is re-sendable from the owner's Emergency Access page. (2) Baseline verification method is **email OTP** (6 digits, 15-minute expiry, 3 attempts) sent to the beneficiary's recorded email; other factors (e.g. SMS OTP) are future work. (3) The owner configures the unreachable-owner rule per contact: `AUTO_GRANT` after N hours, `DENY` after N hours, or `WAIT` (default — the request stays pending until the owner decides or the request expires after 72 hours). Every outcome notifies both parties and is audited.
+- Q: Which "plan sections" can be included in Dead Man Switch release scope and emergency access scope, and how are they viewed? → A: The section keys of the finalized legacy plan (personal-details, family-information, beneficiaries, financial-assets, physical-assets, digital-assets, witness-details, special-wishes, document-attachments). Only sections of the **latest finalized version** are ever released — never a draft. Recipients view a read-only rendering of each granted section through the same scoped access-token mechanism used for documents, assets and videos.
+- Q: Does the baseline include in-browser video recording (US12 says "records or uploads")? → A: Baseline is **upload-only** (FR-K001). In-browser recording is deferred to the roadmap; the camera permission is not requested by the baseline application.
+- Q: Is AI-assistant conversation history persisted? → A: No. History is session-scoped and held by the client for the duration of the conversation (sent with each message, max 20 prior turns). The platform stores only sanitized AI interaction records without message content, consistent with data minimization.
+- Q: Which access grants may deliver a video message under each delivery condition (FR-K006)? → A: Strict mapping, enforced server-side on every video access and validated when a scope is configured or a token is issued: `IMMEDIATE` → any valid grant whose scope includes the video; `DEAD_MAN_SWITCH` → `DMS_RELEASE` grants only; `EMERGENCY_ACCESS` → `EMERGENCY_ACCESS` grants only. No hierarchical or cross-acceptance; a mismatch is rejected with `422 DELIVERY_CONDITION_MISMATCH`.
 
 ---
 
@@ -110,7 +123,7 @@ complete beneficiary roster with validated allocations.
    details, **Then** the system saves the beneficiary and displays it in their
    beneficiary list.
 2. **Given** a user assigning allocation percentages, **When** the total for a
-   given asset category exceeds 100%, **Then** the system rejects the change
+   given asset, document, or video exceeds 100%, **Then** the system rejects the change
    and displays the constraint violation.
 3. **Given** a user modifying a beneficiary's allocation, **When** they confirm
    the change, **Then** the system records the change and creates an audit
@@ -349,7 +362,8 @@ access, and checking audit logs.
 
 ### User Story 12 — Video Legacy (Priority: P3)
 
-A user records or uploads personal video messages for specific beneficiaries.
+A user uploads personal video messages for specific beneficiaries (in-browser
+recording is deferred — see Clarifications 2026-09-18).
 Videos are stored securely with encryption. The user controls which
 beneficiaries can view which videos and under what conditions (immediately,
 after Dead Man Switch trigger, after emergency access).
@@ -672,7 +686,8 @@ the summary, verifying completeness indicators, and finalizing.
 - **FR-B005**: System MUST allow users to configure notification preferences
   (email, in-app, frequency).
 - **FR-B006**: System MUST allow users to configure security preferences
-  (session timeout, login notifications, MFA settings).
+  (idle session timeout — application-enforced, see Clarifications 2026-09-18;
+  login notifications; MFA settings).
 - **FR-B007**: Profile changes to security-relevant fields (email, password)
   MUST require re-authentication.
 
@@ -709,23 +724,26 @@ the summary, verifying completeness indicators, and finalizing.
 - **FR-D001**: System MUST allow users to create, read, update, and delete
   beneficiaries.
 - **FR-D002**: Each beneficiary MUST have: full name, relationship to user,
-  contact information (email, phone), and optional allocation percentage.
+  contact information (email, phone), and optional allocation percentages
+  recorded per resource assignment (see Clarifications 2026-09-18).
 - **FR-D003**: System MUST prevent adding duplicate beneficiaries (identified
   by email address).
 - **FR-D004**: System MUST enforce that allocation percentages for a given
-  asset or category do not exceed 100%.
+  resource (asset, document, or video) do not exceed 100% in total.
 - **FR-D005**: System MUST display remaining allocation percentage when
   assigning beneficiaries.
 - **FR-D006**: System MUST allow asset-specific beneficiary assignments
   (different beneficiaries per asset).
 - **FR-D007**: System MUST support beneficiary status tracking (active,
-  pending verification, inactive).
+  pending verification, inactive) with the lifecycle defined in Clarifications
+  2026-09-18.
 - **FR-D008**: System MUST require user confirmation before authoritative
   beneficiary changes (additions, removals, allocation changes).
 - **FR-D009**: System MUST log all beneficiary changes in the audit trail
   (who changed what, when, previous value, new value).
 - **FR-D010**: System MUST allow users to designate emergency beneficiaries
-  with specific access rights for emergency access workflows.
+  (beneficiaries with an Emergency Access configuration) with specific access
+  rights for emergency access workflows.
 - **FR-D011**: Beneficiaries MUST NOT be required to create platform accounts.
   Access to assigned resources MUST be provided via secure, time-limited,
   scoped email tokens. Each token MUST grant access only to the specific
@@ -846,13 +864,15 @@ the summary, verifying completeness indicators, and finalizing.
 - **FR-J002**: System MUST allow emergency contacts to request access through
   a defined workflow.
 - **FR-J003**: System MUST require multi-step identity verification for
-  emergency access requests (email verification + OTP/MFA).
+  emergency access requests (email verification + one-time code; baseline
+  factor is email OTP — see Clarifications 2026-09-18).
 - **FR-J004**: System MUST notify the account owner of all emergency access
   requests.
 - **FR-J005**: If the owner is reachable, the system MUST allow the owner to
   approve or deny the request.
 - **FR-J006**: If the owner is unreachable (configurable timeout), the system
-  MUST follow pre-defined rules for granting or denying access.
+  MUST follow the contact's pre-defined rule (auto-grant, deny, or wait — see
+  Clarifications 2026-09-18) for granting or denying access.
 - **FR-J007**: Granted emergency access MUST be time-limited with automatic
   expiration.
 - **FR-J008**: Emergency access MUST be scoped to the resources the owner
@@ -1105,6 +1125,8 @@ the summary, verifying completeness indicators, and finalizing.
   type, content, channel, delivery status, timestamp.
 - **Session**: An active user session. Attributes: user, token reference,
   device info, IP address, location, created at, last active, expiry.
+  *(Managed by the identity provider; the platform stores no session tokens —
+  it records session events in the audit log.)*
 
 ---
 
@@ -1279,8 +1301,12 @@ be specified during implementation planning.
 
 **API Security Requirements**:
 
-- All endpoints MUST be authenticated except public auth endpoints (register,
-  login, verify, reset).
+- All endpoints MUST be authenticated except: identity-provider flows
+  (register, login, verify, reset — provided by the identity provider),
+  scoped access-token endpoints for beneficiaries/contacts (FR-D011, FR-I012,
+  FR-J008), the public emergency-access request/verify endpoints (FR-J002,
+  FR-J003), and the health check. Every unauthenticated endpoint MUST be
+  rate-limited and MUST perform its own token/OTP verification.
 - All endpoints MUST enforce authorization based on the requesting user's role
   and resource ownership.
 - All endpoints MUST validate input using server-side schema validation.
@@ -1293,7 +1319,7 @@ be specified during implementation planning.
 
 The following logical entities and relationships are required at the product
 level. **PostgreSQL 16+** has been selected as the baseline relational
-database (see research.md Decision 1 for rationale and alternatives).
+database (see research.md Decision 2 for rationale and alternatives).
 
 ### Entity Relationship Summary
 
