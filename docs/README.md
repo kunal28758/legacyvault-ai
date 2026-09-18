@@ -89,7 +89,7 @@ implemented code, configured environments, or decisions still pending:
 
 | Planned document | Task | Why not yet |
 |---|---|---|
-| `docs/DEPLOYMENT.md` | T202 (initial), T175/T211/T238/T239 | Needs Vercel/Supabase/Clerk/ClamAV environments and verified prerequisites (T210) |
+| `docs/DEPLOYMENT.md` | ✅ created 2026-09-19 (T202 initial) → completed by T175/T211/T238/T239 | External checklists (T195/T196/T210) remain ⏳ pending manual verification |
 | ~~`docs/SECURITY.md`~~ → `security/SECURITY_ARCHITECTURE.md` | T178 (r4: updates the existing file; no separate `SECURITY.md`) | Needs the T203 verification outcome and implemented controls |
 | `docs/SECURITY_REVIEW.md` | T185 | Pre-production review of implemented code |
 | `docs/DISASTER_RECOVERY.md` | T187 | Needs backup tooling (T186) and environments |

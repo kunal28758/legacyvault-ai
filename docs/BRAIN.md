@@ -101,7 +101,7 @@ legacyvault-ai/
 | Spec Kit skills & templates            | Tooling           | ✅ Completed  |
 | Baseline spec + plan + tasks (revised) | Specification     | ✅ Completed  |
 | Architecture decision records          | Governance doc    | ✅ Completed  |
-| Next.js 16 scaffold at repo root       | Scaffold          | 🔧 Exists, not normalized (T002) |
+| Next.js 16 application at repo root    | Application shell | 🔧 Phase 1 setup done (landing page, layout, design tokens, shadcn/ui, API/query clients, proxy, env schema, tests); no feature pages |
 | Supabase packages (scaffold clients)   | Scaffold          | 🔧 Exists until T028; probe removed 2026-09-19 |
 | Application features                   | —                 | ⬜ Not started |
 | Clerk integration                      | —                 | ⬜ Not started |
@@ -446,21 +446,21 @@ Architecture changes additionally require an ADR in
 
 | Area                        | Status        | Notes                                      |
 |-----------------------------|---------------|--------------------------------------------|
-| Repository initialized      | ✅ Completed  | two commits; baseline checkpoint `4cac2d3`; r4 doc pass uncommitted |
+| Repository initialized      | ✅ Completed  | 4 commits (`fd11acc`, `4cac2d3`, `affa27f`, `e87cb9a`); Phase 1 batch uncommitted |
 | Spec Kit initialized        | ✅ Completed  | `.specify/`                                |
 | Agent skills installed      | ✅ Completed  | `.agents/skills` (70), gitignored                    |
 | Constitution                | ✅ v2.0.1     | amended 2026-09-18 (ADR-012; 2.0.1 wording patch) |
 | Baseline specification      | ✅ Completed  | FR text unchanged; Clarifications r2/r3; plan/tasks/data-model/contracts at r4 |
 | Architecture decisions      | ✅ Completed  | ADR-001 … ADR-016 (ADR-004 r4, ADR-014 r4) |
-| Next.js scaffold            | 🔧 Exists     | root, v16.3.5; template content; needs T002 |
-| Clerk integration           | ⬜ Not Started |                                            |
+| Next.js application shell   | 🔧 Phase 1    | root, v16.3.5; T001–T017, T192–T194 done; Phase 2 not started |
+| Clerk integration           | 🔧 Prepared   | `@clerk/nextjs` + proxy/layout wiring; dashboard checklist ⏳ (T195) |
 | Database schema / RLS       | ⬜ Not Started | `supabase/migrations/` does not exist yet  |
 | API (`/api/v1`)             | ⬜ Not Started | no Route Handlers (probe removed 2026-09-19) |
 | Job runner / cron           | ⬜ Not Started |                                            |
 | Storage flow                | ⬜ Not Started |                                            |
 | AI integration              | ⬜ Not Started |                                            |
-| UI/UX design system         | ⬜ Not Started | default template styles only               |
-| Testing infrastructure      | ⬜ Not Started |                                            |
+| UI/UX design system         | 🔧 Foundation | dark-first tokens, glass/gradient/motion utilities, shadcn/ui core (T010–T012) |
+| Testing infrastructure      | 🔧 Exists     | Vitest unit/integration, Playwright, JWT/DB helpers, smoke tests (T015) |
 | CI/CD                       | ⬜ Not Started |                                            |
 | Deployment                  | ⬜ Not Started |                                            |
 

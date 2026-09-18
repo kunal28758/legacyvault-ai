@@ -1,7 +1,42 @@
+# Agent tooling (local only)
 .agents/
 .agents-backup/
+
+# Environment — never commit secrets (constitution I, XIX); the template is tracked
 .env
 .env.*
 !.env.example
+
+# Dependencies
 node_modules/
+
+# Next.js
 .next/
+/out/
+/build
+next-env.d.ts
+*.tsbuildinfo
+
+# Testing
+coverage/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# Supabase CLI local state
+supabase/.temp/
+supabase/.branches/
+
+# Deployment / tooling
+.vercel
+*.pem
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db

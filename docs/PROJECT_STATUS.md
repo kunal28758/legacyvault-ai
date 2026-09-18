@@ -1,7 +1,7 @@
 # Project Status — LegacyVault AI
 
 **Snapshot date**: 2026-09-18
-**Phase**: 0 — Foundation (governance complete; implementation not started)
+**Phase**: 1 — Setup in progress (implementation started 2026-09-19; Phase 1 batch T001–T017, T192–T194, T202 done; T195/T196/T210 pending manual verification)
 **Constitution**: v2.0.1 (amended 2026-09-18) · **Architecture**: ADR-001 … ADR-016 (ADR-004 r4, ADR-014 r4) · **Git checkpoint**: `4cac2d3`
 
 > This file records what is *actually true* about the repository right now.
@@ -29,17 +29,17 @@ implemented.** Implementation (`/speckit-implement`) has not started.
 | Specification | ✅ Complete and consistent with the ADRs; `/speckit-analyze` findings remediated 2026-09-18 r2 (write-protection model, unified access tokens, attachments, AI drafts, webhook idempotency, clarifications session 2026-09-18); targeted remediation r3 (H1-A, M1–M4, N1) and post-gate r4 (S1 sensitive-field boundary, C1 delivery policy) applied | `specs/001-baseline-product-spec/{spec,research,plan,tasks,data-model,quickstart}.md`, `contracts/api-contracts.md` |
 | Task list | ✅ 219 active tasks, **0 complete**; 28 retired IDs listed; r1 added T192–T212, r2 added T213–T247 (incl. the constitution-XVII test suites); r4 moved T210 to Phase 1 (IDs unchanged) | `tasks.md` |
 | Documentation layer | ✅ Organized explainer docs (documentation only — no code): index + architecture, development, product, security, database, integrations, monitoring, ui, workflows; each defers to its canonical Spec Kit source | `docs/README.md`, `docs/**` |
-| Next.js scaffold | 🔧 Present, unmodified template | `app/layout.tsx`, `app/page.tsx` (template), `app/globals.css`, `next.config.ts`, `tsconfig.json`, `eslint.config.mjs`, `postcss.config.mjs` |
+| Next.js application (Phase 1) | ✅ Scaffold normalized (T002): LegacyVault landing page, root layout with theme handling + Clerk-ready provider tree (T017), dark-first Tailwind v4 design tokens + glass/gradient/motion utilities (T010/T011), shadcn/ui core components (T012), typed API client + TanStack Query provider (T013/T014), `proxy.ts` protected-first with CSP nonce (T192), `vercel.json` crons (T193). No feature pages, no Route Handlers. | `app/`, `components/`, `styles/`, `lib/api/`, `lib/config/`, `proxy.ts`, `vercel.json` |
 | Supabase wiring | 🔧 Packages installed; scaffold-era clients remain until T028; **temporary connectivity probe removed 2026-09-19** (`public.connection_test` confirmed absent via PostgREST `PGRST205`) | `package.json` (`@supabase/ssr`, `@supabase/supabase-js`), `lib/supabase/{client,server}.ts` (no importers) |
-| Environment | 🔧 `.env.local` with Supabase URL + publishable key (gitignored; values not recorded anywhere else) | — |
+| Environment | 🔧 Zod env schema (`lib/config/env.schema.ts`, T007; production refuses `MALWARE_SCANNER_PROVIDER=noop`), `.env.example` (T008), `pnpm env:check`; `.env.local` still holds only the two Supabase public values (gitignored; never recorded) — `pnpm env:check` fails until the owner fills it | `lib/config/`, `.env.example` |
 | Agent skills | ✅ 70 skills in `.agents/skills` (+ speckit backup) | `.agents/`, `.agents-backup/` |
-| Clerk | ⬜ Not installed, not configured | — |
-| Database schema / RLS / functions | ⬜ None (`supabase/` directory does not exist) | — |
+| Clerk | 🔧 `@clerk/nextjs` installed; proxy/layout activate when keys exist; **dashboard checklist ⏳ pending manual verification** (`docs/DEPLOYMENT.md` § 5, T195) | `proxy.ts`, `app/layout.tsx` |
+| Database schema / RLS / functions | ⬜ None — Supabase CLI initialized (`supabase/config.toml`, T194; `auto_expose_new_tables = false`, storage 500 MiB); `supabase/migrations/` empty until T018/T218/T019; local stack not yet started (Docker Desktop was not running) | `supabase/` |
 | API `/api/v1` | ⬜ None (no Route Handlers exist; `app/api/` removed with the probe) | — |
 | Jobs / cron / webhooks | ⬜ None | — |
 | Storage buckets / policies | ⬜ None | — |
 | AI, email, Sentry, logging | ⬜ None | — |
-| Tests / CI / deployment | ⬜ None | — |
+| Tests / CI / deployment | 🔧 Vitest (unit + integration projects), Playwright (Chromium) with Clerk-aware global setup, JWT/DB test helpers (T015) — 13 unit + 2 integration + 1 E2E smoke tests passing; CI workflow (T016) and deployment not started; `docs/DEPLOYMENT.md` created (T202) with T195/T196/T210 checklists ⏳ | `vitest.config.mts`, `playwright.config.ts`, `tests/`, `docs/DEPLOYMENT.md` |
 
 ---
 
@@ -138,4 +138,5 @@ implemented.** Implementation (`/speckit-implement`) has not started.
 | 2026-09-18 r3 | Targeted remediation of the final-analysis findings H1-A (session-scoped client-held assistant history, `GET /ai/assistant/interactions`), M1 (`webhook` auth mode, CSRF scope), M2 (`delete_asset()`), M3 (`dms.scan` job heartbeat), M4 (strict video delivery-condition mapping), N1 (DIRECT_SHARE scope ⊆ assignments); 219/0/28 tasks and 29 entities unchanged. Still no implementation. |
 | 2026-09-18 | **Baseline committed as `4cac2d3`** (`chore: establish LegacyVault AI baseline`). Final read-only specification gate on the checkpoint: 0 BLOCKER, 0 HIGH, 4 MEDIUM (S1 direct-write boundary, C1 access-link delivery, T210 ordering, stale status docs), 10 LOW, 10 INFO. |
 | 2026-09-18 r4 | Post-gate remediation (committed as `affa27f`): ADR-004 § 8 sensitive-field boundary + `audit_class_a_change()` triggers (`create_asset()`, `set_encrypted_fields()`); ADR-014 § 6 access-link delivery policy (`access.deliver`, reissue-on-retry, `resend_access_token()`, audited owner/admin resend); T210 moved to Phase 1; `webhook` added to auth-mode enumerations; VideoMessage class A + B/C; 28-table wording; spec status; ADR r3/r4 revision notes; quickstart health example; documentation paths (T175/T178/T234, plan Documentation Plan); this file, BRAIN and CHANGELOG refreshed for `4cac2d3`. Still no implementation. |
-| 2026-09-19 | **Implementation start — probe cleanup only**: deleted the temporary connectivity probe `app/api/db-test/route.ts` (and the now-empty `app/api/`); `public.connection_test` confirmed absent (PostgREST `PGRST205`), nothing to drop. `lib/supabase/{client,server}.ts` and `@supabase/ssr` deliberately left for T028 per T002. No task marked complete; no feature implemented. |
+| 2026-09-19 | **Probe cleanup** (committed as `e87cb9a`): deleted the temporary connectivity probe `app/api/db-test/route.ts` (and the now-empty `app/api/`); `public.connection_test` confirmed absent (PostgREST `PGRST205`), nothing to drop. `lib/supabase/{client,server}.ts` and `@supabase/ssr` deliberately left for T028 per T002. No task marked complete; no feature implemented. |
+| 2026-09-19 | **Phase 1 setup batch** (uncommitted): T001 skeleton, T002 scaffold normalized (landing page, metadata), T003/T005 dependencies (see CHANGELOG), T006 scripts/Prettier/ESLint, T007 env schema, T008 `.env.example`, T009 `.gitignore` (+ `next-env.d.ts` un-tracked), T010/T011 design foundation, T012 shadcn/ui (sonner replaces the deprecated toast), T013/T014 API + query clients, T015 Vitest/Playwright + helpers + smoke tests, T017 root layout, T192 `proxy.ts`, T193 `vercel.json`, T194 Supabase CLI init + `db:*` scripts, T202 `docs/DEPLOYMENT.md`. T195/T196/T210 documented with ⏳ pending manual verification — no external dashboard was configured. Checks: typecheck, lint, format, unit, integration, E2E, production build all pass. |

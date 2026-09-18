@@ -1,3 +1,10 @@
 allowBuilds:
   sharp: false
   unrs-resolver: false
+  # Build scripts explicitly reviewed for this project (constitution IX):
+  supabase: true # downloads the Supabase CLI binary (T005/T194)
+  "@sentry/cli": true # downloads the sentry-cli binary used at build time (ADR-010)
+  esbuild: true # platform binary validation (vitest / tsx)
+  "@clerk/shared": false
+  "@google/genai": false
+  protobufjs: false

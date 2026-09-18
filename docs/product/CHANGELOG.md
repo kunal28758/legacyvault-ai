@@ -19,7 +19,29 @@ Format: newest first. Categories: *Governance*, *Specification*,
 
 ## [Unreleased]
 
-### Repository — 2026-09-19 (implementation start: probe cleanup)
+### Implementation — 2026-09-19 (Phase 1 setup batch, uncommitted)
+- Tasks T001, T002, T003, T005, T006, T007, T008, T009, T010, T011, T012, T013,
+  T014, T015, T017, T192, T193, T194 and T202 (initial) implemented; T195,
+  T196 and T210 documented in `docs/DEPLOYMENT.md` with every external item
+  marked *pending manual verification*. No user story, no Route Handler, no
+  database schema.
+- Dependencies added (constitution IX — all from the approved stack or its
+  tooling): runtime `@clerk/nextjs`, `svix`, `file-type`, `unpdf`, `openai`,
+  `@google/genai`, `resend`, `@react-email/components` (npm marks the package
+  deprecated — successor to be confirmed at T039), `@sentry/nextjs`, `pino`,
+  `server-only`, `framer-motion`, `gsap`, `zustand`, `@tanstack/react-query`,
+  `zod`, `react-hook-form`, `@hookform/resolvers`, `@react-pdf/renderer`,
+  `tus-js-client`; shadcn/ui runtime `@base-ui/react`, `cn`,
+  `class-variance-authority`, `lucide-react`, `next-themes`, `sonner`,
+  `tw-animate-css`, `shadcn`; dev `supabase` (CLI), `vitest`,
+  `@vitejs/plugin-react`, `jsdom`, `@testing-library/{react,dom,jest-dom}`,
+  `@playwright/test`, `@axe-core/playwright`, `@clerk/testing`, `jose`, `tsx`,
+  `prettier`, `prettier-plugin-tailwindcss`, `@next/env`, `@types/node@22`.
+  `@supabase/ssr` kept until T028. Build scripts allowed only for `supabase`,
+  `@sentry/cli`, `esbuild` (`pnpm-workspace.yaml`).
+- `next-env.d.ts` un-tracked (T009); generated files ignored.
+
+### Repository — 2026-09-19 (implementation start: probe cleanup, commit `e87cb9a`)
 - Removed the temporary Supabase connectivity probe `app/api/db-test/route.ts`
   (and the now-empty `app/api/` directory). The temporary table
   `public.connection_test` was confirmed absent (PostgREST `PGRST205`); no
