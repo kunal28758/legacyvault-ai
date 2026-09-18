@@ -1,6 +1,6 @@
 # API Contracts: LegacyVault AI — Baseline Product
 
-**Created**: 2026-09-16 | **Revised**: 2026-09-18 r3 (ADR-001, 003, 004 r2, 005, 006, 007, 014, 016; targeted remediation H1/M1–M4/N1)
+**Created**: 2026-09-16 | **Revised**: 2026-09-18 r4 (ADR-001, 003, 004 r4, 005, 006, 007, 014 r4, 016; r3 targeted remediation H1/M1–M4/N1; r4 post-gate S1/C1)
 
 **Base URL**: `/api/v1` — implemented as Next.js Route Handlers under
 `app/api/v1/**/route.ts` (ADR-001). Every handler runs through the shared
@@ -91,7 +91,7 @@ Application-owned auth-adjacent endpoints: `POST /api/webhooks/clerk`
 | Method | Endpoint | Auth | Description |
 |--------|----------|:----:|-------------|
 | GET | `/users/me` | ✅ | Current user (app profile + mirrored Clerk fields + role + onboarding state) |
-| PATCH | `/users/me` | ✅ | Update app-owned profile fields (dateOfBirth, phone, alternateEmail, address, identificationDetails, familyInfo) — Class A column allow-list |
+| PATCH | `/users/me` | ✅ | Update app-owned profile fields (dateOfBirth, phone, alternateEmail, address, familyInfo — Class A column allow-list; `identificationDetails` is encrypted server-side and written through `set_encrypted_fields()`, never by direct grant — ADR-004 r4) |
 | — | *(email / password / name change)* | Clerk | Through Clerk with reverification; webhook mirrors + audits (FR-B007) |
 | GET | `/users/me/preferences` | ✅ | preferences, notificationPreferences, securityPreferences |
 | PATCH | `/users/me/preferences` | ✅ | Update any of the three preference objects; `securityPreferences.idleTimeoutMinutes ∈ {15,30,60,240,null}` |
@@ -115,7 +115,8 @@ Application-owned auth-adjacent endpoints: `POST /api/webhooks/clerk`
 | POST | `/beneficiaries/:id/invite` | ✅ | Send/resend invitation email (sets `invitedAt`) |
 | POST | `/beneficiaries/:id/tokens` | ✅ | Issue DIRECT_SHARE access token `{ scope, ttlDays ≤ 30 }` → `issue_access_token()`; every scope id must be owned by the caller **and currently assigned to this beneficiary** (`beneficiary_assignments`) — otherwise 422 `SCOPE_NOT_ASSIGNED` (FR-D011); `planSections` must be empty (not assignable); videos in scope must have delivery condition `IMMEDIATE` — otherwise 422 `DELIVERY_CONDITION_MISMATCH`; plaintext link emailed, returned once |
 | GET | `/beneficiaries/:id/tokens` | ✅ | List tokens (hash never returned) |
-| DELETE | `/beneficiaries/:id/tokens/:tokenId` | ✅ | Revoke token |
+| DELETE | `/beneficiaries/:id/tokens/:tokenId` | ✅ | Revoke token (`revokedReason = OWNER`) |
+| POST | `/beneficiaries/:id/tokens/:tokenId/resend` | ✅+re-auth | `resend_access_token()` — revokes the current token (`RESENT`), mints exactly one replacement (`replacesTokenId`), emails it and returns the plaintext once; audited `access.token_resent` (ADR-014 § 6) |
 
 ### Key Validations
 - Email uniqueness per user (409)
@@ -129,15 +130,15 @@ Application-owned auth-adjacent endpoints: `POST /api/webhooks/clerk`
 | Method | Endpoint | Auth | Description |
 |--------|----------|:----:|-------------|
 | **Financial** | | | |
-| GET / POST | `/assets/financial` | ✅ | List / create |
-| GET / PATCH / DELETE | `/assets/financial/:id` | ✅ | Get (masked) / update (allow-list columns) / soft delete via `delete_asset('FINANCIAL_ASSET', id)` — one transaction: assignments + attachments removed, audit written |
+| GET / POST | `/assets/financial` | ✅ | List / create via `create_asset('FINANCIAL_ASSET', …)` — encrypted fields written only through the function (ADR-004 r4) |
+| GET / PATCH / DELETE | `/assets/financial/:id` | ✅ | Get (masked) / update plain columns (allow-list; `accountNumber`/`policyNumber` → `set_encrypted_fields()`) / soft delete via `delete_asset('FINANCIAL_ASSET', id)` — one transaction: assignments + attachments removed, audit written |
 | GET | `/assets/financial/:id/decrypt` | ✅+re-auth | Decrypted sensitive fields — audited |
 | **Physical** | | | |
-| GET / POST | `/assets/physical` | ✅ | List / create |
+| GET / POST | `/assets/physical` | ✅ | List / create via `create_asset('PHYSICAL_ASSET', …)` |
 | GET / PATCH / DELETE | `/assets/physical/:id` | ✅ | Get / update (allow-list columns) / soft delete via `delete_asset('PHYSICAL_ASSET', id)` |
 | **Digital** | | | |
-| GET / POST | `/assets/digital` | ✅ | List / create |
-| GET / PATCH / DELETE | `/assets/digital/:id` | ✅ | Get (masked) / update (allow-list columns) / soft delete via `delete_asset('DIGITAL_ASSET', id)` |
+| GET / POST | `/assets/digital` | ✅ | List / create via `create_asset('DIGITAL_ASSET', …)` — credentials/recoveryInfo written only through the function |
+| GET / PATCH / DELETE | `/assets/digital/:id` | ✅ | Get (masked) / update plain columns (allow-list; `credentials`/`recoveryInfo` → `set_encrypted_fields()`) / soft delete via `delete_asset('DIGITAL_ASSET', id)` |
 | GET | `/assets/digital/:id/decrypt` | ✅+re-auth | Decrypted credentials — audited (FR-G004/G005) |
 | **Assignments** | | | |
 | POST | `/assets/:type/:id/assign` | ✅ | `{ beneficiaryId, allocationPercentage? , confirmed: true }` → `assign_beneficiary()` (422 when Σ > 100) |
@@ -253,7 +254,8 @@ beneficiaries/assets/documents; the wizard renders those modules inline).
 | GET | `/emergency-access/requests/:id/status` | ❌ (requestId + email) | Requester-facing status (pending / approved / denied / expired) — generic wording |
 | **Owner endpoints** | | | |
 | GET | `/emergency-access/requests` | ✅ | Pending/active/historical requests |
-| POST | `/emergency-access/requests/:id/approve` | ✅+re-auth | `ea_decide_request(APPROVE)` → EMERGENCY_ACCESS token issued and emailed to the contact |
+| POST | `/emergency-access/requests/:id/approve` | ✅+re-auth | `ea_decide_request(APPROVE)` → request APPROVED and exactly one `access.deliver` job enqueued in the same transaction (outbox insert inside the function); the job issues the EMERGENCY_ACCESS token (→ ACTIVE) and emails the link with reissue-on-retry (ADR-014 § 6) |
+| POST | `/emergency-access/requests/:id/resend-access` | ✅+re-auth | Owner recovery path: enqueues a new `access.deliver` run that revokes the current token (`RESENT`) and re-mints exactly one; audited `access.resend_requested` |
 | POST | `/emergency-access/requests/:id/deny` | ✅ | `ea_decide_request(DENY)` |
 | POST | `/emergency-access/requests/:id/revoke` | ✅ | `ea_revoke()` |
 
@@ -361,6 +363,7 @@ owner's own `/videos/:id/stream` is authorized by ownership.
 | POST | `/admin/users/:id/unlock` | ✅ Super Admin | Clerk Backend API unlock; audited |
 | POST | `/admin/users/:id/reset-mfa` | ✅ Super Admin +re-auth | Clerk Backend API; audited; user notified |
 | GET | `/admin/analytics[/registrations|/storage]` | ✅ Super Admin | Analytics |
+| POST | `/admin/access-tokens/:id/resend` | ✅ Super Admin +re-auth | Recovery path for dead-lettered DMS_RELEASE / EMERGENCY_ACCESS deliveries (`access.delivery_failed`): enqueues `access.deliver …:r{n}` (revoke + exactly one replacement); audited with the admin as actor (ADR-014 § 6) |
 
 ---
 
@@ -386,6 +389,7 @@ exchanges the token and removes it from the URL (`history.replaceState`).
 - Every resource request re-checks `access_tokens.revokedAt/expiresAt` and beneficiary status
 - Read-only; every access audited (`access.*` actions, actor = beneficiary id)
 - Service client with token-scope authorization (no Clerk session)
+- System-grant links (DMS_RELEASE, EMERGENCY_ACCESS) are delivered by the `access.deliver` job with a deterministic per-contact idempotency key and reissue-on-retry; at most one non-revoked token exists per (switch, beneficiary) / per emergency request; plaintext is never persisted (ADR-014 § 6)
 
 ---
 

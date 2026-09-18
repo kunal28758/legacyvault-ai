@@ -5,10 +5,11 @@ supported by repository history, Spec Kit revision notes, ADR dates, or the
 `docs/PROJECT_STATUS.md` change log. This file is the pre-implementation
 baseline for the changelog scheduled by task T234.
 
-**Evidence limits**: the repository has a **single commit** (`fd11acc`,
-2026-09-16); everything after it is uncommitted working-tree state described
-by artifact revision notes and file metadata. Times are local (+05:30) where
-known. No application feature has been implemented; there are **no releases**.
+**Evidence limits**: the repository has **two commits** — `fd11acc`
+(2026-09-16) and the baseline checkpoint `4cac2d3` (2026-09-18 20:16 +05:30).
+The r4 entry under *Unreleased* is uncommitted working-tree state; everything
+else below is contained in `4cac2d3`. Times are local (+05:30) where known. No
+application feature has been implemented; there are **no releases**.
 
 Format: newest first. Categories: *Governance*, *Specification*,
 *Architecture*, *Repository*, *Documentation*.
@@ -16,6 +17,46 @@ Format: newest first. Categories: *Governance*, *Specification*,
 ---
 
 ## [Unreleased]
+
+### Specification / Architecture / Documentation — 2026-09-18 (post-gate remediation, "r4")
+- Final read-only specification gate run against `4cac2d3` (0 BLOCKER, 0
+  HIGH, 4 MEDIUM, 10 LOW, 10 INFO); the two design findings resolved:
+  - **S1** — ADR-004 § 8: application-encrypted columns lose every direct
+    grant and are written only through `create_asset()` /
+    `set_encrypted_fields()`; `audit_class_a_change()` triggers on the Class A
+    tables; `data-model.md` § Write-Protection Model 6, allow-list, catalog;
+    T019/T035/T080/T085/T087/T215/T218; security, database and coding docs.
+  - **C1** — ADR-014 § 6: access-link delivery policy — `access.deliver` job
+    with deterministic per-contact idempotency and reissue-on-retry,
+    `AccessToken` delivery/replacement columns and partial unique indexes,
+    `resend_access_token()` / `system_reissue_access_token()` /
+    `system_mark_token_delivered()`, audited owner and Super Admin resend
+    endpoints; T018/T019/T097/T098/T131/T135/T136/T138/T148/T149/T209/T229/
+    T235/T236; DMS and beneficiary workflow docs.
+- T210 (platform prerequisites) moved from Phase 25 to Phase 1 (ID unchanged);
+  `webhook` added to the auth-mode enumerations; VideoMessage write class
+  A + B/C; "28 tables (29 entities)" wording; `spec.md` status → *Baseline
+  Complete — Implementation Pending*; ADR r3/r4 revision notes; quickstart
+  health-check example; documentation paths re-pointed to the existing
+  `docs/` topic files. **219 active tasks, 0 complete, 28 retired; 29
+  entities = 28 tables.** Still no implementation.
+
+## 2026-09-18 — Checkpoint `4cac2d3` "chore: establish LegacyVault AI baseline"
+
+Commits the state described by every subsection below through 2026-09-17
+(54 files changed, +11,152 / −2,621; 73 tracked files): constitution v2.0.1,
+ADR-001…016, the Spec Kit artifacts at r3, the `docs/` layer, the Next.js
+scaffold and configuration. `.env.local`, `.agents/` and `.agents-backup/`
+remain ignored.
+
+### Specification — 2026-09-18 (targeted remediation, "r3")
+- Final-analysis findings applied: H1-A (session-scoped, client-held AI
+  assistant history; `GET /ai/assistant/interactions`), M1 (`webhook` auth
+  mode; CSRF limited to cookie/ambient modes; raw-body signature
+  verification), M2 (`delete_asset()`), M3 (`dms.scan` job heartbeat), M4
+  (strict video delivery-condition ↔ grant-type mapping), N1 (DIRECT_SHARE
+  scope ⊆ beneficiary assignments); two spec Clarifications added; task and
+  entity counts unchanged.
 
 ### Documentation — 2026-09-18 (documentation organization pass)
 - Added the organized documentation layer under `docs/` (index

@@ -90,7 +90,7 @@ implemented code, configured environments, or decisions still pending:
 | Planned document | Task | Why not yet |
 |---|---|---|
 | `docs/DEPLOYMENT.md` | T202 (initial), T175/T211/T238/T239 | Needs Vercel/Supabase/Clerk/ClamAV environments and verified prerequisites (T210) |
-| `docs/SECURITY.md` | T178 | Needs the T203 verification outcome and implemented controls; `security/SECURITY_ARCHITECTURE.md` is the pre-implementation reference it will build on |
+| ~~`docs/SECURITY.md`~~ → `security/SECURITY_ARCHITECTURE.md` | T178 (r4: updates the existing file; no separate `SECURITY.md`) | Needs the T203 verification outcome and implemented controls |
 | `docs/SECURITY_REVIEW.md` | T185 | Pre-production review of implemented code |
 | `docs/DISASTER_RECOVERY.md` | T187 | Needs backup tooling (T186) and environments |
 | `docs/SUPPORT_RUNBOOK.md` | T204 | Needs verified Clerk recovery flows |
@@ -99,9 +99,9 @@ implemented code, configured environments, or decisions still pending:
 | `docs/RBAC.md` | T177 | Documents implemented authorization flow |
 | `docs/BUSINESS_RULES.md` | T243 | Consolidates rules once services exist; the workflow docs here are the pre-implementation reference |
 | `docs/AI_MODULE.md` | T244 | Needs prompts/schemas/validation code |
-| `docs/PRD.md`, `FRD.md`, `UI_UX_GUIDELINES.md`, `ROADMAP.md`, `FEATURES.md` | T234 | Derivations of `spec.md`; not needed before implementation |
+| `docs/PRD.md`, `FRD.md`, `ROADMAP.md`, `FEATURES.md` | T234 (r4: `UI_UX_GUIDELINES.md` and `CHANGELOG.md` are **not** created — T234 updates `ui/DESIGN_SYSTEM.md` and `product/CHANGELOG.md`) | Derivations of `spec.md`; not needed before implementation |
 
 `docs/architecture/SYSTEM_ARCHITECTURE.md` and `docs/product/CHANGELOG.md`
 are pre-implementation baselines for the documents T175 and T234 schedule;
-those tasks will **update** them (the task texts still name the flat
-`docs/…` paths — see *Path notes*).
+since r4 the task texts and `plan.md` § Documentation Plan point at these
+existing files (see *Path notes*).

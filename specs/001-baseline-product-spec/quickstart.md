@@ -338,7 +338,11 @@ curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/internal/
 
 ```bash
 # Application health (same process serves UI and API)
+# Public form — status only:
 curl http://localhost:3000/api/v1/health
+# Expected: { "status": "ok" }
+# Detailed form — requires the cron secret (or a Super Admin session):
+curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/v1/health
 # Expected: { "status": "ok", "database": "connected", "storage": "connected",
 #             "jobs": { "lastRunAgeSeconds": <n> }, "dmsScan": "fresh" }
 ```

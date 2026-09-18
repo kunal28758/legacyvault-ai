@@ -58,9 +58,12 @@ application features have been implemented yet.
 ## 3. Current Repository State
 
 **Inspected on**: 2026-09-18
-**Git status**: one commit (`fd11acc`, 2026-09-16) containing `.specify/`,
-`specs/`, `BRAIN.md`. Everything else (Next.js scaffold, `.agents/`, docs
-added 2026-09-18) is uncommitted. Branch: `master`.
+**Git status**: two commits — `fd11acc` (2026-09-16: `.specify/`, `specs/`,
+`BRAIN.md`) and the baseline checkpoint **`4cac2d3`** (2026-09-18: constitution
+v2.0.1, ADRs, Spec Kit artifacts, `docs/` layer, scaffold, configs). The tree
+was clean at the checkpoint; the r4 post-gate documentation remediation is the
+only uncommitted change. Branch: `master`. `.agents/`, `.agents-backup/` and
+`.env.local` are ignored.
 
 ### Actual Repository Structure
 
@@ -71,13 +74,14 @@ legacyvault-ai/
 ├── .specify/                      # Spec Kit v1.0.7 (agy integration, PowerShell scripts, templates)
 │   └── memory/constitution.md     # ✅ v2.0.1 (amended 2026-09-18)
 ├── specs/001-baseline-product-spec/
-│   ├── spec.md                    # ✅ unchanged
+│   ├── spec.md                    # ✅ FR text unchanged; Clarifications extended r2/r3; status "Baseline Complete — Implementation Pending"
 │   ├── research.md · plan.md · tasks.md · data-model.md · quickstart.md · contracts/api-contracts.md   # ✅ revised 2026-09-18
 │   └── checklists/requirements.md
 ├── docs/
 │   ├── ARCHITECTURE_DECISIONS.md  # ✅ ADR-001 … ADR-016
 │   ├── PROJECT_STATUS.md          # ✅ state snapshot
-│   └── BRAIN.md                   # ✅ this file
+│   ├── BRAIN.md                   # ✅ this file
+│   └── README.md + topic folders  # architecture/ database/ development/ integrations/ monitoring/ product/ security/ ui/ workflows/
 ├── app/                           # Next.js 16.3.5 scaffold (template page, root layout, globals.css)
 │   └── api/db-test/route.ts       # temporary Supabase connectivity probe — to be removed (T002)
 ├── lib/supabase/{client,server}.ts   # scaffold-era Supabase clients — replaced by lib/db/server.ts (T028)
@@ -442,12 +446,12 @@ Architecture changes additionally require an ADR in
 
 | Area                        | Status        | Notes                                      |
 |-----------------------------|---------------|--------------------------------------------|
-| Repository initialized      | ✅ Completed  | one commit; scaffold uncommitted           |
+| Repository initialized      | ✅ Completed  | two commits; baseline checkpoint `4cac2d3`; r4 doc pass uncommitted |
 | Spec Kit initialized        | ✅ Completed  | `.specify/`                                |
 | Agent skills installed      | ✅ Completed  | `.agents/skills` (70), gitignored                    |
 | Constitution                | ✅ v2.0.1     | amended 2026-09-18 (ADR-012; 2.0.1 wording patch) |
-| Baseline specification      | ✅ Completed  | spec unchanged; plan/tasks/research/data-model/contracts revised |
-| Architecture decisions      | ✅ Completed  | ADR-001 … ADR-016 (ADR-004 r2)             |
+| Baseline specification      | ✅ Completed  | FR text unchanged; Clarifications r2/r3; plan/tasks/data-model/contracts at r4 |
+| Architecture decisions      | ✅ Completed  | ADR-001 … ADR-016 (ADR-004 r4, ADR-014 r4) |
 | Next.js scaffold            | 🔧 Exists     | root, v16.3.5; template content; needs T002 |
 | Clerk integration           | ⬜ Not Started |                                            |
 | Database schema / RLS       | ⬜ Not Started | `supabase/migrations/` does not exist yet  |
@@ -471,7 +475,7 @@ Architecture changes additionally require an ADR in
 | Application shape              | Single Next.js 16 app; Route Handlers for `/api/v1`           | ADR-001, Constitution VIII |
 | Authentication                 | Clerk (sole auth system); Supabase Auth not used              | ADR-003, Constitution III |
 | Authorization                  | Service layer primary + RLS secondary; role in DB             | ADR-004 |
-| Write protection               | Column allow-lists + guarded `SECURITY DEFINER` functions; no direct writes on invariant tables | ADR-004 r2 |
+| Write protection               | Column allow-lists (plain fields only) + guarded `SECURITY DEFINER` functions; encrypted columns function-only; Class A audit triggers | ADR-004 r4 |
 | External access               | Beneficiary = every recipient; one `access_tokens` entity; cookie exchange | ADR-014 |
 | Malware scanning              | ClamAV in production; `noop` refused                          | ADR-015 |
 | AI draft persistence          | `ai_drafts` + versions (encrypted); sanitized `ai_interactions` | ADR-016 |
@@ -494,9 +498,9 @@ Architecture changes additionally require an ADR in
 | Item                                              | Status        | Tracked in |
 |---------------------------------------------------|---------------|------------|
 | FR-A014 failed sign-in event coverage with Clerk  | 🔍 Verify     | T203 |
-| Vercel / Supabase plan prerequisites (cron, `maxDuration`, 500 MB files, PITR) | 🔍 Verify | T210 |
+| Vercel / Supabase plan prerequisites (cron, `maxDuration`, 500 MB files, PITR) | 🔍 Verify | T210 (Phase 1) |
 | Default branch naming (`master` vs `main`) and feature branch | ⬜ Owner decision | PROJECT_STATUS |
-| `.gitignore` missing Next.js entries (`next-env.d.ts`, `*.tsbuildinfo`, `coverage/`, …) | ⬜ Pending | T009 |
+| `.gitignore` missing Next.js entries (`next-env.d.ts`, `*.tsbuildinfo`, `coverage/`, …); `next-env.d.ts` is tracked since `4cac2d3` and must be un-tracked | ⬜ Pending | T009 |
 | Search engine for document search                 | ⬜ Undecided   | — |
 | ClamAV hosting location (container platform or VM near Supabase region) | ⬜ Owner decision | ADR-015, PROJECT_STATUS |
 | Audit-log retention schedule (legal)              | ⬜ Owner decision | data-model § Retention |

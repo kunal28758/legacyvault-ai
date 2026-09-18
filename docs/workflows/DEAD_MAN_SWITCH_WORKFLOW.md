@@ -98,14 +98,25 @@ me" path to the Security Center.
 
 When escalation steps are exhausted, `dms.release`:
 
-1. issues a **DMS_RELEASE access token** for each trusted-contact beneficiary
-   through `system_issue_access_token()`, scoped **exactly** to the
-   configured release scope (documents, assets, videos, plan sections of the
-   latest finalized plan) and nothing else;
-2. emails each contact an access link (`/access?t=…`) — the contact exchanges
-   it for an access cookie and views resources read-only through the shared
-   `/api/v1/access/*` endpoints (audited);
-3. moves the switch to **RELEASED**, records a RELEASE event and audit row.
+1. moves the switch to **RELEASED**, records a RELEASE event and audit row,
+   and — in the same transaction, as an outbox insert inside
+   `dms_transition()` — enqueues **exactly one** `access.deliver`
+   job per trusted-contact beneficiary (idempotency key
+   `access.deliver:DMS_RELEASE:{releaseEventId}:{beneficiaryId}`; no token in
+   the payload);
+2. each `access.deliver` job issues a **DMS_RELEASE access token** through
+   `system_issue_access_token()`, scoped **exactly** to the configured release
+   scope (documents, assets, videos, plan sections of the latest finalized
+   plan) and nothing else, and emails the access link (`/access?t=…`); if the
+   send fails, the retry revokes the undelivered token
+   (`UNDELIVERED_REPLACED`) and mints exactly one replacement — never two live
+   tokens per (switch, beneficiary); after the last attempt a CRITICAL
+   `access.delivery_failed` audit row alerts the Super Admin, who can trigger
+   an audited resend (`POST /admin/access-tokens/:id/resend`) (ADR-014 § 6);
+3. the contact exchanges the link for an access cookie and views resources
+   read-only through the shared `/api/v1/access/*` endpoints (audited).
+   Owner recovery from RELEASED revokes the release tokens and turns pending
+   delivery jobs into no-ops.
 
 Unselected resources remain inaccessible; account access is never granted.
 

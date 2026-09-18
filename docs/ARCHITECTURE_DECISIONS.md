@@ -33,6 +33,14 @@
 > **Revision r2 (2026-09-18, post-`/speckit-analyze`)**: ADR-002 §6 and
 > ADR-004 revised (write-protection model, RLS test strategy); ADR-001 gains a
 > cache-safety rule; ADR-014/015/016 added.
+>
+> **Revision r3 (2026-09-18, targeted remediation H1/M1–M4/N1)**: ADR-004 § 6
+> wording (asset lifecycle via `delete_asset()`), ADR-006 § 3–4 (`dms.scan` job
+> heartbeat), ADR-016 § 2 (session-scoped assistant history).
+>
+> **Revision r4 (2026-09-18, post-final-gate)**: ADR-004 § 8 (sensitive-field
+> boundary + Class A audit triggers — gate finding S1); ADR-014 § 6 (access-link
+> delivery policy — gate finding C1).
 
 ---
 
@@ -272,7 +280,8 @@ verified gap in FR-A014 coverage that cannot be closed (T203).
 
 ## ADR-004 — Authorization model: service layer first, RLS as defense-in-depth
 
-**Status**: ✅ Accepted (r2) — 2026-09-18
+**Status**: ✅ Accepted (r4) — 2026-09-18
+**Revision notes**: r2 — § 6 write-protection model, § 7 RLS test strategy (analysis finding S1). r3 — § 6 wording: asset lifecycle through `delete_asset()` (targeted remediation M2). r4 — § 8 sensitive-field boundary and Class A audit triggers (final-gate finding S1).
 
 ### Context
 Constitution I requires defense-in-depth ("no single control may be the sole
@@ -336,9 +345,44 @@ presented to Supabase as a third-party JWT.
    on claims, not on Clerk's signature. End-to-end tests against preview
    deployments use a Clerk development instance with `@clerk/testing`
    testing tokens for real sessions. Both are wired in T015/T212/T215.
+8. **Sensitive-field boundary and Class A audit triggers (r4 — final-gate
+   finding S1).** The user-scoped client authenticates with the caller's own
+   Clerk session token, which Supabase accepts from any origin (the browser
+   already presents it for resumable uploads). A user can therefore issue
+   PostgREST writes against their own rows directly; RLS and the column
+   grants — not the absence of a browser client — are the boundary, and RLS
+   is never the only one. Decision:
+   - **Direct self-scoped CRUD stays available only for plain fields** (the
+     Class A allow-list): plain profile fields, beneficiary contact fields,
+     plain asset columns, folders, document/video metadata,
+     `notifications.read_at`.
+   - **Sensitive/encrypted fields are function-only**: every application-
+     encrypted column (`users.identification_details`,
+     `financial_assets.account_number|policy_number`,
+     `digital_assets.credentials|recovery_info`) has no `authenticated`
+     `INSERT`/`UPDATE` grant and is written only through the guarded
+     functions `create_asset()` and `set_encrypted_fields()`, which accept a
+     well-formed AES-256-GCM envelope or NULL (`INVALID_ENCRYPTION_ENVELOPE`
+     otherwise) and audit in-transaction. Asset rows are created only through
+     `create_asset()` (no direct `INSERT` on the asset tables), so business
+     rules and encryption cannot be bypassed.
+   - **Class A audit triggers**: `audit_class_a_change()` (`SECURITY
+     DEFINER`, `AFTER INSERT OR UPDATE`) on `users`, `beneficiaries`, the
+     three asset tables, `folders`, `documents` and `video_messages` writes a
+     redacted `audit_log` row for every direct change (actor from the JWT,
+     `metadata.source = 'db_trigger'`), suppressed inside guarded functions
+     via `app.audit_in_function`, so audit completeness does not depend on
+     application code (constitution XII; FR-D009, E005, F004, G005).
+   - **Service-layer auditability is preserved**: services keep their
+     authorization checks and outcome audit rows with correlation id; the
+     trigger row is additional and is the completeness guarantee.
+   Specified in `data-model.md` § Write-Protection Model 4–6; applied by
+   T218/T019; verified by T215. `docs/security/THREAT_MODEL.md` T4 and § 5
+   record the residual (owner-initiated direct writes to plain columns remain
+   possible and are trigger-audited).
 
 ### Requirements preserved
-Constitution I, III, VII; FR-Q001, FR-Q002, FR-Q014, FR-H012, FR-P012; SC-005.
+Constitution I, III, VII, XII; FR-Q001, FR-Q002, FR-Q014, FR-H012, FR-P012, FR-D009, FR-E003, FR-E005, FR-F004, FR-G003, FR-G005; SC-005, SC-009.
 
 ### Consequences
 - Policies must be written and tested per table (Phase 2 checklist,
@@ -423,7 +467,8 @@ requirement for customer-managed keys (activate ADR-013).
 
 ## ADR-006 — Background processing without Redis/BullMQ
 
-**Status**: ✅ Accepted — 2026-09-18
+**Status**: ✅ Accepted (r3) — 2026-09-18
+**Revision notes**: r3 — § 3 and § 4: the hourly `dms-scan` endpoint only enqueues one idempotent `dms.scan` job (`dms.scan:{YYYY-MM-DDTHH}`, UTC) and that job's SUCCEEDED `finished_at` is the sole scheduler heartbeat (targeted remediation M3). r4 — job type `access.deliver` added by ADR-014 § 6 (no change to this record's decisions).
 
 ### Context
 The plan introduced Redis + BullMQ for Dead Man Switch timers, notification
@@ -701,7 +746,8 @@ or regulatory demand.
 
 ## ADR-014 — Unified access-token model and cookie exchange
 
-**Status**: ✅ Accepted — 2026-09-18 (analysis findings I1, I3, S2, I7)
+**Status**: ✅ Accepted (r4) — 2026-09-18 (analysis findings I1, I3, S2, I7)
+**Revision notes**: r4 — § 6 access-link delivery policy (final-gate finding C1): deterministic per-contact idempotency, reissue-on-retry, audited resend paths.
 
 ### Context
 The r1 model had `BeneficiaryAccessToken` with a mandatory beneficiary FK
@@ -743,6 +789,54 @@ history.
 5. First successful exchange sets `access_tokens.used_at` and moves a PENDING
    beneficiary to ACTIVE; every access is audited with the beneficiary as
    actor.
+6. **Delivery policy for access links (r4 — final-gate finding C1).** The
+   plaintext token exists only in memory between minting and the email send;
+   it is never persisted (hash-only storage is unchanged). Because a send can
+   fail after the hash is committed, delivery is defined explicitly:
+   - **System grants (DMS_RELEASE, EMERGENCY_ACCESS) are delivered by the
+     `access.deliver` job, never inline.** `dms.release` (after moving the
+     switch to RELEASED) and `ea_decide_request(APPROVE)` / `ea_transition
+     (AUTO_GRANT)` enqueue exactly one job per contact in the same
+     transaction — an outbox insert into `jobs` performed inside the
+     PostgreSQL function (`dms_transition()`, `ea_decide_request()`,
+     `ea_transition()`), never a second client round-trip — with the
+     deterministic idempotency key
+     `access.deliver:{grantType}:{sourceId}:{beneficiaryId}` (`sourceId` =
+     the RELEASE event id, or the emergency request id). The payload carries
+     identifiers only.
+   - **The job** first checks that the source is still eligible (switch
+     RELEASED; request APPROVED/AUTO_GRANTED/ACTIVE) and otherwise completes
+     as a no-op (e.g. after owner recovery). On its first run it mints the
+     token and calls `system_issue_access_token()`; on a **retry** it finds
+     the existing token with `delivered_at IS NULL` and calls
+     `system_reissue_access_token()`, which **revokes the undelivered token
+     (`revoked_reason = UNDELIVERED_REPLACED`) and mints exactly one
+     replacement** (same grant, beneficiary, scope, links; `replaces_token_id`
+     set) atomically and audits `access.token_replaced`. Partial unique
+     indexes on `access_tokens` (one non-revoked token per
+     (switch, beneficiary) and per emergency request) make unlimited valid
+     tokens impossible even under concurrent runners. It then sends the email
+     through `sendToBeneficiary`; provider acceptance calls
+     `system_mark_token_delivered()` (`delivered_at`,
+     `delivery_provider_message_id`); a failed send raises so the runner
+     retries with backoff. After `max_attempts` the job dead-letters and
+     writes a CRITICAL audit row `access.delivery_failed` with a Super Admin
+     alert (and an owner notification for emergency grants).
+   - **Audited resend paths**: owner — `POST /beneficiaries/:id/tokens/
+     :tokenId/resend` (DIRECT_SHARE, `resend_access_token()`: revoke `RESENT`
+     + one replacement, plaintext returned once and emailed) and `POST
+     /emergency-access/requests/:id/resend-access` (enqueues a new
+     `access.deliver …:r{n}` run, where `n` = count of existing
+     `access.deliver` jobs for the same (grantType, sourceId, beneficiaryId)
+     + 1, computed inside the enqueue transaction); Super Admin — `POST /admin/access-tokens/
+     :id/resend` for dead-lettered DMS_RELEASE / EMERGENCY_ACCESS deliveries
+     when the owner is unavailable. Every resend revokes the current token and
+     mints exactly one replacement; every revocation/replacement is audited
+     (`access.resend_requested`, `access.token_replaced`,
+     `access.token_resent`).
+   - DIRECT_SHARE tokens keep the existing owner-present flow: the plaintext
+     is returned once to the owner and emailed; a failed email is recovered by
+     the owner's resend.
 
 ### Requirements preserved
 FR-D007, FR-D010, FR-D011, FR-H011–H015, FR-I005, FR-I012, FR-J001, FR-J003,
@@ -756,6 +850,12 @@ FR-J007–J010, FR-K005–K008; constitution I, III, VII, XII.
 - The `/emergency-access/session/:token` endpoint is removed; emergency
   contacts use the shared `/access` endpoints.
 - A new server secret (`ACCESS_COOKIE_KEY`) joins the environment schema.
+- r4: `access_tokens` gains `delivered_at`, `delivery_provider_message_id`,
+  `replaces_token_id`, `revoked_reason` and two partial unique indexes; job
+  type `access.deliver`; functions `resend_access_token()`,
+  `system_reissue_access_token()`, `system_mark_token_delivered()`;
+  `ea_decide_request()` no longer takes a token hash; three audited resend
+  endpoints (owner ×2, Super Admin ×1). Verified by T229, T235, T236.
 
 ### Alternatives considered
 - Separate contact entities per feature: rejected (three ways to describe the
@@ -815,7 +915,8 @@ minimization / no unnecessary disclosure).
 
 ## ADR-016 — AI draft persistence and versioning
 
-**Status**: ✅ Accepted — 2026-09-18 (finding I4)
+**Status**: ✅ Accepted (r3) — 2026-09-18 (finding I4)
+**Revision notes**: r3 — § 2: AI-assistant conversation turns are session-scoped and client-held, never persisted; no conversation/message entity (targeted remediation H1, Option A).
 
 ### Context
 FR-M006–M011 and FR-N001–N008 require drafts and findings to be reviewed,

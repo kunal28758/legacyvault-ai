@@ -1,6 +1,6 @@
 # Implementation Plan: LegacyVault AI — Baseline Product
 
-**Branch**: `master` (feature branch `001-baseline-product-spec` to be created before implementation) | **Created**: 2026-09-16 | **Revised**: 2026-09-18 r3 | **Spec**: [spec.md](./spec.md)
+**Branch**: `master` (feature branch `001-baseline-product-spec` to be created before implementation) | **Created**: 2026-09-16 | **Revised**: 2026-09-18 r4 | **Spec**: [spec.md](./spec.md)
 
 **Input**: Baseline product specification from `specs/001-baseline-product-spec/spec.md`
 
@@ -163,7 +163,8 @@ specs/001-baseline-product-spec/
 docs/
 ├── ARCHITECTURE_DECISIONS.md   # ADR-001 … ADR-016 (authoritative)
 ├── PROJECT_STATUS.md           # Current state snapshot
-└── BRAIN.md                    # Project knowledge (moved from repo root)
+├── BRAIN.md                    # Project knowledge (moved from repo root)
+└── README.md + topic folders     # architecture/ database/ development/ integrations/ monitoring/ product/ security/ ui/ workflows/ (docs/README.md is the index)
 ```
 
 ### Source Code (repository root — single Next.js application)
@@ -282,7 +283,7 @@ directory (matches the existing scaffold). No monorepo tooling.
 
 ```
 Route Handler (app/api/v1/**/route.ts)
-  └── withApi({ auth: 'user' | 'admin' | 'access-cookie' | 'public' | 'cron',
+  └── withApi({ auth: 'user' | 'admin' | 'access-cookie' | 'public' | 'cron' | 'webhook',
                 reverification?: 'strict' | 'multi_factor',
                 rateLimit?: policy, schema?: { body, query, params } })
         ├── correlation id (generate, log-bind, X-Correlation-ID, Sentry tag)
@@ -431,23 +432,27 @@ foundational services and the job runner.
 **Dependencies**: Phase 1
 
 **Major Modules**:
-- `supabase/migrations/0001_init.sql` (T018): all 29 entities from
-  `data-model.md` (snake_case), enums, FKs with `ON DELETE`, CHECK constraints,
+- `supabase/migrations/0001_init.sql` (T018): all 28 tables (29 entities;
+  `Session` is externalized to Clerk) from `data-model.md` (snake_case), enums, FKs with `ON DELETE`, CHECK constraints,
   unique and partial-unique indexes (`NULLS NOT DISTINCT` for folders),
   `updated_at` triggers, soft-delete columns
 - `0002_rls_and_privileges.sql` (T218): privilege baseline (`REVOKE ALL` from
   `anon`/`authenticated` + default privileges), RLS enabled everywhere,
   `SELECT` own-row policies, Class A `INSERT`/`UPDATE` policies with **column
-  allow-lists**, `protect_identity_columns` trigger on `users`, append-only
+  allow-lists** (never the encrypted columns; asset tables UPDATE-only),
+  `audit_class_a_change()` triggers on the Class A tables (ADR-004 r4),
+  `protect_identity_columns` trigger on `users`, append-only
   trigger on `audit_log`, `storage.objects` policies
 - `0003_functions.sql` (T019): guarded `SECURITY DEFINER` functions per the
   catalog in `data-model.md` § Write-Protection Model 5 (plan
   create/save/finalize/new-draft, assign/unassign, beneficiary status/removal
-  cascade, attach/detach document, issue/revoke token, delete document/video,
-  DMS owner transitions, EA configure/decide/revoke, AI draft update/confirm)
+  cascade, attach/detach document, issue/revoke/resend token, asset
+  create/sensitive-fields/delete, delete document/video, DMS owner
+  transitions, EA configure/decide/revoke, AI draft update/confirm)
   and system functions (`promote_upload`, `dms_transition`,
   `ea_request_access`, `ea_verify_otp`, `ea_transition`,
-  `system_issue_access_token`, `claim_jobs`, `rate_limit_hit`,
+  `system_issue_access_token`, `system_reissue_access_token`,
+  `system_mark_token_delivered`, `claim_jobs`, `rate_limit_hit`,
   `record_webhook_event`) with `EXECUTE` grants per role
 - Notification service + `notification.deliver` job handler (T155) so every
   later phase can send notifications without stubs
@@ -540,8 +545,9 @@ finalize with confirmation, version history read-only.
 - Access-cookie exchange (`POST /access/exchange`, `lib/security/
   access-session.ts`) and `/access/*` resource endpoints incl. plan sections
   (ADR-014, T230/T231)
-- Financial / Physical / Digital assets with encrypted fields, masked
-  responses, `/decrypt` endpoints gated by Clerk reverification with audit of
+- Financial / Physical / Digital assets created through `create_asset()`,
+  encrypted fields written only through `set_encrypted_fields()` (ADR-004 r4),
+  masked responses, `/decrypt` endpoints gated by Clerk reverification with audit of
   credential views (FR-E*, FR-F*, FR-G*)
 - Public `/access` page (exchange, resource list, downloads, plan sections)
 - Frontend pages, forms, re-auth gate component (Clerk reverification)
@@ -626,7 +632,8 @@ release and recovery — on the job table.
   `dms.send-checkin`, `dms.advance` (REMINDER_SENT → GRACE_PERIOD →
   ESCALATING → RELEASING), `dms.release` (DMS_RELEASE access tokens for the
   linked beneficiaries scoped exactly to `releaseScope`, incl. plan sections
-  — FR-I012)
+  — FR-I012; delivered by per-contact `access.deliver` jobs with
+  reissue-on-retry — ADR-014 § 6)
 - Tests: state-machine guards, scan idempotency, deadline math, scoped
   release, recovery, health stall (T235)
 - Check-in and escalation cancellation with Clerk reverification
@@ -665,7 +672,8 @@ verification, owner approval, auto-grant timeout, scoped time-limited access.
   personal request link (FR-J001, Clarifications 2026-09-18); public
   request/verify endpoints (email OTP, rate-limited per IP and per config)
   (FR-J002, J003); owner notification and approve/deny with reverification
-  (FR-J004, J005); timeout rules WAIT / AUTO_GRANT / DENY and request expiry
+  (FR-J004, J005; approval and auto-grant enqueue `access.deliver` — ADR-014
+  § 6); timeout rules WAIT / AUTO_GRANT / DENY and request expiry
   via `ea.auto-decide` / `ea.expire` jobs (FR-J006, J007); EMERGENCY_ACCESS
   tokens consumed through the shared `/access` endpoints (FR-J008);
   revocation (FR-J010); audit (FR-J009)
@@ -842,12 +850,12 @@ policy only, delivery-condition enforcement server-side, no direct URLs.
 | `docs/DEPLOYMENT.md` | Phase 0 → 13 | Environments, prerequisites, env vars, migration deploy, cron, WAF, runbooks |
 | `docs/PRD.md` | Phase 0 | Product requirements (derived from spec.md) |
 | `docs/FRD.md` | Phase 0 | Functional requirements (derived from spec.md) |
-| `docs/SYSTEM_ARCHITECTURE.md` | Phase 0 | Architecture overview, request pipeline, job flow, diagrams |
-| `docs/UI_UX_GUIDELINES.md` | Phase 0 | Design system, components, patterns |
+| `docs/architecture/SYSTEM_ARCHITECTURE.md` | ✅ Exists (pre-implementation baseline) → update T175 | Architecture overview, request pipeline, job flow, diagrams |
+| `docs/ui/DESIGN_SYSTEM.md` | ✅ Exists → update T234 (no separate `UI_UX_GUIDELINES.md`) | Design system, components, patterns |
 | `docs/ROADMAP.md` | Phase 0 | Release roadmap and phasing |
-| `docs/CHANGELOG.md` | Phase 0 | Change log (update per phase) |
+| `docs/product/CHANGELOG.md` | ✅ Exists → update per phase (T234) | Change log |
 | `docs/RBAC.md` | Phase 1 | Roles, permission matrix, service + RLS authorization flow |
-| `docs/SECURITY.md` | Phase 1 | Security architecture, Clerk configuration, RLS model, threat model, T203 outcome |
+| `docs/security/SECURITY_ARCHITECTURE.md` (+ `THREAT_MODEL.md`, `ENCRYPTION.md`) | ✅ Exists → update T178 (no separate `SECURITY.md`) | Security architecture, Clerk configuration, RLS model, threat model, T203 outcome |
 | `docs/SUPPORT_RUNBOOK.md` | Phase 7 (US17) | Account-recovery support process for lost password + MFA device |
 | `docs/DATABASE_SCHEMA.md` | Phase 2 (T242) | Entities, relationships, indexes, policies, grants, functions |
 | `docs/API_SPECIFICATION.md` | Phase 2 | Full endpoint documentation |

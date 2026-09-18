@@ -35,6 +35,12 @@ T230, T240.
 | DigitalAsset (§ 5) | `credentials`, `recoveryInfo` | FR-G003 |
 | AiDraftVersion (§ 28) | `content` (will draft sections / analysis findings) | may contain PII and legal content (ADR-016) |
 
+The first three rows have **no direct write grant**: they are written only
+through `create_asset()` / `set_encrypted_fields()`, which accept a well-formed
+envelope (`{ ciphertext, iv, authTag, keyId }`) or NULL (ADR-004 r4;
+`data-model.md` § Write-Protection Model 6). `AiDraftVersion.content` is
+written by the AI draft functions / service client (ADR-016).
+
 Decrypted values are returned only on authorized reads; for asset secrets the
 read requires Clerk reverification and is audited (`asset.credential_viewed`,
 FR-G004/G005). Encrypted fields are masked (`••••••`) in standard responses

@@ -1,6 +1,6 @@
 # Data Model: LegacyVault AI — Baseline Product
 
-**Phase**: 1 — Design & Contracts | **Created**: 2026-09-16 | **Revised**: 2026-09-18 (r3, targeted remediation H1/M1–M4/N1)
+**Phase**: 1 — Design & Contracts | **Created**: 2026-09-16 | **Revised**: 2026-09-18 (r4, post-gate remediation S1/C1)
 
 **Purpose**: Define entities, fields, relationships, validation rules, state
 transitions, and the database write-protection model for the baseline product.
@@ -25,6 +25,17 @@ transitions, and the database write-protection model for the baseline product.
 >   grant-type strict mapping in § 11 (M4); DIRECT_SHARE scope ⊆ the
 >   beneficiary's current assignments in `issue_access_token()` (N1).
 >   Entity count unchanged (29).
+> - **2026-09-18 r4** — Final-gate findings: (S1) **sensitive-field
+>   boundary** — application-encrypted columns lose every direct grant and
+>   are written only through `create_asset()` / `set_encrypted_fields()`;
+>   `audit_class_a_change()` triggers make Class A audit independent of
+>   application code (§ Write-Protection Model 6, ADR-004 r4); (C1)
+>   **access-link delivery policy** — `AccessToken` gains `deliveredAt`,
+>   `deliveryProviderMessageId`, `replacesTokenId`, `revokedReason`; job
+>   `access.deliver` with reissue-on-retry; `resend_access_token()`,
+>   `system_reissue_access_token()`, `system_mark_token_delivered()`
+>   (ADR-014 r4 § 6). Entity count unchanged (29 = 28 tables + Clerk
+>   Session).
 >
 > Conventions: column names are `snake_case` in SQL (`supabase/migrations/`),
 > shown here in logical `camelCase`. `ENCRYPTED` = application-level
@@ -36,17 +47,17 @@ transitions, and the database write-protection model for the baseline product.
 
 | # | Entity | Description | Write class* | Owner |
 |---|--------|-------------|:------------:|-------|
-| 1 | User | Application profile, preferences and role for a Clerk identity | A (column allow-list) | System |
+| 1 | User | Application profile, preferences and role for a Clerk identity | A (plain columns) + B (`set_encrypted_fields()`) | System |
 | 2 | Beneficiary | Any external recipient: beneficiary, trusted contact, emergency contact | A (column allow-list) + B (status/removal) | User |
-| 3 | FinancialAsset | Bank accounts, investments, insurance, retirement | A + B (deletion → `delete_asset()`) | User |
-| 4 | PhysicalAsset | Real estate, vehicles, valuables, property, business | A + B (deletion → `delete_asset()`) | User |
-| 5 | DigitalAsset | Crypto, online accounts, domains, subscriptions | A + B (deletion → `delete_asset()`) | User |
+| 3 | FinancialAsset | Bank accounts, investments, insurance, retirement | A (plain-column UPDATE) + B (`create_asset()`, `set_encrypted_fields()`, `delete_asset()`) | User |
+| 4 | PhysicalAsset | Real estate, vehicles, valuables, property, business | A (plain-column UPDATE) + B (`create_asset()`, `delete_asset()`) | User |
+| 5 | DigitalAsset | Crypto, online accounts, domains, subscriptions | A (plain-column UPDATE) + B (`create_asset()`, `set_encrypted_fields()`, `delete_asset()`) | User |
 | 6 | Document | Uploaded file in the secure vault | A (metadata columns) + B/C (lifecycle) | User |
 | 7 | DocumentVersion | Version history for documents | C (created by promotion) | Document |
 | 8 | Folder | Organizational container for documents | A | User |
 | 9 | LegacyPlan | Structured will / legacy plan | B | User |
 | 10 | LegacyPlanVersion | Finalized version snapshot | B (created by finalize) | LegacyPlan |
-| 11 | VideoMessage | Video legacy message | A (metadata columns) + C (lifecycle) | User |
+| 11 | VideoMessage | Video legacy message | A (metadata columns) + B/C (lifecycle) | User |
 | 12 | DeadManSwitch | Inactivity monitoring configuration | B | User |
 | 13 | DeadManSwitchEvent | DMS state transition record | B/C | DeadManSwitch |
 | 14 | EmergencyAccessConfig | Emergency-contact designation for a beneficiary | B | User |
@@ -94,8 +105,8 @@ writes, admin, token/OTP flows, upload promotion).
 
 | Class | Reads (`authenticated`) | Writes (`authenticated`) | Used for |
 |-------|-------------------------|--------------------------|----------|
-| **A — plain user data** | `SELECT` own rows via RLS `USING (owner = self)` | Direct `INSERT`/`UPDATE` on own rows via RLS `WITH CHECK`, **restricted to an explicit column allow-list** (`GRANT UPDATE (col, …)`); no `DELETE` unless stated | Profile fields, assets, folders, beneficiary contact fields, document metadata, notification `readAt` |
-| **B — guarded** | `SELECT` own rows via RLS | **No direct write grants.** All mutations through guarded `SECURITY DEFINER` functions (below) | Plans, assignments, attachments, tokens, DMS, emergency access, AI drafts, document lifecycle |
+| **A — plain user data** | `SELECT` own rows via RLS `USING (owner = self)` | Direct `INSERT`/`UPDATE` on own rows via RLS `WITH CHECK`, **restricted to an explicit column allow-list** (`GRANT UPDATE (col, …)`); no `DELETE` unless stated; **never** an `ENCRYPTED` column; every direct change is recorded by the `audit_class_a_change()` trigger (§ 6) | Plain profile fields, plain asset columns, folders, beneficiary contact fields, document/video metadata, notification `readAt` |
+| **B — guarded** | `SELECT` own rows via RLS | **No direct write grants.** All mutations through guarded `SECURITY DEFINER` functions (below) | Plans, assignments, attachments, tokens, DMS, emergency access, AI drafts, asset creation / sensitive fields / deletion, document and video lifecycle |
 | **C — system** | `SELECT` own rows where stated; otherwise none | None — `service_role` only | Jobs, rate limits, webhook events, audit log, upload sessions, AI interactions, notification inserts |
 
 "self" = the `users` row whose `clerkUserId = (select auth.jwt()->>'sub')`
@@ -147,9 +158,9 @@ ever mis-applied.
 
 | Table | INSERT own | UPDATE own — allowed columns | DELETE |
 |-------|:----------:|------------------------------|:------:|
-| users | ✗ | dateOfBirth, phone, alternateEmail, address, identificationDetails, familyInfo, preferences, notificationPreferences, securityPreferences, onboardingCompletedAt | ✗ |
+| users | ✗ | dateOfBirth, phone, alternateEmail, address, familyInfo, preferences, notificationPreferences, securityPreferences, onboardingCompletedAt — **not** `identificationDetails` (ENCRYPTED → `set_encrypted_fields()`) | ✗ |
 | beneficiaries | ✓ (status defaults PENDING) | name, relationship, email, phone, notes | ✗ (→ `remove_beneficiary()`) |
-| financial_assets / physical_assets / digital_assets | ✓ | all domain columns **except** `deletedAt`; never `userId`, `id`, `createdAt`, `deletedAt` (soft delete only through `delete_asset()`) | ✗ (→ `delete_asset()`) |
+| financial_assets / physical_assets / digital_assets | ✗ (→ `create_asset()`) | plain domain columns only — **never** the ENCRYPTED columns (`accountNumber`, `policyNumber`, `credentials`, `recoveryInfo` → `set_encrypted_fields()`), never `userId`, `id`, `createdAt`, `deletedAt` (→ `delete_asset()`) | ✗ (→ `delete_asset()`) |
 | folders | ✓ | name, parentId, deletedAt | ✗ |
 | documents | ✗ | name, folderId, metadata | ✗ (→ `delete_document()`) |
 | video_messages | ✗ | title, description, deliveryCondition, metadata | ✗ (→ `delete_video()`) |
@@ -157,7 +168,9 @@ ever mis-applied.
 
 Everything not listed is Class B or C. Application services still perform
 their own authorization and audit logging for Class A writes (ADR-004 primary
-control); the grants are the second barrier.
+control); the grants are the second barrier, and every Class A table above
+except `notifications` carries the `audit_class_a_change()` trigger (§ 6) so
+the audit trail does not depend on the application path alone.
 
 ### 5. Guarded function catalog
 
@@ -173,25 +186,77 @@ control); the grants are the second barrier.
 | `remove_beneficiary(p_beneficiary_id, p_corr)` (auth) | cascade removal | deletes assignments, revokes tokens, removes DMS contact links, deactivates EA configs, soft-deletes row — atomically |
 | `attach_document(p_document_id, p_resource_type, p_resource_id, p_corr)` / `detach_document(p_attachment_id, p_corr)` (auth) | document links | ownership of document and target; unique link |
 | `issue_access_token(p_beneficiary_id, p_scope, p_token_hash, p_expires_at, p_corr)` (auth) | DIRECT_SHARE token | ownership, beneficiary ACTIVE/PENDING, ttl ≤ 30 days; **scope ⊆ current `beneficiary_assignments` of p_beneficiary_id** — every `documents`/`assets`/`videos` id must be owned by the caller **and** currently assigned to that beneficiary, `planSections` must be empty (not assignable) → otherwise 422 `SCOPE_NOT_ASSIGNED` (FR-D011); videos in scope must have `deliveryCondition = IMMEDIATE` (§ 11 strict mapping) → otherwise 422 `DELIVERY_CONDITION_MISMATCH` |
-| `revoke_access_token(p_token_id, p_corr)` (auth) | revoke | ownership |
+| `revoke_access_token(p_token_id, p_corr)` (auth) | revoke | ownership; `revokedReason = OWNER` |
+| `resend_access_token(p_token_id, p_token_hash, p_expires_at, p_corr)` (auth) | owner resend of a DIRECT_SHARE link (ADR-014 § 6) | ownership; the replacement **re-applies every `issue_access_token()` invariant**: scope ⊆ the beneficiary's *current* `beneficiary_assignments` (else 422 `SCOPE_NOT_ASSIGNED`), beneficiary not INACTIVE (else 422), videos in scope `IMMEDIATE` per § 11 (else 422 `DELIVERY_CONDITION_MISMATCH`), `p_expires_at` ≤ 30 days; only then is the previous token revoked in the same transaction (`revokedReason = RESENT`) and exactly one replacement inserted with the same beneficiary/scope and `replacesTokenId`; audit `access.token_resent` |
 | `delete_document(p_document_id, p_corr)` / `delete_video(p_video_id, p_corr)` (auth) | soft delete + enqueue object removal | ownership; assignments/attachments removed; audit retained (FR-H017) |
 | `delete_asset(p_resource_type, p_asset_id, p_corr)` (auth) | soft delete of one FINANCIAL_ASSET / PHYSICAL_ASSET / DIGITAL_ASSET | ownership (`FOR UPDATE` on the asset row); in one transaction: removes the asset's `beneficiary_assignments` and `document_attachments`, sets `deletedAt`, writes the audit row (previous values redacted per the audit rules); direct `deletedAt` writes on asset tables are denied |
+| `create_asset(p_resource_type, p_plain, p_encrypted, p_corr)` (auth) | insert one FINANCIAL_ASSET / PHYSICAL_ASSET / DIGITAL_ASSET (§ 6) | typed plain columns per resource type (static `CASE`; category enum, ISO-4217 currency, no `userId`/`id`/timestamps in `p_plain`); every value in `p_encrypted` is a well-formed encryption envelope (`{ ciphertext, iv, authTag, keyId }`) or NULL — plaintext is never accepted; row inserted with `user_id = v_user_id`; audit row (encrypted values redacted) |
+| `set_encrypted_fields(p_resource_type ∈ {USER, FINANCIAL_ASSET, DIGITAL_ASSET}, p_resource_id, p_fields, p_corr)` (auth) | write ENCRYPTED columns (§ 6) | ownership (`FOR UPDATE`; USER = own row); only the ENCRYPTED columns of that type (`identificationDetails` / `accountNumber`, `policyNumber` / `credentials`, `recoveryInfo`); each value a well-formed envelope or NULL, else `INVALID_ENCRYPTION_ENVELOPE` (422); audit row lists the changed fields with values redacted as `[encrypted]` |
 | `dms_configure(p_config, p_contact_beneficiary_ids, p_release_scope, p_corr)` (auth) | create/update switch | one switch per user; ≥ 1 contact; contacts owned & not INACTIVE; scope ids owned; videos in `p_release_scope` must have `deliveryCondition` IMMEDIATE or DEAD_MAN_SWITCH (§ 11 strict mapping) else 422 `DELIVERY_CONDITION_MISMATCH`; `nextCheckInAt` computed |
 | `dms_pause / dms_resume / dms_disable / dms_check_in / dms_cancel_escalation (p_corr)` (auth) | owner transitions | state-machine guard; event row; reverification is enforced by the API layer before the call |
 | `ea_configure_contact(p_beneficiary_id, p_access_scope, p_on_timeout, p_timeout_hours, p_request_expiry_hours, p_corr)` / `ea_update_contact` / `ea_remove_contact` (auth) | designation | beneficiary owned & not INACTIVE; scope ids owned; videos in `p_access_scope` must have `deliveryCondition` IMMEDIATE or EMERGENCY_ACCESS (§ 11 strict mapping) else 422 `DELIVERY_CONDITION_MISMATCH`; unique per beneficiary |
-| `ea_decide_request(p_request_id, p_decision, p_token_hash, p_expires_at, p_corr)` (auth) | owner APPROVE/DENY | request belongs to caller's config; state VERIFIED; approve issues EMERGENCY_ACCESS token |
+| `ea_decide_request(p_request_id, p_decision, p_corr)` (auth) | owner APPROVE/DENY | request belongs to caller's config; state VERIFIED; APPROVE → APPROVED and enqueues exactly one `access.deliver` job in the same transaction — an outbox insert into `jobs` performed inside the function (idempotency `access.deliver:EMERGENCY_ACCESS:{requestId}:{beneficiaryId}`) — the token is issued by that job (ADR-014 § 6); DENY → DENIED |
 | `ea_revoke(p_request_id, p_corr)` (auth) | owner revoke | state ACTIVE; token revoked |
 | `update_ai_draft(p_draft_id, p_content_encrypted, p_corr)` (auth) | user edit → new USER version | ownership; status DRAFT/PENDING_CONFIRMATION |
 | `confirm_ai_draft(p_draft_id, p_version_id, p_corr)` (auth) | WILL draft → CONFIRMED | ownership; version belongs to draft; supersedes prior CONFIRMED |
 | `confirm_analysis_findings(p_draft_id, p_assets, p_beneficiaries, p_corr)` (auth) | create records from selected findings | ownership; typed payloads; each created row audited; draft → CONFIRMED |
 | **System (service_role only, SECURITY INVOKER)** | | |
 | `promote_upload(p_upload_id, p_target, p_metadata)` | upload → Document/Version or VideoMessage | session state SCANNED_CLEAN; atomic rows |
-| `dms_transition(p_switch_id, p_from, p_to, p_event_type, p_metadata)` | job-driven transitions | guard on `p_from` |
-| `ea_request_access(p_config_id, p_requester_email, p_otp_hash)` / `ea_verify_otp(p_request_id, p_otp_hash)` / `ea_transition(...)` | public + job flows | email must match beneficiary email; ≤ 3 attempts; timeout rules |
-| `system_issue_access_token(p_beneficiary_id, p_grant_type, p_scope, p_token_hash, p_expires_at, p_dms_id, p_request_id)` | DMS_RELEASE / EMERGENCY_ACCESS tokens | scope ⊆ release/access scope (already validated against the § 11 delivery-condition mapping at configuration time; re-checked at issue: DMS_RELEASE admits IMMEDIATE/DEAD_MAN_SWITCH videos, EMERGENCY_ACCESS admits IMMEDIATE/EMERGENCY_ACCESS videos) |
+| `dms_transition(p_switch_id, p_from, p_to, p_event_type, p_metadata)` | job-driven transitions | guard on `p_from`; the transition to RELEASED also inserts the per-contact `access.deliver` jobs as an **outbox operation inside the function** (same transaction — ADR-014 § 6) |
+| `ea_request_access(p_config_id, p_requester_email, p_otp_hash)` / `ea_verify_otp(p_request_id, p_otp_hash)` / `ea_transition(...)` | public + job flows | email must match beneficiary email; ≤ 3 attempts; timeout rules; `ea_transition(… → AUTO_GRANTED)` inserts the `access.deliver` job as an **outbox operation inside the function** (same transaction — ADR-014 § 6) |
+| `system_issue_access_token(p_beneficiary_id, p_grant_type, p_scope, p_token_hash, p_expires_at, p_dms_id, p_request_id)` | DMS_RELEASE / EMERGENCY_ACCESS tokens (called only by the `access.deliver` job) | scope ⊆ release/access scope (already validated against the § 11 delivery-condition mapping at configuration time; re-checked at issue: DMS_RELEASE admits IMMEDIATE/DEAD_MAN_SWITCH videos, EMERGENCY_ACCESS admits IMMEDIATE/EMERGENCY_ACCESS videos); at most one non-revoked token per (switch, beneficiary) / per emergency request (partial unique indexes, § 21) |
+| `system_reissue_access_token(p_previous_token_id, p_token_hash, p_expires_at, p_reason ∈ {UNDELIVERED_REPLACED, RESENT})` | replacement of a system-issued token on delivery retry / audited resend (ADR-014 § 6) | previous token revoked (`revokedReason = p_reason`) and exactly one replacement inserted with identical grant type, beneficiary, scope, `deadManSwitchId`/`emergencyRequestId` and `replacesTokenId`, atomically; `emergency_access_requests.access_token_id` repointed; audit `access.token_replaced` |
+| `system_mark_token_delivered(p_token_id, p_provider_message_id)` | delivery acknowledgement | sets `deliveredAt` (once) and `deliveryProviderMessageId` |
 | `claim_jobs(p_limit, p_runner_id)` | `FOR UPDATE SKIP LOCKED` claim | — |
 | `rate_limit_hit(p_key, p_window_start, p_limit)` | atomic counter | — |
 | `record_webhook_event(p_provider, p_event_id, p_event_type)` | idempotency insert; returns `false` if already processed | PK (provider, eventId) |
+
+### 6. Sensitive-field boundary and Class A audit triggers (r4 — gate finding S1)
+
+The user-scoped client authenticates with the caller's **own Clerk session
+token**, and Supabase accepts that token from anywhere — the browser already
+presents it for resumable uploads. Direct PostgREST writes by the row owner
+are therefore possible by design; RLS and the column grants above are the
+boundary, **not** the absence of a browser database client, and RLS is never
+the only barrier. Consequences, applied by T218/T019 and tested by T215:
+
+1. **Safe for direct self-scoped CRUD** (Class A allow-list, § 4): plain
+   profile fields, beneficiary contact fields, plain asset columns, folders,
+   document/video metadata, `notifications.readAt`.
+2. **Function-only columns**: every `ENCRYPTED` column —
+   `users.identificationDetails`, `financial_assets.accountNumber`,
+   `financial_assets.policyNumber`, `digital_assets.credentials`,
+   `digital_assets.recoveryInfo` — has **no** `authenticated` `INSERT`/`UPDATE`
+   grant. They are written only through `create_asset()` and
+   `set_encrypted_fields()` (§ 5), which accept a well-formed AES-256-GCM
+   envelope (`{ ciphertext, iv, authTag, keyId }`, produced by
+   `lib/security/encryption.ts`) or NULL and raise
+   `INVALID_ENCRYPTION_ENVELOPE` otherwise, so plaintext cannot reach an
+   encrypted column and every change is audited in the same transaction.
+   Asset rows are created only through `create_asset()` (no direct `INSERT`
+   grant on the three asset tables), so creation is atomic with its encrypted
+   fields and audited.
+3. **Class A audit triggers**: `audit_class_a_change()` — a `SECURITY DEFINER`
+   `AFTER INSERT OR UPDATE` trigger on `users`, `beneficiaries`,
+   `financial_assets`, `physical_assets`, `digital_assets`, `folders`,
+   `documents` and `video_messages` — inserts an `audit_log` row for every
+   direct change: `actor_id` resolved from `auth.jwt()->>'sub'` (NULL with
+   `metadata.db_role` when the service role writes), action
+   `{table}.row_created` / `{table}.row_changed`, resource type/id, `outcome =
+   SUCCESS`, `metadata.changed` (column names) and previous/new values for
+   allow-listed plain columns only (encrypted and protected columns rendered
+   as `[encrypted]` / `[protected]`), `correlation_id` from
+   `current_setting('app.correlation_id', true)` when set,
+   `metadata.source = 'db_trigger'`. Guarded functions set
+   `set_config('app.audit_in_function', 'on', true)` after the auth prologue
+   and the trigger skips while it is set, so a guarded call still produces
+   exactly one audit row.
+4. **Service-layer audit is preserved**: services keep their authorization
+   checks and SUCCESS / DENIED / FAILURE audit rows with correlation id
+   (ADR-004 primary control). A service-mediated Class A change therefore
+   yields a service row and a trigger row; they are distinguishable by
+   `metadata.source` and the trigger row is the completeness guarantee
+   (constitution XII, FR-D009, FR-E005, FR-F004, FR-G005).
 
 ---
 
@@ -219,7 +284,7 @@ the admin service through the service client (never by an
 | phone | String | NULL | |
 | alternateEmail | String | NULL | FR-B003 |
 | address | JSONB | NULL | Structured address |
-| identificationDetails | String | NULL, ENCRYPTED | |
+| identificationDetails | String | NULL, ENCRYPTED | Function-only write — `set_encrypted_fields('USER', …)`; no direct grant (§ Write-Protection Model 6) |
 | familyInfo | JSONB | NULL | Spouse, children, parents, dependents |
 | role | Enum | NOT NULL, default USER | USER, SUPER_ADMIN — protected column |
 | preferences | JSONB | NULL, default {} | language, currency, dateFormat, theme |
@@ -280,8 +345,8 @@ tokens/assignments), `INACTIVE → ACTIVE` (owner). Removal = cascade function.
 | name | String | NOT NULL | |
 | category | Enum | NOT NULL | BANK_ACCOUNT, FIXED_DEPOSIT, MUTUAL_FUND, STOCK, INSURANCE, RETIREMENT |
 | institution | String | NULL | |
-| accountNumber | String | NULL, ENCRYPTED | |
-| policyNumber | String | NULL, ENCRYPTED | |
+| accountNumber | String | NULL, ENCRYPTED | Function-only write — `create_asset()` / `set_encrypted_fields()` |
+| policyNumber | String | NULL, ENCRYPTED | Function-only write — `create_asset()` / `set_encrypted_fields()` |
 | estimatedValue | Decimal | NULL | |
 | currency | String | NOT NULL, default "USD" | ISO 4217 |
 | notes | Text | NULL | |
@@ -326,8 +391,8 @@ tokens/assignments), `INACTIVE → ACTIVE` (owner). Removal = cascade function.
 | category | Enum | NOT NULL | CRYPTO_WALLET, ONLINE_ACCOUNT, DOMAIN, SUBSCRIPTION, SOCIAL_MEDIA, OTHER |
 | platform | String | NULL | |
 | username | String | NULL | |
-| credentials | String | NULL, ENCRYPTED | |
-| recoveryInfo | String | NULL, ENCRYPTED | |
+| credentials | String | NULL, ENCRYPTED | Function-only write — `create_asset()` / `set_encrypted_fields()` |
+| recoveryInfo | String | NULL, ENCRYPTED | Function-only write — `create_asset()` / `set_encrypted_fields()` |
 | estimatedValue | Decimal | NULL | |
 | currency | String | NOT NULL, default "USD" | |
 | notes | Text | NULL | |
@@ -576,7 +641,7 @@ status.
 | requestExpiresAt | DateTime | NOT NULL | now + config.requestExpiryHours |
 | decidedBy | Enum | NULL | OWNER, SYSTEM |
 | decidedAt | DateTime | NULL | |
-| accessTokenId | UUID | FK → AccessToken, NULL | Issued on grant |
+| accessTokenId | UUID | FK → AccessToken, NULL | Current token, set by the `access.deliver` job on issue and repointed on replacement (ADR-014 § 6) |
 | grantedAt | DateTime | NULL | |
 | expiresAt | DateTime | NULL | Access expiry (config.accessDurationHours) |
 | revokedAt | DateTime | NULL | |
@@ -588,11 +653,11 @@ status.
 PENDING → VERIFYING          (OTP sent)
 VERIFYING → VERIFIED         (OTP correct)
 VERIFYING → FAILED           (3 wrong attempts or OTP expired)
-VERIFIED → APPROVED          (owner, ea_decide_request)
+VERIFIED → APPROVED          (owner, ea_decide_request — enqueues access.deliver)
 VERIFIED → DENIED            (owner, or SYSTEM when onTimeout = DENY)
 VERIFIED → AUTO_GRANTED      (SYSTEM when onTimeout = AUTO_GRANT)
 PENDING|VERIFYING|VERIFIED → EXPIRED (requestExpiresAt reached)
-APPROVED|AUTO_GRANTED → ACTIVE (token issued, timer started)
+APPROVED|AUTO_GRANTED → ACTIVE (token issued by the access.deliver job, timer started — ADR-014 § 6)
 ACTIVE → EXPIRED             (expiresAt reached — token revoked)
 ACTIVE → REVOKED             (owner ea_revoke)
 ```
@@ -729,13 +794,28 @@ subsequent request paths.
 | scope | JSONB | NOT NULL | `{ documents: uuid[], assets: [{type,id}], videos: uuid[], planSections: string[] }` — all owned by ownerUserId; for DIRECT_SHARE additionally ⊆ the beneficiary's current `beneficiary_assignments` (`planSections` empty — FR-D011); videos must satisfy the § 11 delivery-condition mapping for the grant type |
 | expiresAt | DateTime | NOT NULL | ≤ 30 days (DIRECT_SHARE), config-driven otherwise |
 | revokedAt | DateTime | NULL | |
+| revokedReason | Enum | NULL | OWNER, BENEFICIARY_INACTIVE, BENEFICIARY_REMOVED, RECOVERY, EXPIRED, UNDELIVERED_REPLACED, RESENT, ADMIN — set whenever `revokedAt` is set |
+| deliveredAt | DateTime | NULL | Set by `system_mark_token_delivered()` when the email provider accepts the access-link message (ADR-014 § 6); NULL = not yet delivered |
+| deliveryProviderMessageId | String | NULL | Provider message id of the access-link email; bounces are matched by T209 (`access.delivery_bounced`) |
+| replacesTokenId | UUID | FK → AccessToken, NULL | Set on a replacement minted by `system_reissue_access_token()` / `resend_access_token()`; the previous token is revoked in the same transaction |
 | usedAt | DateTime | NULL | First exchange |
 | lastUsedAt | DateTime | NULL | Sliding; for security review |
 | createdAt | DateTime | NOT NULL, auto | |
 
 **CHECK**: `(grantType='DMS_RELEASE') = (deadManSwitchId IS NOT NULL)` and
 `(grantType='EMERGENCY_ACCESS') = (emergencyRequestId IS NOT NULL)`.
-**Indexes**: tokenHash (unique), beneficiaryId, ownerUserId, expiresAt.
+**Indexes**: tokenHash (unique), beneficiaryId, ownerUserId, expiresAt,
+replacesTokenId; **partial unique** `(deadManSwitchId, beneficiaryId) WHERE
+grantType = 'DMS_RELEASE' AND revokedAt IS NULL` and `(emergencyRequestId)
+WHERE grantType = 'EMERGENCY_ACCESS' AND revokedAt IS NULL` — at most one live
+system-issued token per (switch, beneficiary) and per emergency request, so a
+delivery retry can never accumulate valid tokens (ADR-014 § 6).
+**Delivery** (ADR-014 § 6): plaintext exists only in memory between minting
+and the email send; DMS_RELEASE / EMERGENCY_ACCESS links are sent by the
+`access.deliver` job (deterministic per-contact idempotency key, reissue-on-
+retry: revoke the undelivered token with `UNDELIVERED_REPLACED` and mint
+exactly one replacement); DIRECT_SHARE links are returned once to the owner and
+re-sent only through `resend_access_token()` (`RESENT`).
 **Access cookie**: stateless — `{ tokenId, exp }` encrypted with a dedicated
 server key (`ACCESS_COOKIE_KEY`), `httpOnly; Secure; SameSite=Strict;
 Path=/api/v1/access`, 30-minute sliding TTL, never beyond `expiresAt`;
@@ -748,8 +828,8 @@ revocation is re-checked against this table on every request. No table.
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
 | id | UUID | PK | |
-| type | String | NOT NULL, indexed | `dms.scan`, `dms.send-checkin`, `dms.advance`, `dms.release`, `ea.auto-decide`, `ea.expire`, `notification.deliver`, `ai.analyze-document`, `video.process`, `file.scan`, `security.new-device-check`, `storage.remove-object`, `user.hard-delete` |
-| payload | JSONB | NOT NULL, default {} | No secrets / document content |
+| type | String | NOT NULL, indexed | `dms.scan`, `dms.send-checkin`, `dms.advance`, `dms.release`, `access.deliver`, `ea.auto-decide`, `ea.expire`, `notification.deliver`, `ai.analyze-document`, `video.process`, `file.scan`, `security.new-device-check`, `storage.remove-object`, `user.hard-delete` |
+| payload | JSONB | NOT NULL, default {} | No secrets / document content; `access.deliver` carries `{ grantType, sourceId, beneficiaryId }` only — never a token |
 | status | Enum | NOT NULL, default QUEUED | QUEUED, RUNNING, SUCCEEDED, FAILED, DEAD |
 | runAt | DateTime | NOT NULL, default now() | |
 | attempts | Int | NOT NULL, default 0 | |
@@ -757,7 +837,7 @@ revocation is re-checked against this table on every request. No table.
 | lockedAt | DateTime | NULL | |
 | lockedBy | String | NULL | |
 | lastError | Text | NULL | Sanitized |
-| idempotencyKey | String | UNIQUE, NULL | e.g. `dms:{switchId}:{nextCheckInAt}` |
+| idempotencyKey | String | UNIQUE, NULL | e.g. `dms:{switchId}:{nextCheckInAt}`, `dms.scan:{YYYY-MM-DDTHH}` (UTC), `access.deliver:{grantType}:{sourceId}:{beneficiaryId}[:r{n}]` (resend runs: `n` = count of existing `access.deliver` jobs for the same (grantType, sourceId, beneficiaryId) + 1, computed inside the enqueue transaction) |
 | progress | JSONB | NULL | For UI polling (NFR-PER-004) |
 | finishedAt | DateTime | NULL | Health checks |
 | createdAt / updatedAt | DateTime | NOT NULL, auto | |
@@ -935,6 +1015,8 @@ System ─────── Job / RateLimitBucket / ProcessedWebhookEvent
 | Token / OTP single-use & expiry | AccessToken, EmergencyAccessRequest | Hash-only storage, `expiresAt`, `revokedAt`; housekeeping sweeps; cookie exchange |
 | Emergency request email match, attempts, timeout rules | EmergencyAccessRequest | `ea_request_access()`, `ea_verify_otp()`, `ea_transition()` (WAIT/AUTO_GRANT/DENY, request expiry) |
 | Audit log append-only | AuditLog | Trigger + no update/delete grants |
+| Sensitive/encrypted fields never written directly; Class A changes audited independently of application code | User, FinancialAsset, DigitalAsset (+ every Class A table) | No grant on `ENCRYPTED` columns; `create_asset()` / `set_encrypted_fields()` with envelope validation; `audit_class_a_change()` trigger (§ Write-Protection Model 6) |
+| One live system token per (switch, beneficiary) and per emergency request; reissue-on-retry, never unlimited valid tokens | AccessToken | Partial unique indexes (§ 21) + `access.deliver` job + `system_reissue_access_token()` (ADR-014 § 6) |
 | Cross-user isolation | all user-owned tables | Service-layer checks (primary) + RLS (secondary) + column grants + guarded functions |
 | Webhook idempotency | ProcessedWebhookEvent | `record_webhook_event()` PK |
 
@@ -949,7 +1031,10 @@ System ─────── Job / RateLimitBucket / ProcessedWebhookEvent
   `emergency_access_requests` via config ownership, `access_tokens` via
   ownerUserId, `ai_draft_versions` via draft ownership).
 - `authenticated` `INSERT`/`UPDATE` policies **only** on Class A tables, and
-  only for the allow-listed columns (§ Write-Protection Model 4).
+  only for the allow-listed columns (§ Write-Protection Model 4) — never an
+  `ENCRYPTED` column, no `INSERT` on the asset tables; every direct change is
+  trigger-audited (§ 6). The browser holds a Clerk token that Supabase accepts,
+  so these grants — not the absence of a browser client — are the boundary.
 - All other writes: guarded `SECURITY DEFINER` functions (Class B) or the
   `service_role` from server code (Class C).
 - `storage.objects`: no client `SELECT`; `INSERT` only into `quarantine`

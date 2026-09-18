@@ -69,8 +69,19 @@ Three barriers, applied together:
      to `authenticated`); Class C system tables reachable only by the
      service role. A `BEFORE UPDATE` trigger protects `users` identity
      columns even if a grant is mis-applied.
+   - **Sensitive-field boundary (ADR-004 r4)**: the application-encrypted
+     columns (`users.identificationDetails`, financial `accountNumber` /
+     `policyNumber`, digital `credentials` / `recoveryInfo`) have **no**
+     direct grant and are written only through `create_asset()` /
+     `set_encrypted_fields()` (envelope-validated, audited); asset rows are
+     created only through `create_asset()`. `audit_class_a_change()`
+     triggers record every direct Class A change, so audit completeness does
+     not depend on application code. RLS + grants are the second barrier —
+     never the only one (`data-model.md` § Write-Protection Model 6).
 3. **Two server-only clients** — user-scoped (publishable key + Clerk token;
-   RLS and grants apply) for user operations; service client (secret key)
+   RLS and grants apply — the same Clerk token is usable by the browser
+   against PostgREST, which is why the grants above are the boundary) for user
+   operations; service client (secret key)
    only for webhooks, cron/jobs, audit writes, admin, token/OTP flows and
    upload promotion (T028).
 
@@ -79,8 +90,8 @@ External recipients are not roles; they hold scoped access tokens (§ 5).
 Organization Admin / Team Manager are deferred (spec Clarifications
 2026-09-16).
 
-Verification: RLS suite T212, write-protection suite T215, authorization
-matrix T241.
+Verification: RLS suite T212, write-protection suite T215 (incl. the r4
+sensitive-field and trigger assertions), authorization matrix T241.
 
 ## 4. Request-pipeline controls — 📐 specified, 📋 planned
 
@@ -113,6 +124,14 @@ All applied by `withApi()` (T030) to every Route Handler:
   (WAIT / AUTO_GRANT / DENY) applies (FR-J003, J006; T135, T136).
 - Plan sections are released only from the **latest finalized** plan version
   (T231).
+- **Delivery policy (ADR-014 § 6)**: DMS_RELEASE and EMERGENCY_ACCESS links
+  are sent by the `access.deliver` job with a deterministic per-contact
+  idempotency key; a retry after a failed send revokes the undelivered token
+  (`UNDELIVERED_REPLACED`) and mints exactly one replacement; partial unique
+  indexes keep one live token per (switch, beneficiary) / per request;
+  dead-letter → CRITICAL `access.delivery_failed` + alert; audited resend
+  paths for the owner and Super Admin. Plaintext is never persisted (T097,
+  T131, T135, T148).
 
 ## 6. Files — 📐 specified, 📋 planned (ADR-005, ADR-015)
 

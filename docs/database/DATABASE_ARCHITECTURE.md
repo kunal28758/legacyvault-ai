@@ -69,8 +69,11 @@ RateLimitBucket, ProcessedWebhookEvent); `Session` is externalized to Clerk.
 | `createUserClient()` | publishable key + the caller's Clerk session token as access token | enforced | reads, Class A writes, `rpc()` calls to guarded functions |
 | `createServiceClient()` | server-only secret key | bypassed | webhooks, cron/jobs, audit writes, admin, token/OTP flows, upload promotion — each path performs its own authorization |
 
-Both live in `lib/db/server.ts` (`server-only`); the browser never talks to
-the database. Clerk is configured as a Supabase third-party auth provider so
+Both live in `lib/db/server.ts` (`server-only`); application code never opens
+a browser database client. A user's own Clerk token is nevertheless accepted by
+Supabase (it authorizes resumable uploads), so the column grants, the
+function-only sensitive columns and the Class A audit triggers below — not the
+absence of a browser client — are the boundary (ADR-004 r4). Clerk is configured as a Supabase third-party auth provider so
 the session token's `sub` is available to policies (T195, T196).
 
 ## 5. Write-protection model (ADR-004 r2) — summary
@@ -82,8 +85,13 @@ Defined in full in `data-model.md` § Write-Protection Model; the summary:
    explicit. `anon` receives nothing.
 2. **Class A — plain user data**: RLS `SELECT` on own rows; direct
    `INSERT`/`UPDATE` on own rows limited to a **column allow-list** (§ 4 of
-   the data model: profile fields, beneficiary contact fields, asset
-   columns, folders, document/video metadata, `notifications.readAt`).
+   the data model: plain profile fields, beneficiary contact fields, plain
+   asset columns — asset rows are created through `create_asset()` —, folders,
+   document/video metadata, `notifications.readAt`). `ENCRYPTED` columns
+   (`identificationDetails`, `accountNumber`, `policyNumber`, `credentials`,
+   `recoveryInfo`) have no direct grant and are written only through
+   `create_asset()` / `set_encrypted_fields()`; every direct Class A change is recorded by the
+   `audit_class_a_change()` trigger (data model § Write-Protection Model 6).
 3. **Class B — guarded**: RLS `SELECT` on own rows; **no direct write
    grants**; all mutations through `SECURITY DEFINER` functions that follow
    nine mandatory rules (auth prologue on the Clerk subject, `FOR UPDATE`
@@ -91,8 +99,9 @@ Defined in full in `data-model.md` § Write-Protection Model; the summary:
    writes, invariant under lock, in-transaction audit row, `EXECUTE`
    granted only to `authenticated`, tested). Plans, assignments,
    attachments, tokens, Dead Man Switch, emergency access, AI drafts,
-   asset/document/video lifecycle (`delete_asset()`, `delete_document()`,
-   `delete_video()`).
+   asset creation / sensitive fields / deletion (`create_asset()`,
+   `set_encrypted_fields()`, `delete_asset()`), document/video lifecycle
+   (`delete_document()`, `delete_video()`).
 4. **Class C — system**: `service_role` only (jobs, rate limits, webhook
    events, audit inserts, upload sessions), with `SELECT` own rows where the
    UI needs it.

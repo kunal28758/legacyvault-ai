@@ -99,8 +99,11 @@ expressed by relations, not flags: trusted contact = linked through
    beneficiary status on every request; asset views never include encrypted
    fields; downloads use 15-minute signed URLs; every access is audited with
    the beneficiary as actor.
-4. The owner can list and revoke tokens at any time; deactivating or removing
-   the beneficiary revokes them; housekeeping expires them.
+4. The owner can list, revoke and **resend** tokens at any time
+   (`POST /beneficiaries/:id/tokens/:tokenId/resend` → `resend_access_token()`
+   revokes the current token with `RESENT` and mints exactly one replacement,
+   audited — ADR-014 § 6); deactivating or removing the beneficiary revokes
+   them; housekeeping expires them.
 
 The same mechanism delivers Dead Man Switch releases (grant type
 DMS_RELEASE — see the Dead Man Switch workflow) and emergency grants
@@ -124,8 +127,11 @@ nothing can be enumerated. A 6-digit **OTP** (15-minute expiry) is emailed;
 notified of the request (FR-J004).
 
 **Decision.** The owner approves (reverified) or denies
-(`ea_decide_request()`); approval issues an EMERGENCY_ACCESS token scoped
-exactly to the configured scope and emails the access link. If the owner does
+(`ea_decide_request()`); approval records the decision and enqueues the
+`access.deliver` job, which issues one EMERGENCY_ACCESS token scoped exactly to
+the configured scope and emails the access link with reissue-on-retry (a
+failed send never leaves two live tokens); the owner can `resend-access`
+(revoke + re-mint once, audited) (ADR-014 § 6). If the owner does
 not act, the configured rule applies through housekeeping jobs:
 AUTO_GRANT → granted, DENY → denied, WAIT → remains pending until the request
 expires. The contact can check a generic status page.

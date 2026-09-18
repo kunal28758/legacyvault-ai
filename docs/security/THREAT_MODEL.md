@@ -63,7 +63,7 @@ pre-implementation assessments, not verified outcomes.
 | T1 | Credential stuffing / brute force / weak passwords | spec FR-A002, A012, A013 | Clerk password policy, lockout 5/30 min, bot protection; Vercel WAF | T195, T203 |
 | T2 | Session theft / fixation | constitution III | Clerk httpOnly/secure/SameSite cookies, 24 h lifetime, revocation, reverification for sensitive ops | T195, T201, T214 |
 | T3 | Cross-user data access (IDOR) via API ids | spec edge case, FR-Q014, SC-005 | service ownership checks + RLS on every table + write classes; 403 without existence leak; audit of denied attempts | T212, T215, T228, T241 |
-| T4 | Self privilege escalation or invariant bypass by direct writes (role, `mfa_enabled`, allocation sum, plan status, scan status, state machines) | ADR-004 r2 (analysis finding S1) | privilege baseline, column allow-lists, guarded `SECURITY DEFINER` functions, `protect_identity_columns` trigger | T215, T229, T235, T236 |
+| T4 | Self privilege escalation or invariant bypass by direct writes (role, `mfa_enabled`, allocation sum, plan status, scan status, state machines); unaudited or unencrypted self-scoped writes through PostgREST with the user's own Clerk token | ADR-004 r2/r4 (analysis finding S1; final-gate finding S1) | privilege baseline, column allow-lists limited to plain fields, `ENCRYPTED` columns function-only (`create_asset()`, `set_encrypted_fields()` with envelope validation), guarded `SECURITY DEFINER` functions, `protect_identity_columns` trigger, `audit_class_a_change()` triggers on every Class A table | T215, T229, T235, T236 |
 | T5 | Bearer token leakage through URLs, logs, history | ADR-014 (finding S2) | one-time exchange → encrypted httpOnly path-scoped cookie; log redaction of `/access` paths and `t` param; per-request revocation check | T214, T228 |
 | T6 | Scope creep of external access (beneficiary sees more than assigned; emergency contact exceeds scope; release exposes unselected data) | FR-D011, H011–H014, I012, J008 | scope validated as subset of owned resources at issue time (DIRECT_SHARE additionally ⊆ the beneficiary's current assignments; video delivery-condition ↔ grant-type strict mapping); enforcement on every request; release/emergency scopes fixed by owner configuration | T228, T235, T236 |
 | T7 | Emergency-access abuse (impersonating a contact, OTP guessing, spamming the owner) | FR-J003, edge cases | request link per contact, email must match, OTP 6 digits / 15 min / 3 attempts, generic responses, per-IP and per-config rate limits, owner notification, WAIT/AUTO_GRANT/DENY rules | T236 |
@@ -79,6 +79,7 @@ pre-implementation assessments, not verified outcomes.
 | T17 | Disclosure of private documents to third parties (AI providers, scanners) | constitution II | server-side calls only; ClamAV self-hosted rather than cloud multi-engine APIs (ADR-015); document content never logged | T145, T247 |
 | T18 | Data loss / corruption | constitution VII, NFR-DR-001/002 | transactional guarded functions, optimistic locking, Supabase backups + PITR, off-platform `pg_dump`, restore drills | T186, T187, T225 |
 | T19 | Scheduler outage causing missed or false escalations | NFR-AVL-002 | DMS scan freshness check → CRITICAL audit + alert; `pg_cron` + `pg_net` redundant trigger | T183, T211, T239 |
+| T21 | Access-link delivery failure (token issued, email never delivered; naive retries minting unlimited valid tokens; lost release/emergency links) | final-gate finding C1 (ADR-014 § 6) | `access.deliver` job with deterministic per-contact idempotency; reissue-on-retry (revoke undelivered token + exactly one replacement); partial unique indexes; audited owner/admin resend; dead-letter → CRITICAL audit + alert; plaintext never persisted | T229, T235, T236 |
 | T20 | Identity-provider dependency / configuration drift | BRAIN § 15 | configuration checklist recorded per environment (T195), profile/role/audit data kept in the platform DB, revisit triggers in ADR-003 | T203, T210 |
 
 ## 5. Residual risks acknowledged by the artifacts (pre-implementation)
@@ -94,6 +95,10 @@ pre-implementation assessments, not verified outcomes.
 - **Signed download URLs are bearer URLs for 15 minutes**; mitigated by short
   expiry, no logging, and audited issuance.
 - **Audit-log retention** is indefinite pending an owner/legal decision.
+- **Owner-initiated direct writes to plain Class A columns** remain possible
+  by design (the browser holds a Clerk token that Supabase accepts); they
+  cannot reach sensitive/encrypted columns, statuses or invariants and are
+  recorded by the `audit_class_a_change()` trigger (ADR-004 r4).
 
 ## 6. Out of scope for this model
 

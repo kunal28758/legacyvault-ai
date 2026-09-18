@@ -66,7 +66,7 @@ Every public API is a Route Handler under `app/api/v1/**` wrapped by
 
 ```
 correlation id → Cache-Control: private, no-store → authentication
-  (Clerk session | access cookie | cron secret | public)
+  (Clerk session | access cookie | cron secret | webhook signature | public)
 → role check (users.role in PostgreSQL) → optional reverification
 → CSRF origin check (mutations) → rate limit (Postgres counters)
 → Zod validation → handler → service → repository → PostgreSQL / Storage / Clerk API
@@ -75,8 +75,9 @@ correlation id → Cache-Control: private, no-store → authentication
 
 Authentication modes: Clerk session (users/admins), **access cookie**
 (external recipients after a one-time token exchange — ADR-014), `CRON_SECRET`
-bearer (internal cron), public (health, emergency-access request/verify,
-access exchange). Server Components read through the same services (never via
+bearer (internal cron), webhook signature verified over the raw body (Clerk /
+Svix and email-provider webhooks), public (health, emergency-access
+request/verify, access exchange). Server Components read through the same services (never via
 HTTP to the app's own handlers).
 
 ## 4. Data path and write protection
@@ -85,9 +86,11 @@ HTTP to the app's own handlers).
   session token) so RLS applies; system paths use the **service** client
   (server-only secret key).
 - Writes follow the three-class model in `data-model.md` § Write-Protection
-  Model (ADR-004 r2): Class A plain user data via column allow-lists; Class B
-  invariant-bearing data only through guarded `SECURITY DEFINER` functions;
-  Class C system tables via the service role only.
+  Model (ADR-004 r2/r4): Class A plain user data via column allow-lists
+  (never encrypted columns; every direct change trigger-audited); Class B
+  invariant-bearing data — including asset creation, sensitive fields and
+  deletion — only through guarded `SECURITY DEFINER` functions; Class C
+  system tables via the service role only.
 - Multi-step, all-or-nothing workflows (plan finalization, assignments, DMS
   and emergency-access transitions, AI draft confirmation, job claiming) are
   PostgreSQL functions invoked with `rpc()` so they run in one transaction.

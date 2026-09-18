@@ -36,12 +36,14 @@ an authoritative artifact it is cited.
 
 Every invariant-bearing write goes through a guarded function; plain
 user-data writes use the column allow-lists (`data-model.md` § 4). Never
-issue a raw write to a Class B table from application code.
+issue a raw write to a Class B table from application code, and never write an
+`ENCRYPTED` column directly — use `create_asset()` / `set_encrypted_fields()`
+(ADR-004 r4).
 
 ## 3. Request pipeline usage
 
 - Every Route Handler is wrapped by `withApi()` (T030) with explicit
-  `auth` (`'user' | 'admin' | 'access-cookie' | 'public' | 'cron'`), and a
+  `auth` (`'user' | 'admin' | 'access-cookie' | 'public' | 'cron' | 'webhook'`), and a
   Zod `schema` for any body/query/params it reads (constitution X).
 - Sensitive operations declare `reverification: 'strict'` (or
   `'multi_factor'` for Dead Man Switch check-in/cancel) rather than checking
