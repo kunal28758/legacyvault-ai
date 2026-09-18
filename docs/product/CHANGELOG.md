@@ -5,10 +5,11 @@ supported by repository history, Spec Kit revision notes, ADR dates, or the
 `docs/PROJECT_STATUS.md` change log. This file is the pre-implementation
 baseline for the changelog scheduled by task T234.
 
-**Evidence limits**: the repository has **two commits** — `fd11acc`
-(2026-09-16) and the baseline checkpoint `4cac2d3` (2026-09-18 20:16 +05:30).
-The r4 entry under *Unreleased* is uncommitted working-tree state; everything
-else below is contained in `4cac2d3`. Times are local (+05:30) where known. No
+**Evidence limits**: the repository has **three commits** — `fd11acc`
+(2026-09-16), the baseline checkpoint `4cac2d3` (2026-09-18 20:16 +05:30) and
+`affa27f` (r4 post-gate remediation). The probe-cleanup entry under
+*Unreleased* is uncommitted working-tree state; the r4 entry is contained in
+`affa27f`; everything else below is contained in `4cac2d3`. Times are local (+05:30) where known. No
 application feature has been implemented; there are **no releases**.
 
 Format: newest first. Categories: *Governance*, *Specification*,
@@ -17,6 +18,16 @@ Format: newest first. Categories: *Governance*, *Specification*,
 ---
 
 ## [Unreleased]
+
+### Repository — 2026-09-19 (implementation start: probe cleanup)
+- Removed the temporary Supabase connectivity probe `app/api/db-test/route.ts`
+  (and the now-empty `app/api/` directory). The temporary table
+  `public.connection_test` was confirmed absent (PostgREST `PGRST205`); no
+  DDL was run. Scaffold-era `lib/supabase/{client,server}.ts` and
+  `@supabase/ssr` remain until T028 as scheduled by T002. No task is marked
+  complete; no application feature exists.
+
+## 2026-09-18 — Commit `affa27f` "docs(spec): complete r4 post-gate remediation"
 
 ### Specification / Architecture / Documentation — 2026-09-18 (post-gate remediation, "r4")
 - Final read-only specification gate run against `4cac2d3` (0 BLOCKER, 0

@@ -11,9 +11,9 @@ Context, § Project Structure, § Request pipeline, § Background processing),
 (Principle VIII, Technology Stack).
 
 **Status**: 📐 Specified. As of 2026-09-18 **nothing described here is
-implemented**; the repository contains a Next.js 16.3.5 scaffold, two
-scaffold-era Supabase client files and a temporary connectivity probe, all of
-which are replaced by tasks T002/T028. Pre-implementation baseline for the
+implemented**; the repository contains a Next.js 16.3.5 scaffold and two
+scaffold-era Supabase client files (the temporary connectivity probe was
+removed on 2026-09-19), which are replaced by tasks T002/T028. Pre-implementation baseline for the
 document scheduled by task T175.
 
 ---

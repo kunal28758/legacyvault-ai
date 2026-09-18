@@ -30,12 +30,12 @@ implemented.** Implementation (`/speckit-implement`) has not started.
 | Task list | ✅ 219 active tasks, **0 complete**; 28 retired IDs listed; r1 added T192–T212, r2 added T213–T247 (incl. the constitution-XVII test suites); r4 moved T210 to Phase 1 (IDs unchanged) | `tasks.md` |
 | Documentation layer | ✅ Organized explainer docs (documentation only — no code): index + architecture, development, product, security, database, integrations, monitoring, ui, workflows; each defers to its canonical Spec Kit source | `docs/README.md`, `docs/**` |
 | Next.js scaffold | 🔧 Present, unmodified template | `app/layout.tsx`, `app/page.tsx` (template), `app/globals.css`, `next.config.ts`, `tsconfig.json`, `eslint.config.mjs`, `postcss.config.mjs` |
-| Supabase wiring | 🔧 Packages installed; scaffold-era clients; temporary probe | `package.json` (`@supabase/ssr`, `@supabase/supabase-js`), `lib/supabase/{client,server}.ts`, `app/api/db-test/route.ts` |
+| Supabase wiring | 🔧 Packages installed; scaffold-era clients remain until T028; **temporary connectivity probe removed 2026-09-19** (`public.connection_test` confirmed absent via PostgREST `PGRST205`) | `package.json` (`@supabase/ssr`, `@supabase/supabase-js`), `lib/supabase/{client,server}.ts` (no importers) |
 | Environment | 🔧 `.env.local` with Supabase URL + publishable key (gitignored; values not recorded anywhere else) | — |
 | Agent skills | ✅ 70 skills in `.agents/skills` (+ speckit backup) | `.agents/`, `.agents-backup/` |
 | Clerk | ⬜ Not installed, not configured | — |
 | Database schema / RLS / functions | ⬜ None (`supabase/` directory does not exist) | — |
-| API `/api/v1` | ⬜ None (probe only) | — |
+| API `/api/v1` | ⬜ None (no Route Handlers exist; `app/api/` removed with the probe) | — |
 | Jobs / cron / webhooks | ⬜ None | — |
 | Storage buckets / policies | ⬜ None | — |
 | AI, email, Sentry, logging | ⬜ None | — |
@@ -56,8 +56,10 @@ implemented.** Implementation (`/speckit-implement`) has not started.
   configs, `README.md`, `AGENTS.md`, `CLAUDE.md`). `.agents/`,
   `.agents-backup/` and `.env.local` are ignored and not tracked.
 - Working tree at the checkpoint: **clean** (final read-only gate ran against
-  `4cac2d3`). The r4 remediation described in § 7 is the only change since
-  and is **uncommitted** at the time of writing.
+  `4cac2d3`). The r4 remediation described in § 7 was committed as
+  **`affa27f docs(spec): complete r4 post-gate remediation`**. The probe
+  cleanup of 2026-09-19 (§ 7) is the only uncommitted change at the time of
+  writing.
 
 ### ⚠️ Repository hygiene items (tracked as T009)
 
@@ -135,4 +137,5 @@ implemented.** Implementation (`/speckit-implement`) has not started.
 | 2026-09-18 (docs pass) | Documentation organization pass: `docs/README.md` index and topic explainers created; BRAIN § 11 and this file updated minimally; no Spec Kit artifact, ADR, constitution text or application file changed. Still no implementation. |
 | 2026-09-18 r3 | Targeted remediation of the final-analysis findings H1-A (session-scoped client-held assistant history, `GET /ai/assistant/interactions`), M1 (`webhook` auth mode, CSRF scope), M2 (`delete_asset()`), M3 (`dms.scan` job heartbeat), M4 (strict video delivery-condition mapping), N1 (DIRECT_SHARE scope ⊆ assignments); 219/0/28 tasks and 29 entities unchanged. Still no implementation. |
 | 2026-09-18 | **Baseline committed as `4cac2d3`** (`chore: establish LegacyVault AI baseline`). Final read-only specification gate on the checkpoint: 0 BLOCKER, 0 HIGH, 4 MEDIUM (S1 direct-write boundary, C1 access-link delivery, T210 ordering, stale status docs), 10 LOW, 10 INFO. |
-| 2026-09-18 r4 | Post-gate remediation (uncommitted): ADR-004 § 8 sensitive-field boundary + `audit_class_a_change()` triggers (`create_asset()`, `set_encrypted_fields()`); ADR-014 § 6 access-link delivery policy (`access.deliver`, reissue-on-retry, `resend_access_token()`, audited owner/admin resend); T210 moved to Phase 1; `webhook` added to auth-mode enumerations; VideoMessage class A + B/C; 28-table wording; spec status; ADR r3/r4 revision notes; quickstart health example; documentation paths (T175/T178/T234, plan Documentation Plan); this file, BRAIN and CHANGELOG refreshed for `4cac2d3`. Still no implementation. |
+| 2026-09-18 r4 | Post-gate remediation (committed as `affa27f`): ADR-004 § 8 sensitive-field boundary + `audit_class_a_change()` triggers (`create_asset()`, `set_encrypted_fields()`); ADR-014 § 6 access-link delivery policy (`access.deliver`, reissue-on-retry, `resend_access_token()`, audited owner/admin resend); T210 moved to Phase 1; `webhook` added to auth-mode enumerations; VideoMessage class A + B/C; 28-table wording; spec status; ADR r3/r4 revision notes; quickstart health example; documentation paths (T175/T178/T234, plan Documentation Plan); this file, BRAIN and CHANGELOG refreshed for `4cac2d3`. Still no implementation. |
+| 2026-09-19 | **Implementation start — probe cleanup only**: deleted the temporary connectivity probe `app/api/db-test/route.ts` (and the now-empty `app/api/`); `public.connection_test` confirmed absent (PostgREST `PGRST205`), nothing to drop. `lib/supabase/{client,server}.ts` and `@supabase/ssr` deliberately left for T028 per T002. No task marked complete; no feature implemented. |

@@ -10,8 +10,8 @@ scanning), `plan.md` § Technical Context and § Phase 13, tasks T007 (env
 schema), T015/T016 (test/CI), T193 (cron), T194–T196 (Supabase/Clerk
 checklists), T202 (`docs/DEPLOYMENT.md`), T210 (prerequisites), T238 (CD).
 
-**Status**: 📋 Planned. As of 2026-09-18 only a local `.env.local` for the
-scaffold's Supabase probe exists (it is git-ignored and its contents are not
+**Status**: 📋 Planned. As of 2026-09-19 only a local `.env.local` from the
+scaffold exists (its probe has been removed) (it is git-ignored and its contents are not
 recorded anywhere). No CI, preview, staging or production environment has
 been created. The operational runbook (`docs/DEPLOYMENT.md`, T202) will be
 written when environments are provisioned.

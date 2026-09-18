@@ -12,8 +12,8 @@ Endpoints; tasks T007, T028, T029, T039, T104–T107, T188, T195, T196, T198,
 T209, T247.
 
 **Status**: 📐 specified / 📋 planned. As of 2026-09-18 **no adapter exists**
-and no service is configured beyond a local Supabase connectivity probe from
-the scaffold (to be removed by T028). No credential values appear here.
+and no service is configured; the scaffold's temporary Supabase connectivity
+probe was removed on 2026-09-19 (its client files go with T028). No credential values appear here.
 
 ---
 
