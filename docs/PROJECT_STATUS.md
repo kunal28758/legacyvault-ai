@@ -1,7 +1,7 @@
 # Project Status — LegacyVault AI
 
 **Snapshot date**: 2026-09-18
-**Phase**: 2 — Foundational in progress (Phase 1 setup committed `556105f`; database foundation T018/T218/T019 done 2026-09-19; remaining Phase 2 tasks open; T195/T196/T210 pending manual verification)
+**Phase**: 2 — Foundational in progress (Phase 1 setup committed `556105f`; database foundation T018/T218/T019 committed `306b20f`; **website batch 2026-09-19** built the full user-facing application on a labelled demo workspace ahead of the remaining Phase 2 infrastructure; T195/T196/T210 pending manual verification)
 **Constitution**: v2.0.1 (amended 2026-09-18) · **Architecture**: ADR-001 … ADR-016 (ADR-004 r4, ADR-014 r4) · **Git checkpoint**: `4cac2d3`
 
 > This file records what is *actually true* about the repository right now.
@@ -16,8 +16,12 @@ The architecture drift between the 2026-09-16 specification (Express/Prisma/
 S3/Redis two-project plan) and the 2026-09-17 root-level Next.js 16 scaffold
 has been **formally resolved** in favour of a single Next.js application with
 Clerk, Supabase PostgreSQL/Storage, a Postgres job table + Vercel Cron, and
-OpenAI/Gemini behind an abstraction. **No application feature has been
-implemented.** Implementation (`/speckit-implement`) has not started.
+OpenAI/Gemini behind an abstraction. Implementation started 2026-09-19: Phase 1
+setup and the Phase 2 database foundation are committed, and the **website
+batch** delivered the complete user-facing application (public site, Clerk
+auth pages, protected shell and every product page) **on a labelled demo
+workspace** — real authentication, no real persistence yet (no Route Handlers,
+services or repositories). See § 2.
 
 ---
 
@@ -35,11 +39,12 @@ implemented.** Implementation (`/speckit-implement`) has not started.
 | Agent skills | ✅ 70 skills in `.agents/skills` (+ speckit backup) | `.agents/`, `.agents-backup/` |
 | Clerk | 🔧 `@clerk/nextjs` installed; proxy/layout activate when keys exist; **dashboard checklist ⏳ pending manual verification** (`docs/DEPLOYMENT.md` § 5, T195) | `proxy.ts`, `app/layout.tsx` |
 | Database schema / RLS / functions | ✅ **Migrations 0001–0003 applied on the local stack** (2026-09-19): 28 tables / 32 enums (T018); privilege baseline, RLS on all 28 tables (36 policies + 1 storage policy), column allow-lists, `protect_identity_columns`, append-only `audit_log`, `audit_class_a_change()` on 8 Class A tables (T218); 32 guarded + 11 system + 18 internal functions incl. `create_asset`, `set_encrypted_fields`, `delete_asset`, `resend_access_token`, `system_reissue_access_token`, DMS/EA transitions with outbox `access.deliver` jobs (T019). `lib/types/database.ts` generated. Verified by a 26-section security smoke script (rolled back) and an end-to-end PostgREST check with Clerk-shaped HS256 JWTs. Hosted projects: not yet pushed (T196/T238). | `supabase/migrations/`, `lib/types/database.ts` |
-| API `/api/v1` | ⬜ None (no Route Handlers exist; `app/api/` removed with the probe) | — |
+| Application UI (website batch) | ✅ **Public site** — `(marketing)` landing (navbar, hero with procedural three.js vault, capabilities, how-it-works, feature showcase, security layers, CTA, footer + disclaimer); `(auth)` sign-in / sign-up rendering Clerk components with a not-configured fallback. **Authenticated app** — `(dashboard)` layout with real Clerk protection (`auth()` + `proxy.ts`), `AppShell` (collapsible sidebar, mobile sheet, breadcrumbs, notifications, theme toggle, `<UserButton/>`), and pages: dashboard, legacy-plan hub, 11-step will wizard (auto-save, per-step Zod validation, review with acknowledged-incomplete finalization, confirmation, versions), beneficiaries (add/edit/status/remove cascade/assign), assets overview + financial/physical/digital (masked encrypted fields), document vault (folders, grid/list, upload preview with real client pre-check), video legacy, Dead Man’s Switch (state machine, check-in/pause/resume/disable/recover, demo stage simulation), emergency access (contacts, verified-request approve/deny/revoke), AI assistant (local rule-based replies, AI-generated label, disclaimer), Security Center, notifications, settings. **All feature data is the demo workspace** (`lib/demo/*`: seed + Zustand store in sessionStorage, typed with the generated DB enums, labelled in the UI, never sent to a server). No Route Handler, service or repository exists yet. | `app/`, `components/`, `lib/demo/`, `hooks/` |
+| API `/api/v1` | ⬜ None (no Route Handlers exist) | — |
 | Jobs / cron / webhooks | ⬜ None | — |
 | Storage buckets / policies | ⬜ None | — |
 | AI, email, Sentry, logging | ⬜ None | — |
-| Tests / CI / deployment | 🔧 Vitest (unit + integration projects), Playwright (Chromium) with Clerk-aware global setup, JWT/DB test helpers (T015) — 13 unit + 2 integration + 1 E2E smoke tests passing; CI workflow (T016) and deployment not started; `docs/DEPLOYMENT.md` created (T202) with T195/T196/T210 checklists ⏳ | `vitest.config.mts`, `playwright.config.ts`, `tests/`, `docs/DEPLOYMENT.md` |
+| Tests / CI / deployment | 🔧 Vitest (unit + integration projects), Playwright (Chromium) with Clerk-aware global setup, JWT/DB test helpers (T015) — 25 unit (incl. demo-store invariants and rendered dashboard/wizard/DMS/EA views) + 2 integration + 3 E2E smoke tests passing; CI workflow (T016) and deployment not started; `docs/DEPLOYMENT.md` created (T202) with T195/T196/T210 checklists ⏳ | `vitest.config.mts`, `playwright.config.ts`, `tests/`, `docs/DEPLOYMENT.md` |
 
 ---
 
@@ -140,4 +145,5 @@ implemented.** Implementation (`/speckit-implement`) has not started.
 | 2026-09-18 r4 | Post-gate remediation (committed as `affa27f`): ADR-004 § 8 sensitive-field boundary + `audit_class_a_change()` triggers (`create_asset()`, `set_encrypted_fields()`); ADR-014 § 6 access-link delivery policy (`access.deliver`, reissue-on-retry, `resend_access_token()`, audited owner/admin resend); T210 moved to Phase 1; `webhook` added to auth-mode enumerations; VideoMessage class A + B/C; 28-table wording; spec status; ADR r3/r4 revision notes; quickstart health example; documentation paths (T175/T178/T234, plan Documentation Plan); this file, BRAIN and CHANGELOG refreshed for `4cac2d3`. Still no implementation. |
 | 2026-09-19 | **Probe cleanup** (committed as `e87cb9a`): deleted the temporary connectivity probe `app/api/db-test/route.ts` (and the now-empty `app/api/`); `public.connection_test` confirmed absent (PostgREST `PGRST205`), nothing to drop. `lib/supabase/{client,server}.ts` and `@supabase/ssr` deliberately left for T028 per T002. No task marked complete; no feature implemented. |
 | 2026-09-19 | **Phase 1 setup batch** (uncommitted): T001 skeleton, T002 scaffold normalized (landing page, metadata), T003/T005 dependencies (see CHANGELOG), T006 scripts/Prettier/ESLint, T007 env schema, T008 `.env.example`, T009 `.gitignore` (+ `next-env.d.ts` un-tracked), T010/T011 design foundation, T012 shadcn/ui (sonner replaces the deprecated toast), T013/T014 API + query clients, T015 Vitest/Playwright + helpers + smoke tests, T017 root layout, T192 `proxy.ts`, T193 `vercel.json`, T194 Supabase CLI init + `db:*` scripts, T202 `docs/DEPLOYMENT.md`. T195/T196/T210 documented with ⏳ pending manual verification — no external dashboard was configured. Checks: typecheck, lint, format, unit, integration, E2E, production build all pass. |
+| 2026-09-19 | **Website batch** (`feat: build LegacyVault AI application experience`): complete public site and authenticated application UI on a labelled demo workspace; `three` + `@react-three/fiber` added for the procedural hero (lazy, WebGL/reduced-motion fallbacks); 9 shadcn primitives added (label, textarea, select, switch, checkbox, separator, alert, radio-group, scroll-area); `viz-1..3` categorical chart tokens validated for CVD; landing page moved to `app/(marketing)/page.tsx`; next-themes now receives the CSP nonce. 14 pure-UI tasks marked complete (T040/T041/T045/T047/T049/T050/T062/T063/T164–T169); page tasks with API wiring stay open. Remaining blockers for a live demo: Clerk keys (T195) and, for real persistence, T028/T030/T036 + services. |
 | 2026-09-19 | **Phase 2 database foundation** (T018 `0001_init.sql`, T218 `0002_rls_and_privileges.sql`, T019 `0003_functions.sql`): schema, RLS/privileges, guarded + system functions applied with `supabase start` (Docker Desktop started for it); `pnpm db:types` regenerated `lib/types/database.ts`; smoke-tested live (RLS isolation, column grants on encrypted columns, asset creation function-only, `delete_asset` atomic, DIRECT_SHARE scope ⊆ assignments, live-token uniqueness, reissue-on-retry, DMS release outbox jobs, EA lifecycle, append-only audit). No application service code, T020+ not started. |

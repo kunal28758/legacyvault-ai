@@ -15,7 +15,7 @@ import { makeQueryClient } from "@/lib/api/query-client";
  * (`data-theme`, dark-first per constitution XIII / UX-002), tooltips and toasts.
  * `<ClerkProvider>` wraps this from app/layout.tsx (server side).
  */
-export function Providers({ children }: { children: ReactNode }) {
+export function Providers({ children, nonce }: { children: ReactNode; nonce?: string }) {
   const [queryClient] = useState(() =>
     makeQueryClient((error) => {
       // Reverification is handled by the re-auth gate (T201), not by a toast.
@@ -39,6 +39,7 @@ export function Providers({ children }: { children: ReactNode }) {
       enableSystem={false}
       themes={["dark", "light"]}
       disableTransitionOnChange
+      nonce={nonce}
     >
       <QueryClientProvider client={queryClient}>
         <TooltipProvider delay={200}>{children}</TooltipProvider>

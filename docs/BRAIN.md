@@ -101,19 +101,19 @@ legacyvault-ai/
 | Spec Kit skills & templates            | Tooling           | ✅ Completed  |
 | Baseline spec + plan + tasks (revised) | Specification     | ✅ Completed  |
 | Architecture decision records          | Governance doc    | ✅ Completed  |
-| Next.js 16 application at repo root    | Application shell | 🔧 Phase 1 setup done (landing page, layout, design tokens, shadcn/ui, API/query clients, proxy, env schema, tests); no feature pages |
+| Next.js 16 application at repo root    | Application shell | 🔧 Phase 1 setup done + **website batch 2026-09-19**: marketing site, Clerk auth pages, protected `(dashboard)` shell and all product pages (UI on a labelled demo workspace, `lib/demo/*`) |
 | Supabase packages (scaffold clients)   | Scaffold          | 🔧 Exists until T028; probe removed 2026-09-19 |
-| Application features                   | —                 | ⬜ Not started |
-| Clerk integration                      | —                 | ⬜ Not started |
+| Application features                   | UI                | 🔧 Every page exists as UI over the demo workspace; services/API pending (T028/T030/T036 onward) |
+| Clerk integration                      | Auth pages + layout guard | 🔧 `<SignIn/>`/`<SignUp/>` pages, `(dashboard)` `auth()` guard, `<UserButton/>`; keys/dashboard checklist pending (T195) |
 | Database schema / migrations           | SQL migrations    | ✅ 0001–0003 applied locally (T018/T218/T019); hosted push pending |
-| Tests                                  | —                 | ⬜ Not started |
+| Tests                                  | Vitest + Playwright | 🔧 25 unit (store invariants, rendered views), 2 integration, 3 E2E smoke |
 | CI/CD                                  | —                 | ⬜ Not started |
 | Deployment (Vercel)                    | —                 | ⬜ Not started |
 
-> **Important**: No application feature, migration, API handler, auth
-> integration, job runner, or test exists (the temporary connectivity probe
-> was removed on 2026-09-19). The repository contains governance,
-> specification, and a bare scaffold.
+> **Important**: No API handler, service, repository, job runner, storage
+> flow or AI provider integration exists yet. The application pages render a
+> clearly-labelled demo workspace held in the browser tab; authentication is
+> real (Clerk) once keys are configured.
 
 ---
 
@@ -452,14 +452,14 @@ Architecture changes additionally require an ADR in
 | Constitution                | ✅ v2.0.1     | amended 2026-09-18 (ADR-012; 2.0.1 wording patch) |
 | Baseline specification      | ✅ Completed  | FR text unchanged; Clarifications r2/r3; plan/tasks/data-model/contracts at r4 |
 | Architecture decisions      | ✅ Completed  | ADR-001 … ADR-016 (ADR-004 r4, ADR-014 r4) |
-| Next.js application shell   | 🔧 Phase 1    | root, v16.3.5; T001–T017, T192–T194 done; Phase 2 not started |
+| Next.js application shell   | 🔧 Phase 1 + website batch | root, v16.3.5; T001–T017, T192–T194 done; **2026-09-19 website batch**: marketing site, Clerk auth pages, protected `(dashboard)` shell and every product page as UI on a labelled demo workspace (`lib/demo/*`) — see PROJECT_STATUS § 2 |
 | Clerk integration           | 🔧 Prepared   | `@clerk/nextjs` + proxy/layout wiring; dashboard checklist ⏳ (T195) |
 | Database schema / RLS       | ✅ Local      | 28 tables, RLS + allow-lists, 32 guarded / 11 system functions (0001–0003) |
-| API (`/api/v1`)             | ⬜ Not Started | no Route Handlers (probe removed 2026-09-19) |
+| API (`/api/v1`)             | ⬜ Not Started | no Route Handlers; the UI reads the demo workspace until T028/T030/T036 + services land |
 | Job runner / cron           | ⬜ Not Started |                                            |
 | Storage flow                | ⬜ Not Started |                                            |
 | AI integration              | ⬜ Not Started |                                            |
-| UI/UX design system         | 🔧 Foundation | dark-first tokens, glass/gradient/motion utilities, shadcn/ui core (T010–T012) |
+| UI/UX design system         | ✅ In use     | dark-first tokens, glass/gradient/motion utilities, shadcn/ui (Base UI) core + 9 primitives, `viz-1..3` chart tokens, shared components (`components/shared`, `layout`, `wizard`, `forms`, `data-display`), procedural three.js hero |
 | Testing infrastructure      | 🔧 Exists     | Vitest unit/integration, Playwright, JWT/DB helpers, smoke tests (T015) |
 | CI/CD                       | ⬜ Not Started |                                            |
 | Deployment                  | ⬜ Not Started |                                            |

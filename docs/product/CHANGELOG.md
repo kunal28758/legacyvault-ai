@@ -19,6 +19,37 @@ Format: newest first. Categories: *Governance*, *Specification*,
 
 ## [Unreleased]
 
+### Implementation — 2026-09-19 (website batch, college-evaluation sprint)
+- Public site: `app/(marketing)` layout + landing (navbar, hero with procedural
+  three.js vault and GSAP headline, trust strip, capabilities, how it works,
+  feature showcase, security layers, CTA, footer with legal-tech disclaimer).
+- Auth: `app/(auth)` layout + themed Clerk `<SignIn/>` / `<SignUp/>` pages with an
+  honest “authentication not configured” fallback (no second auth system).
+- Authenticated app: `app/(dashboard)` layout (Clerk `auth()` + dynamic
+  rendering), `AppShell` (sidebar, mobile sheet, breadcrumbs, notifications,
+  theme toggle, `<UserButton/>`), `loading.tsx` / `error.tsx`, and pages for
+  dashboard, legacy plan + 11-step wizard, beneficiaries, assets (overview +
+  three classes), document vault, video legacy, Dead Man’s Switch, emergency
+  access, AI assistant, Security Center, notifications and settings.
+- Demo workspace (`lib/demo/*`): deterministic seed, Zustand store in
+  sessionStorage mirroring the guarded-function invariants, selectors,
+  rule-based assistant. Labelled in the UI; nothing is persisted or sent.
+- Reusable components: `components/shared` (page header, stat card, status
+  badge, empty/error/loading states, confirm dialog, data table, timeline,
+  activity feed, quick action, progress card/ring, security card, page
+  transitions, masked field, file upload, AI disclaimer, demo badge),
+  `components/wizard` (provider, stepper, step frame, resource picker),
+  `components/forms` (form field, beneficiary/asset/assign/upload dialogs),
+  `components/data-display` (asset/beneficiary/vault cards, allocation bar,
+  asset list view), `components/three` (vault scene + resilient wrapper).
+- Validators (Zod, task shapes): `legacy-plan`, `beneficiary`, `asset`.
+- Dependencies (constitution IX): `three`, `@react-three/fiber`, `@types/three`
+  (procedural 3D per the product direction; lazy-loaded with fallbacks).
+- Tests: 8 demo-store invariant tests, 4 rendered-view smoke tests, 3 E2E
+  smoke tests (identity + CSP, mobile overflow, fail-closed protected route).
+- Task ledger: T040, T041, T045, T047, T049, T050, T062, T063, T164–T169
+  complete; page tasks that include API wiring remain open.
+
 ### Implementation — 2026-09-19 (Phase 2 database foundation)
 - `supabase/migrations/0001_init.sql` (T018): 32 enum types, 28 tables (29
   entities minus the Clerk-externalized Session) with PK/FK/CHECK/unique/partial

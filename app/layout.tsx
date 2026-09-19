@@ -1,6 +1,7 @@
 import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { headers } from "next/headers";
 import type { ReactNode } from "react";
 
 import { Providers } from "@/components/providers";
@@ -49,7 +50,9 @@ export const viewport: Viewport = {
  * as the publishable key exists (T195); without it the app still boots so the
  * public landing page and local tooling work (docs/DEPLOYMENT.md § Clerk).
  */
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  // Per-request CSP nonce injected by proxy.ts; next-themes needs it for its inline theme script.
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
   const shell = (
     <html
       lang="en"
@@ -58,7 +61,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       suppressHydrationWarning
     >
       <body className="flex min-h-full flex-col bg-background text-foreground">
-        <Providers>{children}</Providers>
+        <Providers nonce={nonce}>{children}</Providers>
       </body>
     </html>
   );
