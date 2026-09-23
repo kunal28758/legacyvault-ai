@@ -29,17 +29,23 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress, ProgressIndicator, ProgressTrack } from "@/components/ui/progress";
-import { useDemoWorkspace, useNow } from "@/hooks/use-demo-workspace";
-import {
-  assetTotal,
-  dmsView,
-  eaRequestView,
-  getPlanCompleteness,
-  readiness,
-  securityScore,
-  unassignedAssets,
-} from "@/lib/demo/selectors";
-import { useDemoStore } from "@/lib/demo/store";
+import { useActivity } from "@/hooks/use-activity";
+import { useAssets } from "@/hooks/use-assets";
+import { useBeneficiaries } from "@/hooks/use-beneficiaries";
+import { useCheckIn, useDeadManSwitch } from "@/hooks/use-dead-man-switch";
+import { useDocuments } from "@/hooks/use-documents";
+import { useEmergencyAccess } from "@/hooks/use-emergency-access";
+import { useLegacyPlanOverview } from "@/hooks/use-legacy-plan";
+import { useNotifications } from "@/hooks/use-notifications";
+import { useNow } from "@/hooks/use-now";
+import { useProfile } from "@/hooks/use-profile";
+import { useVideos } from "@/hooks/use-videos";
+import { ApiError } from "@/lib/api/client";
+import { assetTotal } from "@/lib/assets/meta";
+import { readiness } from "@/lib/dashboard/readiness";
+import { dmsView, eaRequestView } from "@/lib/dms/presentation";
+import { computeCompleteness } from "@/lib/legacy-plan/completeness";
+import { securityChecks, securityScore } from "@/lib/security/checks";
 import { formatCompactCurrency, formatRelative, pluralize } from "@/lib/format";
 
 function greeting(now: number): string {
@@ -51,22 +57,88 @@ function greeting(now: number): string {
 }
 
 export function DashboardView({ firstName }: { firstName: string | null }) {
-  const { workspace: ws, ready } = useDemoWorkspace();
-  const checkIn = useDemoStore((s) => s.dmsCheckIn);
   const now = useNow();
+  const profile = useProfile();
+  const planOverview = useLegacyPlanOverview();
+  const beneficiariesQuery = useBeneficiaries();
+  const financial = useAssets("FINANCIAL_ASSET");
+  const physical = useAssets("PHYSICAL_ASSET");
+  const digital = useAssets("DIGITAL_ASSET");
+  const documentsQuery = useDocuments({ limit: 100 });
+  const videosQuery = useVideos();
+  const dmsQuery = useDeadManSwitch();
+  const emergencyQuery = useEmergencyAccess();
+  const notificationsQuery = useNotifications({ limit: 50 });
+  const activityQuery = useActivity(20);
+  const checkInMutation = useCheckIn();
 
-  if (!ready) return <PageSkeleton />;
+  if (profile.isPending || planOverview.isPending) return <PageSkeleton />;
 
-  const score = readiness(ws);
-  const plan = getPlanCompleteness(ws);
-  const dms = dmsView(ws.dms.status);
-  const security = securityScore(ws);
-  const unread = ws.notifications.filter((n) => !n.readAt);
-  const openRequests = ws.emergencyRequests.filter((r) => r.status === "VERIFIED");
-  const unassigned = unassignedAssets(ws);
-  const activeBeneficiaries = ws.beneficiaries.filter((b) => b.status === "ACTIVE").length;
-  const pendingBeneficiaries = ws.beneficiaries.filter((b) => b.status === "PENDING").length;
-  const canCheckIn = ["ACTIVE", "REMINDER_SENT", "GRACE_PERIOD"].includes(ws.dms.status);
+  const beneficiaryItems = beneficiariesQuery.data?.items ?? [];
+  const assetItems = [
+    ...(financial.data?.items ?? []),
+    ...(physical.data?.items ?? []),
+    ...(digital.data?.items ?? []),
+  ];
+  const assets = assetItems.map((item) => item.asset);
+  const unassignedAssetList = assetItems.filter((item) => item.assignments.length === 0);
+  const documents = documentsQuery.data?.items ?? [];
+  const videos = videosQuery.data?.items ?? [];
+  const currentPlan = planOverview.data?.current ?? null;
+  const planVersions = planOverview.data?.versions ?? [];
+  const contacts = emergencyQuery.data?.contacts ?? [];
+  const requests = emergencyQuery.data?.requests ?? [];
+
+  const plan = computeCompleteness({
+    stepsData: currentPlan?.stepsData ?? {},
+    beneficiaries: beneficiaryItems,
+    assets: assets.map((asset) => ({ id: asset.id, kind: asset.kind })),
+    documents: documents.map((document) => ({ id: document.id })),
+  });
+
+  const dmsData = dmsQuery.data ?? null;
+  const score = readiness({
+    planFinalized: currentPlan?.status === "FINALIZED",
+    planVersion: currentPlan?.version ?? null,
+    planPercent: plan.percent,
+    activeBeneficiaries: beneficiaryItems.filter((b) => b.status !== "INACTIVE").length,
+    assetCount: assets.length,
+    assignedAssetCount: assets.length - unassignedAssetList.length,
+    documentCount: documents.length,
+    deadManSwitch: dmsData,
+    emergencyContactCount: contacts.length,
+    mfaEnabled: profile.data?.mfaEnabled ?? false,
+  });
+
+  const dmsStatus = dmsData?.status ?? "INACTIVE";
+  const checkIn = async () => {
+    try {
+      await checkInMutation.mutateAsync();
+      toast.success("Check-in recorded — thank you");
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : "Could not record the check-in.");
+    }
+  };
+  const dms = dmsView(dmsStatus);
+  const security = securityScore(
+    securityChecks({
+      mfaEnabled: profile.data?.mfaEnabled ?? false,
+      emailVerified: profile.data?.emailVerified ?? false,
+      alternateEmail: profile.data?.alternateEmail ?? null,
+      beneficiaryCount: beneficiaryItems.length,
+      activeBeneficiaryCount: beneficiaryItems.filter((b) => b.status !== "INACTIVE").length,
+      planFinalized: planVersions.length > 0,
+      deadManSwitch: dmsData,
+      emergencyContactCount: contacts.length,
+      encryptedFieldCount: profile.data?.hasIdentificationDetails ? 1 : 0,
+    }),
+  );
+  const unread = (notificationsQuery.data?.items ?? []).filter((n) => !n.readAt);
+  const openRequests = requests.filter((r) => r.status === "VERIFIED");
+  const unassigned = unassignedAssetList.map((item) => item.asset);
+  const activeBeneficiaries = beneficiaryItems.filter((b) => b.status === "ACTIVE").length;
+  const pendingBeneficiaries = beneficiaryItems.filter((b) => b.status === "PENDING").length;
+  const canCheckIn = ["ACTIVE", "REMINDER_SENT", "GRACE_PERIOD"].includes(dmsStatus);
 
   const attention = [
     ...openRequests.map((r) => ({
@@ -78,14 +150,14 @@ export function DashboardView({ firstName }: { firstName: string | null }) {
       cta: "Review",
     })),
     ...(canCheckIn &&
-    ws.dms.nextCheckInAt &&
-    Date.parse(ws.dms.nextCheckInAt) - now < 4 * 86_400_000
+    dmsData?.nextCheckInAt &&
+    Date.parse(dmsData?.nextCheckInAt) - now < 4 * 86_400_000
       ? [
           {
             id: "dms",
             tone: "info" as const,
             icon: TimerReset,
-            title: `Check-in due ${formatRelative(ws.dms.nextCheckInAt, now)}`,
+            title: `Check-in due ${formatRelative(dmsData?.nextCheckInAt, now)}`,
             href: "/dead-man-switch",
             cta: "Check in",
           },
@@ -115,7 +187,7 @@ export function DashboardView({ firstName }: { firstName: string | null }) {
           },
         ]
       : []),
-    ...(!ws.security.mfaEnabled
+    ...(!(profile.data?.mfaEnabled ?? false)
       ? [
           {
             id: "mfa",
@@ -139,8 +211,8 @@ export function DashboardView({ firstName }: { firstName: string | null }) {
         }).format(now)}
         title={`${greeting(now)}${firstName ? `, ${firstName}` : ""}`}
         description={
-          ws.plan?.status === "FINALIZED"
-            ? `Your legacy plan v${ws.plan.version} is finalized. Keep beneficiaries, assets and protection settings current.`
+          currentPlan?.status === "FINALIZED"
+            ? `Your legacy plan v${currentPlan!.version} is finalized. Keep beneficiaries, assets and protection settings current.`
             : `Your legacy plan is ${plan.percent}% complete. ${plan.incompleteSections.length ? `${plan.incompleteSections.length} sections still need attention.` : "Review it and finalize when you are ready."}`
         }
         actions={
@@ -155,9 +227,9 @@ export function DashboardView({ firstName }: { firstName: string | null }) {
               className="shadow-glow-blue"
             >
               <ScrollText data-icon="inline-start" />
-              {ws.plan?.status === "DRAFT"
+              {currentPlan?.status === "DRAFT"
                 ? "Continue Will"
-                : ws.plan
+                : currentPlan
                   ? "New draft"
                   : "Create Will"}
             </Button>
@@ -211,9 +283,15 @@ export function DashboardView({ firstName }: { firstName: string | null }) {
                 <p className="text-sm text-muted-foreground">Guided 11-step legacy plan</p>
               </div>
               <StatusBadge
-                tone={ws.plan?.status === "FINALIZED" ? "success" : ws.plan ? "info" : "neutral"}
+                tone={
+                  currentPlan?.status === "FINALIZED" ? "success" : currentPlan ? "info" : "neutral"
+                }
               >
-                {ws.plan?.status === "FINALIZED" ? "Finalized" : ws.plan ? "Draft" : "Not started"}
+                {currentPlan?.status === "FINALIZED"
+                  ? "Finalized"
+                  : currentPlan
+                    ? "Draft"
+                    : "Not started"}
               </StatusBadge>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -221,8 +299,8 @@ export function DashboardView({ firstName }: { firstName: string | null }) {
                 <div className="flex items-baseline justify-between">
                   <span className="text-3xl font-semibold tabular-nums">{plan.percent}%</span>
                   <span className="text-xs text-muted-foreground">
-                    {ws.plan
-                      ? `Step ${Math.min(ws.plan.currentStep, 11)} of 11 · v${ws.plan.version}`
+                    {currentPlan
+                      ? `Step ${Math.min(currentPlan!.currentStep, 11)} of 11 · v${currentPlan!.version}`
                       : "0 of 9 sections"}
                   </span>
                 </div>
@@ -285,7 +363,7 @@ export function DashboardView({ firstName }: { firstName: string | null }) {
                   sessions encrypted
                 </li>
                 <li className="flex items-center gap-2">
-                  {ws.security.mfaEnabled ? (
+                  {(profile.data?.mfaEnabled ?? false) ? (
                     <CheckCircle2 className="size-4 text-success" aria-hidden />
                   ) : (
                     <span
@@ -293,7 +371,7 @@ export function DashboardView({ firstName }: { firstName: string | null }) {
                       className="flex size-4 items-center justify-center rounded-full border-2 border-warning"
                     />
                   )}
-                  Two-factor authentication {ws.security.mfaEnabled ? "on" : "off"}
+                  Two-factor authentication {(profile.data?.mfaEnabled ?? false) ? "on" : "off"}
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="size-4 text-success" aria-hidden /> Sensitive fields
@@ -319,7 +397,7 @@ export function DashboardView({ firstName }: { firstName: string | null }) {
         <StaggerItem>
           <StatCard
             label="Beneficiaries"
-            value={ws.beneficiaries.length}
+            value={beneficiaryItems.length}
             hint={`${activeBeneficiaries} active · ${pendingBeneficiaries} pending`}
             icon={Users}
             accent="blue"
@@ -329,8 +407,8 @@ export function DashboardView({ firstName }: { firstName: string | null }) {
         <StaggerItem>
           <StatCard
             label="Assets recorded"
-            value={ws.assets.length}
-            hint={`≈ ${formatCompactCurrency(assetTotal(ws.assets))} estimated · ${unassigned.length} unassigned`}
+            value={assets.length}
+            hint={`≈ ${formatCompactCurrency(assetTotal(assets))} estimated · ${unassigned.length} unassigned`}
             icon={Coins}
             accent="purple"
             href="/assets"
@@ -339,8 +417,8 @@ export function DashboardView({ firstName }: { firstName: string | null }) {
         <StaggerItem>
           <StatCard
             label="Documents in vault"
-            value={ws.documents.length}
-            hint={`${ws.documents.filter((d) => d.scanStatus === "CLEAN").length} scanned clean · ${ws.folders.length} folders`}
+            value={documents.length}
+            hint={`${documents.filter((d) => d.scan.status === "CLEAN").length} ready · ${documentsQuery.data?.total ?? documents.length} total`}
             icon={FileText}
             accent="cyan"
             href="/documents"
@@ -349,10 +427,10 @@ export function DashboardView({ firstName }: { firstName: string | null }) {
         <StaggerItem>
           <StatCard
             label="Video messages"
-            value={ws.videos.length}
+            value={videos.length}
             hint={
-              ws.videos.length
-                ? `Delivered on ${[...new Set(ws.videos.map((v) => v.deliveryCondition))].length} condition${ws.videos.length > 1 ? "s" : ""}`
+              videos.length
+                ? `Delivered on ${[...new Set(videos.map((v) => v.deliveryCondition))].length} condition${videos.length > 1 ? "s" : ""}`
                 : "None recorded yet"
             }
             icon={Video}
@@ -386,36 +464,27 @@ export function DashboardView({ firstName }: { firstName: string | null }) {
                 <dl className="grid grid-cols-2 gap-3">
                   <div>
                     <dt className="text-xs text-muted-foreground">Last check-in</dt>
-                    <dd className="font-medium">{formatRelative(ws.dms.lastCheckInAt, now)}</dd>
+                    <dd className="font-medium">
+                      {formatRelative(dmsData?.lastCheckInAt ?? null, now)}
+                    </dd>
                   </div>
                   <div>
                     <dt className="text-xs text-muted-foreground">Next check-in</dt>
                     <dd className="font-medium">
-                      {ws.dms.nextCheckInAt ? formatRelative(ws.dms.nextCheckInAt, now) : "—"}
+                      {dmsData?.nextCheckInAt ? formatRelative(dmsData?.nextCheckInAt, now) : "—"}
                     </dd>
                   </div>
                   <div>
                     <dt className="text-xs text-muted-foreground">Trusted contacts</dt>
-                    <dd className="font-medium">{ws.dms.contactIds.length}</dd>
+                    <dd className="font-medium">{dmsData?.contacts.length ?? 0}</dd>
                   </div>
                   <div>
                     <dt className="text-xs text-muted-foreground">Inactivity threshold</dt>
-                    <dd className="font-medium">{ws.dms.inactivityPeriodDays} days</dd>
+                    <dd className="font-medium">{dmsData?.inactivityPeriodDays ?? 0} days</dd>
                   </div>
                 </dl>
                 <div className="flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    disabled={!canCheckIn}
-                    onClick={() => {
-                      const result = checkIn();
-                      if (result.ok)
-                        toast.success("Check-in recorded", {
-                          description: "Your switch is back to Active.",
-                        });
-                      else toast.error(result.message);
-                    }}
-                  >
+                  <Button size="sm" disabled={!canCheckIn} onClick={() => void checkIn()}>
                     <CheckCircle2 data-icon="inline-start" />
                     Check in now
                   </Button>
@@ -440,34 +509,26 @@ export function DashboardView({ firstName }: { firstName: string | null }) {
                   <CardTitle className="text-base">Emergency access</CardTitle>
                 </div>
                 <StatusBadge
-                  tone={
-                    openRequests.length
-                      ? "warning"
-                      : ws.emergencyContacts.length
-                        ? "success"
-                        : "neutral"
-                  }
+                  tone={openRequests.length ? "warning" : contacts.length ? "success" : "neutral"}
                 >
                   {openRequests.length
                     ? `${openRequests.length} pending`
-                    : ws.emergencyContacts.length
+                    : contacts.length
                       ? "Configured"
                       : "Not set"}
                 </StatusBadge>
               </CardHeader>
               <CardContent className="space-y-4 text-sm">
                 <ul className="space-y-2">
-                  {ws.emergencyContacts.map((config) => {
-                    const beneficiary = ws.beneficiaries.find((b) => b.id === config.beneficiaryId);
-                    const request = ws.emergencyRequests.find(
+                  {contacts.map((config) => {
+                    const beneficiaryName = config.beneficiaryName;
+                    const request = requests.find(
                       (r) =>
                         r.configId === config.id && r.status !== "EXPIRED" && r.status !== "DENIED",
                     );
                     return (
                       <li key={config.id} className="flex items-center justify-between gap-3">
-                        <span className="truncate font-medium">
-                          {beneficiary?.name ?? "Contact"}
-                        </span>
+                        <span className="truncate font-medium">{beneficiaryName}</span>
                         {request ? (
                           <StatusBadge
                             tone={eaRequestView(request.status).tone}
@@ -486,7 +547,7 @@ export function DashboardView({ firstName }: { firstName: string | null }) {
                       </li>
                     );
                   })}
-                  {ws.emergencyContacts.length === 0 && (
+                  {contacts.length === 0 && (
                     <li className="text-muted-foreground">No emergency contact designated yet.</li>
                   )}
                 </ul>
@@ -509,7 +570,7 @@ export function DashboardView({ firstName }: { firstName: string | null }) {
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
             <QuickAction
               icon={ScrollText}
-              label={ws.plan?.status === "DRAFT" ? "Continue Will" : "Create Will"}
+              label={currentPlan?.status === "DRAFT" ? "Continue Will" : "Create Will"}
               description={`${plan.percent}% complete`}
               href="/legacy-plan/wizard"
               accent="blue"
@@ -541,11 +602,7 @@ export function DashboardView({ firstName }: { firstName: string | null }) {
               description={canCheckIn ? "Confirm you are active" : "Switch not monitoring"}
               accent="warning"
               disabled={!canCheckIn}
-              onClick={() => {
-                const result = checkIn();
-                if (result.ok) toast.success("Check-in recorded");
-                else toast.error(result.message);
-              }}
+              onClick={() => void checkIn()}
             />
             <QuickAction
               icon={Bot}
@@ -578,7 +635,7 @@ export function DashboardView({ firstName }: { firstName: string | null }) {
             </Button>
           </CardHeader>
           <CardContent>
-            <ActivityFeed items={ws.activity} limit={6} />
+            <ActivityFeed items={activityQuery.data?.items ?? []} limit={6} />
           </CardContent>
         </Card>
 

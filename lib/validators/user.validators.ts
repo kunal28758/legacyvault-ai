@@ -79,5 +79,11 @@ export const updatePreferencesSchema = z
   .strict()
   .refine((value) => Object.keys(value).length > 0, "Provide at least one preference group");
 
+/** Deletion is confirmed explicitly, and acknowledged in the dialog (FR-B011). */
+export const deleteAccountSchema = z.object({
+  confirmed: z.literal(true, { error: "Confirm this deletion to continue." }),
+});
+
+export type DeleteAccountBody = z.infer<typeof deleteAccountSchema>;
 export type UpdateProfileBody = z.infer<typeof updateProfileSchema>;
 export type UpdatePreferencesBody = z.infer<typeof updatePreferencesSchema>;

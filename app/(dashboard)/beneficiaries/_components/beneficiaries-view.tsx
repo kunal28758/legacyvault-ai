@@ -18,6 +18,7 @@ import { toast } from "sonner";
 
 import { AllocationBar } from "@/components/data-display/allocation-bar";
 import { BeneficiaryCard, RoleChips } from "@/components/data-display/beneficiary-card";
+import { AccessLinksPanel } from "@/components/forms/access-links-panel";
 import { BeneficiaryFormSheet } from "@/components/forms/beneficiary-form";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { DataTable, type DataTableColumn } from "@/components/shared/data-table";
@@ -469,9 +470,10 @@ export function BeneficiariesView() {
                             <div className="flex items-center justify-between gap-2">
                               <div className="min-w-0">
                                 <p className="truncate text-sm font-medium">
-                                  {RESOURCE_LABELS[a.resourceType] ?? "Resource"}
+                                  {a.resourceName ?? "No longer available"}
                                 </p>
                                 <p className="text-xs text-muted-foreground">
+                                  {RESOURCE_LABELS[a.resourceType] ?? "Resource"} ·{" "}
                                   {a.allocationPercentage !== null
                                     ? `${a.allocationPercentage}% share`
                                     : "Shared"}
@@ -503,7 +505,8 @@ export function BeneficiariesView() {
                                 showLegend={false}
                                 segments={peers.map((p) => ({
                                   id: p.id,
-                                  label: RESOURCE_LABELS[p.resourceType] ?? "Resource",
+                                  label:
+                                    p.resourceName ?? RESOURCE_LABELS[p.resourceType] ?? "Resource",
                                   value: p.allocationPercentage ?? 0,
                                 }))}
                               />
@@ -515,16 +518,12 @@ export function BeneficiariesView() {
                   )}
                 </div>
 
-                <div className="space-y-2 rounded-lg border border-border p-3 text-sm">
-                  <p className="flex items-center gap-2 font-medium">
-                    <KeyRound className="size-4 text-brand-cyan" aria-hidden /> Access links
-                  </p>
-                  <p className="text-xs leading-5 text-muted-foreground">
-                    Direct-share links are scoped to this person’s assignments, expire within 30
-                    days and are exchanged once for a secure session — the link itself is never
-                    stored. Issuing links becomes available with the access API.
-                  </p>
-                </div>
+                <AccessLinksPanel
+                  beneficiaryId={detailData.id}
+                  beneficiaryName={detailData.name}
+                  assignments={detailData.assignments}
+                  canIssue={detailData.status !== "INACTIVE"}
+                />
               </div>
             </>
           )}

@@ -4,7 +4,6 @@ import { useState } from "react";
 import {
   Check,
   Clock,
-  FlaskConical,
   KeyRound,
   Mail,
   Plus,
@@ -17,6 +16,12 @@ import {
 import { toast } from "sonner";
 
 import { FormField } from "@/components/forms/form-field";
+import {
+  ScopePicker,
+  describeScope,
+  scopeSize,
+  useScopeCatalog,
+} from "@/components/forms/scope-picker";
 import { ActivityFeed } from "@/components/shared/activity-feed";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -44,11 +49,26 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { useDemoWorkspace, useNow } from "@/hooks/use-demo-workspace";
-import { PLAN_SECTION_TITLES, eaRequestView } from "@/lib/demo/selectors";
-import { useDemoStore } from "@/lib/demo/store";
-import type { DemoEmergencyContact, DemoEmergencyRequest, EaOnTimeout } from "@/lib/demo/types";
+import { useBeneficiaries } from "@/hooks/use-beneficiaries";
+import { useActivity } from "@/hooks/use-activity";
+import {
+  useConfigureEmergencyContact,
+  useDecideEmergencyRequest,
+  useEmergencyAccess,
+  useRemoveEmergencyContact,
+  useResendDesignation,
+  useResendEmergencyAccess,
+  useRevokeEmergencyRequest,
+} from "@/hooks/use-emergency-access";
+import { useNow } from "@/hooks/use-now";
+import { isReverificationCancelled, useReverifiedAction } from "@/hooks/use-reverified-action";
+import { ApiError } from "@/lib/api/client";
+import { eaRequestView } from "@/lib/dms/presentation";
+import type { AccessScope } from "@/lib/types/dms";
+import type { EaOnTimeout, EmergencyContact, EmergencyRequest } from "@/lib/types/emergency-access";
 import { formatDateTime, formatRelative } from "@/lib/format";
+
+const EMPTY_SCOPE: AccessScope = { documents: [], assets: [], videos: [], planSections: [] };
 
 const TIMEOUT_RULES: { value: EaOnTimeout; label: string; description: string }[] = [
   {
@@ -70,32 +90,50 @@ const TIMEOUT_RULES: { value: EaOnTimeout; label: string; description: string }[
 
 /** Emergency access (tasks T136/T137/T140 — UI; `ea_*` guarded functions wired later via API). */
 export function EmergencyAccessView() {
-  const { workspace: ws, ready } = useDemoWorkspace();
-  const removeContact = useDemoStore((s) => s.removeEmergencyContact);
-  const decide = useDemoStore((s) => s.decideEmergencyRequest);
-  const revoke = useDemoStore((s) => s.revokeEmergencyAccess);
-  const simulate = useDemoStore((s) => s.simulateEmergencyRequest);
+  const overview = useEmergencyAccess();
+  const removeContactMutation = useRemoveEmergencyContact();
+  const decideMutation = useDecideEmergencyRequest();
+  const revokeMutation = useRevokeEmergencyRequest();
+
+  const contacts = overview.data?.contacts ?? [];
+  const requests = overview.data?.requests ?? [];
+  const ready = !overview.isPending;
   const now = useNow(30_000);
+  // Named only when a scope actually contains something.
+  const reverified = useReverifiedAction();
+  const resendDesignation = useResendDesignation();
+  const resendAccess = useResendEmergencyAccess();
+  const activity = useActivity(50);
+  const scopeCatalog = useScopeCatalog(
+    contacts.some((contact) => scopeSize(contact.accessScope) > 0),
+  );
 
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [editing, setEditing] = useState<DemoEmergencyContact | null>(null);
+  const [editing, setEditing] = useState<EmergencyContact | null>(null);
   const [decision, setDecision] = useState<{
-    request: DemoEmergencyRequest;
+    request: EmergencyRequest;
     kind: "APPROVE" | "DENY";
   } | null>(null);
-  const [revokeTarget, setRevokeTarget] = useState<DemoEmergencyRequest | null>(null);
-  const [removeTarget, setRemoveTarget] = useState<DemoEmergencyContact | null>(null);
+  const [revokeTarget, setRevokeTarget] = useState<EmergencyRequest | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<EmergencyContact | null>(null);
 
   if (!ready) return <PageSkeleton stats={3} />;
 
+  const scopeNamesFor = (scope: AccessScope) => {
+    const described = describeScope(scope, scopeCatalog);
+    return [
+      ...described.documents,
+      ...described.assets,
+      ...described.videos,
+      ...described.planSections,
+    ];
+  };
   const nameOf = (beneficiaryId: string) =>
-    ws.beneficiaries.find((b) => b.id === beneficiaryId)?.name ?? "Contact";
-  const contactOf = (configId: string) => ws.emergencyContacts.find((c) => c.id === configId);
-  const pending = ws.emergencyRequests.filter((r) => r.status === "VERIFIED");
-  const active = ws.emergencyRequests.filter((r) => r.status === "ACTIVE");
-  const history = [...ws.emergencyRequests].sort(
-    (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt),
-  );
+    contacts.find((c) => c.beneficiaryId === beneficiaryId)?.beneficiaryName ?? "Contact";
+  const contactOf = (configId: string) => contacts.find((c) => c.id === configId);
+  const pending = requests.filter((r) => r.status === "VERIFIED");
+  const active = requests.filter((r) => r.status === "ACTIVE");
+  const history = [...requests].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 
   return (
     <div className="space-y-8">
@@ -120,7 +158,7 @@ export function EmergencyAccessView() {
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard
           label="Emergency contacts"
-          value={ws.emergencyContacts.length}
+          value={contacts.length}
           icon={UserCheck}
           accent="cyan"
         />
@@ -207,7 +245,7 @@ export function EmergencyAccessView() {
       <div className="grid gap-4 lg:grid-cols-5">
         <div className="space-y-3 lg:col-span-3">
           <SectionHeading title="Designated contacts" />
-          {ws.emergencyContacts.length === 0 ? (
+          {contacts.length === 0 ? (
             <EmptyState
               icon={Siren}
               title="No emergency contact yet"
@@ -226,8 +264,8 @@ export function EmergencyAccessView() {
             />
           ) : (
             <ul className="space-y-3">
-              {ws.emergencyContacts.map((contact) => {
-                const open = ws.emergencyRequests.find(
+              {contacts.map((contact) => {
+                const open = requests.find(
                   (r) =>
                     r.configId === contact.id &&
                     ["VERIFIED", "ACTIVE", "PENDING", "VERIFYING"].includes(r.status),
@@ -240,7 +278,7 @@ export function EmergencyAccessView() {
                           <div>
                             <p className="font-medium">{nameOf(contact.beneficiaryId)}</p>
                             <p className="text-sm text-muted-foreground">
-                              {ws.beneficiaries.find((b) => b.id === contact.beneficiaryId)?.email}
+                              {contact.beneficiaryEmail}
                             </p>
                           </div>
                           {open ? (
@@ -279,20 +317,7 @@ export function EmergencyAccessView() {
                         </dl>
                         <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
                           <span className="font-medium text-foreground">Scope: </span>
-                          {[
-                            ...contact.accessScope.documents.map(
-                              (id) => ws.documents.find((d) => d.id === id)?.name,
-                            ),
-                            ...contact.accessScope.assets.map(
-                              (a) => ws.assets.find((x) => x.id === a.id)?.name,
-                            ),
-                            ...contact.accessScope.videos.map(
-                              (id) => ws.videos.find((v) => v.id === id)?.title,
-                            ),
-                            ...contact.accessScope.planSections.map((k) => PLAN_SECTION_TITLES[k]),
-                          ]
-                            .filter(Boolean)
-                            .join(", ") || "Nothing selected yet"}
+                          {scopeNamesFor(contact.accessScope).join(", ") || "Nothing selected yet"}
                         </div>
                         <div className="flex flex-wrap gap-2">
                           <Button
@@ -308,31 +333,26 @@ export function EmergencyAccessView() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() =>
-                              toast.success("Designation email re-sent", {
-                                description: "Contains their personal request link.",
-                              })
-                            }
+                            disabled={resendDesignation.isPending}
+                            onClick={() => {
+                              void (async () => {
+                                try {
+                                  await resendDesignation.mutateAsync(contact.id);
+                                  toast.success("Designation email re-sent", {
+                                    description: "It contains their personal request link.",
+                                  });
+                                } catch (error) {
+                                  toast.error(
+                                    error instanceof ApiError
+                                      ? error.message
+                                      : "Could not send that email.",
+                                  );
+                                }
+                              })();
+                            }}
                           >
                             <Mail data-icon="inline-start" />
                             Resend designation
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="text-warning"
-                            disabled={Boolean(open)}
-                            onClick={() => {
-                              const result = simulate(contact.id);
-                              if (result.ok)
-                                toast.info(
-                                  "Simulated: contact verified their code and requested access",
-                                );
-                              else toast.error(result.message);
-                            }}
-                          >
-                            <FlaskConical data-icon="inline-start" />
-                            Demo: simulate request
                           </Button>
                           <Button
                             size="sm"
@@ -421,6 +441,33 @@ export function EmergencyAccessView() {
                     </div>
                     <div className="flex items-center gap-2">
                       <StatusBadge tone={view.tone}>{view.label}</StatusBadge>
+                      {["APPROVED", "AUTO_GRANTED", "ACTIVE"].includes(request.status) && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={resendAccess.isPending}
+                          onClick={() => {
+                            void (async () => {
+                              try {
+                                await resendAccess.mutateAsync(request.id);
+                                toast.success("A replacement link is queued", {
+                                  description:
+                                    "The previous link is revoked — there is never more than one.",
+                                });
+                              } catch (error) {
+                                toast.error(
+                                  error instanceof ApiError
+                                    ? error.message
+                                    : "Could not resend that link.",
+                                );
+                              }
+                            })();
+                          }}
+                        >
+                          <Mail data-icon="inline-start" />
+                          Resend link
+                        </Button>
+                      )}
                       {request.status === "ACTIVE" && (
                         <Button
                           size="sm"
@@ -444,7 +491,7 @@ export function EmergencyAccessView() {
         <Card className="glass">
           <CardContent className="p-5">
             <ActivityFeed
-              items={ws.activity.filter((a) => a.action.startsWith("ea."))}
+              items={(activity.data?.items ?? []).filter((entry) => entry.action.startsWith("ea."))}
               limit={6}
               emptyTitle="No emergency-access activity yet"
             />
@@ -471,16 +518,26 @@ export function EmergencyAccessView() {
         confirmLabel={decision?.kind === "APPROVE" ? "Approve access" : "Deny request"}
         variant={decision?.kind === "APPROVE" ? "default" : "destructive"}
         requiresReverification={decision?.kind === "APPROVE"}
-        onConfirm={() => {
+        onConfirm={async () => {
           if (!decision) return;
-          const result = decide(decision.request.id, decision.kind);
-          if (result.ok)
+          try {
+            await reverified(() =>
+              decideMutation.mutateAsync({
+                id: decision.request.id,
+                decision: decision.kind,
+              }),
+            );
             toast.success(
               decision.kind === "APPROVE"
                 ? "Access approved — link queued for delivery"
                 : "Request denied",
             );
-          else toast.error(result.message);
+          } catch (error) {
+            if (isReverificationCancelled(error)) return;
+            toast.error(
+              error instanceof ApiError ? error.message : "Could not record that decision.",
+            );
+          }
         }}
       />
       <ConfirmDialog
@@ -490,11 +547,16 @@ export function EmergencyAccessView() {
         description="The access link stops working immediately. The contact would need a new request."
         confirmLabel="Revoke access"
         variant="destructive"
-        onConfirm={() => {
+        onConfirm={async () => {
           if (!revokeTarget) return;
-          const result = revoke(revokeTarget.id);
-          if (result.ok) toast.success("Access revoked");
-          else toast.error(result.message);
+          try {
+            await revokeMutation.mutateAsync(revokeTarget.id);
+            toast.success("Access revoked");
+          } catch (error) {
+            toast.error(
+              error instanceof ApiError ? error.message : "Could not revoke that access.",
+            );
+          }
         }}
       />
       <ConfirmDialog
@@ -504,10 +566,16 @@ export function EmergencyAccessView() {
         description="They remain a beneficiary; only the emergency-access designation is removed."
         confirmLabel="Remove designation"
         variant="destructive"
-        onConfirm={() => {
+        onConfirm={async () => {
           if (!removeTarget) return;
-          removeContact(removeTarget.id);
-          toast.success("Designation removed");
+          try {
+            await removeContactMutation.mutateAsync(removeTarget.id);
+            toast.success("Designation removed");
+          } catch (error) {
+            toast.error(
+              error instanceof ApiError ? error.message : "Could not remove this designation.",
+            );
+          }
         }}
       />
     </div>
@@ -519,11 +587,12 @@ function EmergencyContactForm({
   editing,
   onClose,
 }: {
-  editing: DemoEmergencyContact | null;
+  editing: EmergencyContact | null;
   onClose: () => void;
 }) {
-  const { workspace: ws } = useDemoWorkspace();
-  const configure = useDemoStore((s) => s.configureEmergencyContact);
+  const beneficiariesQuery = useBeneficiaries();
+  const overview = useEmergencyAccess();
+  const configure = useConfigureEmergencyContact();
   const [form, setForm] = useState({
     beneficiaryId: editing?.beneficiaryId ?? "",
     onTimeout: (editing?.onTimeout ?? "WAIT") as EaOnTimeout,
@@ -531,11 +600,15 @@ function EmergencyContactForm({
     requestExpiryHours: String(editing?.requestExpiryHours ?? 72),
     accessDurationHours: String(editing?.accessDurationHours ?? 72),
   });
-  const eligible = ws.beneficiaries.filter(
+  // A grant must name something: `lv_validate_scope()` refuses an empty scope,
+  // so it is chosen here rather than left for another page.
+  const [scope, setScope] = useState<AccessScope>(editing?.accessScope ?? EMPTY_SCOPE);
+  const catalog = useScopeCatalog(true);
+  const existing = overview.data?.contacts ?? [];
+  const eligible = (beneficiariesQuery.data?.items ?? []).filter(
     (b) =>
       b.status !== "INACTIVE" &&
-      (!ws.emergencyContacts.some((c) => c.beneficiaryId === b.id) ||
-        editing?.beneficiaryId === b.id),
+      (!existing.some((c) => c.beneficiaryId === b.id) || editing?.beneficiaryId === b.id),
   );
   return (
     <>
@@ -631,32 +704,41 @@ function EmergencyContactForm({
             )}
           </FormField>
         </div>
-        <p className="text-xs leading-5 text-muted-foreground">
-          Access scope (documents, assets, videos, plan sections) is chosen from the respective
-          pages. Videos in the scope must be marked “Immediate” or “Emergency access”.
-        </p>
+        <ScopePicker grant="EMERGENCY_ACCESS" value={scope} onChange={setScope} catalog={catalog} />
       </div>
-      <SheetFooter className="flex-row justify-end gap-2 border-t border-border">
+      <SheetFooter className="flex-col items-stretch gap-2 border-t border-border sm:flex-row sm:items-center sm:justify-end">
+        {!form.beneficiaryId || scopeSize(scope) === 0 ? (
+          <p className="flex-1 text-xs text-muted-foreground">
+            Choose a beneficiary and at least one thing they may see.
+          </p>
+        ) : null}
         <Button variant="outline" onClick={onClose}>
           Cancel
         </Button>
         <Button
+          disabled={configure.isPending || !form.beneficiaryId || scopeSize(scope) === 0}
           onClick={() => {
-            const result = configure({
-              beneficiaryId: form.beneficiaryId,
-              onTimeout: form.onTimeout,
-              timeoutHours: form.onTimeout === "WAIT" ? null : Number(form.timeoutHours) || null,
-              requestExpiryHours: Number(form.requestExpiryHours) || 72,
-              accessDurationHours: Number(form.accessDurationHours) || 72,
-              accessScope: editing?.accessScope,
-            });
-            if (!result.ok) return toast.error(result.message);
-            toast.success(editing ? "Emergency contact updated" : "Emergency contact designated", {
-              description: editing
-                ? undefined
-                : "Designation email with the request link is sent in the live application.",
-            });
-            onClose();
+            void (async () => {
+              try {
+                await configure.mutateAsync({
+                  beneficiaryId: form.beneficiaryId,
+                  onTimeout: form.onTimeout,
+                  timeoutHours:
+                    form.onTimeout === "WAIT" ? null : Number(form.timeoutHours) || null,
+                  requestExpiryHours: Number(form.requestExpiryHours) || 72,
+                  accessDurationHours: Number(form.accessDurationHours) || 72,
+                  accessScope: scope,
+                });
+                toast.success(
+                  editing ? "Emergency contact updated" : "Emergency contact designated",
+                );
+                onClose();
+              } catch (error) {
+                toast.error(
+                  error instanceof ApiError ? error.message : "Could not save this contact.",
+                );
+              }
+            })();
           }}
         >
           {editing ? "Save" : "Designate"}

@@ -2,7 +2,7 @@
 
 import type { LucideIcon } from "lucide-react";
 
-import { useNow } from "@/hooks/use-demo-workspace";
+import { useNow } from "@/hooks/use-now";
 import { formatDateTime, formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
 

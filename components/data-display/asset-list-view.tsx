@@ -41,6 +41,7 @@ import {
   useUnassignBeneficiary,
 } from "@/hooks/use-assets";
 import { useNow } from "@/hooks/use-now";
+import { useReverifiedAction } from "@/hooks/use-reverified-action";
 import { ApiError } from "@/lib/api/client";
 import { ASSET_KIND_META, assetSubtitle, assetTotal, hasSensitiveFields } from "@/lib/assets/meta";
 import type { Asset, AssetKind, AssetWithAssignments } from "@/lib/types/asset";
@@ -113,6 +114,7 @@ export function AssetListView({ kind }: { kind: AssetKind }) {
   const remove = useDeleteAsset(kind);
   const unassign = useUnassignBeneficiary(kind);
   const reveal = useRevealSensitiveFields(kind);
+  const reverified = useReverifiedAction();
 
   const rows = useMemo(() => list.data?.items ?? [], [list.data]);
   const all = useMemo(() => inventory.data?.items ?? [], [inventory.data]);
@@ -152,7 +154,7 @@ export function AssetListView({ kind }: { kind: AssetKind }) {
   // The decrypted payload stays in this closure: it is never stored in state,
   // in a cache, or anywhere the rest of the page can read it.
   const revealField = (assetId: string, field: string) => async () => {
-    const values = await reveal(assetId);
+    const values = await reverified(() => reveal(assetId));
     return (values as Record<string, string | null | undefined>)[field] ?? null;
   };
 

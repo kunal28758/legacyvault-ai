@@ -24,6 +24,35 @@ export const queryKeys = {
     detail: (kind: string, id: string) => ["assets", kind, "detail", id] as const,
     assignments: (kind: string, id: string) => ["assets", kind, "assignments", id] as const,
   },
+  documents: {
+    all: () => ["documents"] as const,
+    list: (filters: Record<string, unknown>) => ["documents", "list", filters] as const,
+    detail: (id: string) => ["documents", "detail", id] as const,
+    folders: () => ["documents", "folders"] as const,
+  },
+  videos: {
+    all: () => ["videos"] as const,
+    list: (filters: Record<string, unknown>) => ["videos", "list", filters] as const,
+    detail: (id: string) => ["videos", "detail", id] as const,
+  },
+  notifications: {
+    all: () => ["notifications"] as const,
+    list: (filters: Record<string, unknown>) => ["notifications", "list", filters] as const,
+    unreadCount: () => ["notifications", "unread-count"] as const,
+  },
+  deadManSwitch: {
+    all: () => ["dead-man-switch"] as const,
+    detail: () => ["dead-man-switch", "detail"] as const,
+  },
+  emergencyAccess: {
+    all: () => ["emergency-access"] as const,
+    contacts: () => ["emergency-access", "contacts"] as const,
+    requests: () => ["emergency-access", "requests"] as const,
+  },
+  accessTokens: {
+    all: () => ["access-tokens"] as const,
+    forBeneficiary: (id: string) => ["access-tokens", id] as const,
+  },
   legacyPlan: {
     all: () => ["legacy-plan"] as const,
     overview: () => ["legacy-plan", "overview"] as const,

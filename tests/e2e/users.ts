@@ -17,6 +17,7 @@ export const E2E_USERS = {
   beneficiaries: "e2e-beneficiaries+clerk_test@example.com",
   legacyPlan: "e2e-plan+clerk_test@example.com",
   assetAllocation: "e2e-allocation+clerk_test@example.com",
+  access: "e2e-access+clerk_test@example.com",
 } as const;
 
 export const E2E_USER_EMAILS = Object.values(E2E_USERS);

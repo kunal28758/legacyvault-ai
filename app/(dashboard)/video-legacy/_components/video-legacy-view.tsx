@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { AssignDialog } from "@/components/forms/assign-dialog";
+import { AssignVideoDialog } from "@/components/forms/assign-video-dialog";
 import { UploadDialog } from "@/components/forms/upload-dialog";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -50,10 +50,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useDemoWorkspace } from "@/hooks/use-demo-workspace";
-import { useDemoStore } from "@/lib/demo/store";
-import type { DeliveryCondition, DemoVideoMessage } from "@/lib/demo/types";
-import { formatBytes, formatDate, formatDuration } from "@/lib/format";
+import {
+  useDeleteVideo,
+  useUnassignVideo,
+  useUpdateVideo,
+  useVideoAccess,
+  useVideos,
+} from "@/hooks/use-videos";
+import { ApiError } from "@/lib/api/client";
+import type { DeliveryCondition, VideoMessage } from "@/lib/types/video";
+import { formatBytes, formatDate } from "@/lib/format";
 
 const DELIVERY_META: Record<
   DeliveryCondition,
@@ -79,21 +85,43 @@ const DELIVERY_META: Record<
   },
 };
 
-/** Video Legacy (task T144 — UI; resumable upload + processing job pending T141/T145). */
+/**
+ * Video Legacy (task T144).
+ *
+ * Uploads go through the same two-step signed-URL pipeline as documents; the
+ * delivery condition decides which kind of access link may ever play a message,
+ * and the database re-checks it when the link is minted.
+ */
 export function VideoLegacyView() {
-  const { workspace: ws, ready } = useDemoWorkspace();
-  const updateVideo = useDemoStore((s) => s.updateVideo);
-  const removeVideo = useDemoStore((s) => s.removeVideo);
-  const [uploadOpen, setUploadOpen] = useState(false);
-  const [preview, setPreview] = useState<DemoVideoMessage | null>(null);
-  const [shareFor, setShareFor] = useState<string | null>(null);
-  const [removeTarget, setRemoveTarget] = useState<DemoVideoMessage | null>(null);
+  const videosQuery = useVideos();
+  const updateVideoMutation = useUpdateVideo();
+  const deleteVideoMutation = useDeleteVideo();
+  const unassignVideo = useUnassignVideo();
+  const openVideo = useVideoAccess();
+  const [playbackUrl, setPlaybackUrl] = useState<string | null>(null);
 
-  const recipients = (video: DemoVideoMessage) =>
-    ws.assignments
-      .filter((a) => a.resourceType === "VIDEO_MESSAGE" && a.resourceId === video.id)
-      .map((a) => ws.beneficiaries.find((b) => b.id === a.beneficiaryId)?.name ?? "Beneficiary");
-  const totalBytes = ws.videos.reduce((s, v) => s + v.sizeBytes, 0);
+  const videos = videosQuery.data?.items ?? [];
+  const ready = !videosQuery.isPending;
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [preview, setPreview] = useState<VideoMessage | null>(null);
+  const [shareFor, setShareFor] = useState<string | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<VideoMessage | null>(null);
+
+  const recipients = (video: VideoMessage) =>
+    video.assignments.map((assignment) => assignment.beneficiaryName);
+  const totalBytes = videos.reduce((sum, video) => sum + video.sizeBytes, 0);
+
+  const play = async (video: VideoMessage) => {
+    setPreview(video);
+    setPlaybackUrl(null);
+    try {
+      // A signed URL, fetched when the player opens and never cached.
+      const access = await openVideo(video.id);
+      setPlaybackUrl(access.url);
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : "Could not open this video.");
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -112,7 +140,7 @@ export function VideoLegacyView() {
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard
           label="Messages"
-          value={ready ? ws.videos.length : "—"}
+          value={ready ? (videosQuery.data?.total ?? videos.length) : "—"}
           icon={Video}
           accent="purple"
         />
@@ -124,7 +152,7 @@ export function VideoLegacyView() {
         />
         <StatCard
           label="With recipients"
-          value={ready ? ws.videos.filter((v) => recipients(v).length).length : "—"}
+          value={ready ? videos.filter((video) => recipients(video).length).length : "—"}
           icon={Users}
           accent="cyan"
         />
@@ -132,7 +160,7 @@ export function VideoLegacyView() {
 
       {!ready ? (
         <GridSkeleton items={3} />
-      ) : ws.videos.length === 0 ? (
+      ) : videos.length === 0 ? (
         <EmptyState
           icon={Video}
           title="No video messages yet"
@@ -146,17 +174,17 @@ export function VideoLegacyView() {
         />
       ) : (
         <StaggerGrid className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {ws.videos.map((video) => {
+          {videos.map((video) => {
             const delivery = DELIVERY_META[video.deliveryCondition];
             const DeliveryIcon = delivery.icon;
-            const scan = toneForScanStatus(video.scanStatus);
+            const scan = toneForScanStatus(video.scan.status);
             const names = recipients(video);
             return (
               <StaggerItem key={video.id}>
                 <Card className="motion-safe-transition glass-highlight h-full overflow-hidden glass hover:-translate-y-0.5">
                   <button
                     type="button"
-                    onClick={() => setPreview(video)}
+                    onClick={() => void play(video)}
                     aria-label={`Preview ${video.title}`}
                     className="group relative block aspect-video w-full overflow-hidden bg-gradient-surface outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
@@ -182,7 +210,7 @@ export function VideoLegacyView() {
                       </span>
                     </span>
                     <span className="absolute right-3 bottom-3 rounded-md bg-background/70 px-1.5 py-0.5 text-[11px] font-medium tabular-nums backdrop-blur-sm">
-                      {video.durationSeconds ? formatDuration(video.durationSeconds) : "—:—"}
+                      {formatBytes(video.sizeBytes)}
                     </span>
                   </button>
                   <CardContent className="space-y-3 p-4">
@@ -206,7 +234,7 @@ export function VideoLegacyView() {
                           <MoreHorizontal />
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-52">
-                          <DropdownMenuItem onClick={() => setPreview(video)}>
+                          <DropdownMenuItem onClick={() => void play(video)}>
                             <Play /> Preview
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => setShareFor(video.id)}>
@@ -228,14 +256,14 @@ export function VideoLegacyView() {
                       </StatusBadge>
                       <StatusBadge
                         tone={scan.tone}
-                        pulse={video.scanStatus === "PENDING"}
+                        pulse={video.scan.status === "PENDING"}
                         className="h-5 text-[11px]"
                       >
                         {scan.label}
                       </StatusBadge>
-                      {video.demoOnly && (
+                      {!video.scan.performed && (
                         <span className="inline-flex items-center gap-1 rounded-full border border-warning/30 bg-warning/10 px-2 py-0.5 text-[11px] font-medium text-warning">
-                          <FlaskConical className="size-3" aria-hidden /> Demo only
+                          <FlaskConical className="size-3" aria-hidden /> Not scanned
                         </span>
                       )}
                     </div>
@@ -256,10 +284,11 @@ export function VideoLegacyView() {
       )}
 
       <UploadDialog kind="video" open={uploadOpen} onOpenChange={setUploadOpen} />
-      <AssignDialog
+      <AssignVideoDialog
         open={Boolean(shareFor)}
         onOpenChange={(open) => !open && setShareFor(null)}
-        resource={shareFor ? { type: "VIDEO_MESSAGE", id: shareFor } : null}
+        videoId={shareFor}
+        assignments={videos.find((video) => video.id === shareFor)?.assignments ?? []}
       />
       <ConfirmDialog
         open={Boolean(removeTarget)}
@@ -268,11 +297,15 @@ export function VideoLegacyView() {
         description="The message is removed from storage and from every access scope. The audit record is kept."
         confirmLabel="Delete video"
         variant="destructive"
-        onConfirm={() => {
+        onConfirm={async () => {
           if (!removeTarget) return;
-          const result = removeVideo(removeTarget.id);
-          if (result.ok) toast.success("Video deleted");
-          else toast.error(result.message);
+          try {
+            await deleteVideoMutation.mutateAsync(removeTarget.id);
+            toast.success("Video deleted");
+            if (preview?.id === removeTarget.id) setPreview(null);
+          } catch (error) {
+            toast.error(error instanceof ApiError ? error.message : "Could not delete this video.");
+          }
         }}
       />
 
@@ -285,31 +318,26 @@ export function VideoLegacyView() {
                 <DialogDescription>{preview.description ?? "No description"}</DialogDescription>
               </DialogHeader>
               <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-xl bg-background/80">
-                <span
-                  aria-hidden
-                  className="absolute inset-0 bg-[radial-gradient(60%_60%_at_50%_40%,color-mix(in_oklch,var(--brand-blue)_30%,transparent),transparent)]"
-                />
-                <div className="relative flex flex-col items-center gap-3 text-center">
-                  <span className="flex size-16 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                    <Play className="ml-0.5 size-7" aria-hidden />
-                  </span>
-                  <p className="text-sm font-medium">
-                    Playback uses a signed 15-minute URL from private storage
-                  </p>
-                  <p className="max-w-sm text-xs text-muted-foreground">
-                    Not available in the demo workspace — no media is stored here. The player shell,
-                    delivery rules and recipients are wired.
-                  </p>
-                </div>
-                <div className="absolute inset-x-0 bottom-0 flex items-center gap-3 bg-background/70 px-4 py-2 text-xs backdrop-blur-sm">
-                  <span className="h-1 flex-1 rounded-full bg-muted">
-                    <span className="block h-full w-0 rounded-full bg-primary" />
-                  </span>
-                  <span className="tabular-nums">
-                    0:00 /{" "}
-                    {preview.durationSeconds ? formatDuration(preview.durationSeconds) : "—:—"}
-                  </span>
-                </div>
+                {playbackUrl ? (
+                  // The signed URL lives only in component state for this dialog.
+                  <video
+                    key={playbackUrl}
+                    src={playbackUrl}
+                    controls
+                    playsInline
+                    className="size-full"
+                  />
+                ) : (
+                  <div className="relative flex flex-col items-center gap-3 text-center">
+                    <span className="flex size-16 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                      <Play className="ml-0.5 size-7" aria-hidden />
+                    </span>
+                    <p className="text-sm font-medium">Preparing a signed playback link…</p>
+                    <p className="max-w-sm text-xs text-muted-foreground">
+                      Playback uses a link from private storage that expires in 15 minutes.
+                    </p>
+                  </div>
+                )}
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
@@ -317,9 +345,23 @@ export function VideoLegacyView() {
                   <Select
                     value={preview.deliveryCondition}
                     onValueChange={(v) => {
-                      updateVideo(preview.id, { deliveryCondition: v as DeliveryCondition });
-                      setPreview({ ...preview, deliveryCondition: v as DeliveryCondition });
-                      toast.success("Delivery condition updated");
+                      const next = v as DeliveryCondition;
+                      void (async () => {
+                        try {
+                          const updated = await updateVideoMutation.mutateAsync({
+                            id: preview.id,
+                            values: { deliveryCondition: next },
+                          });
+                          setPreview(updated);
+                          toast.success("Delivery condition updated");
+                        } catch (error) {
+                          toast.error(
+                            error instanceof ApiError
+                              ? error.message
+                              : "Could not change the delivery condition.",
+                          );
+                        }
+                      })();
                     }}
                     items={Object.entries(DELIVERY_META).map(([value, m]) => ({
                       value,
@@ -343,9 +385,43 @@ export function VideoLegacyView() {
                 </div>
                 <div className="space-y-1.5">
                   <p className="text-xs font-medium text-muted-foreground">Recipients</p>
-                  <p className="text-sm">
-                    {recipients(preview).length ? recipients(preview).join(", ") : "None yet"}
-                  </p>
+                  {preview.assignments.length === 0 ? (
+                    <p className="text-sm">None yet</p>
+                  ) : (
+                    <ul className="space-y-1">
+                      {preview.assignments.map((assignment) => (
+                        <li
+                          key={assignment.id}
+                          className="flex items-center justify-between gap-2 text-sm"
+                        >
+                          <span className="truncate">{assignment.beneficiaryName}</span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={unassignVideo.isPending}
+                            onClick={async () => {
+                              try {
+                                const updated = await unassignVideo.mutateAsync({
+                                  id: preview.id,
+                                  assignmentId: assignment.id,
+                                });
+                                setPreview(updated);
+                                toast.success("Recipient removed");
+                              } catch (error) {
+                                toast.error(
+                                  error instanceof ApiError
+                                    ? error.message
+                                    : "Could not remove this recipient.",
+                                );
+                              }
+                            }}
+                          >
+                            Remove
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                   <Button size="sm" variant="outline" onClick={() => setShareFor(preview.id)}>
                     <Share2 data-icon="inline-start" />
                     Assign recipient

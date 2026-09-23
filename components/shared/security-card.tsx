@@ -9,7 +9,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import type { SecurityCheck } from "@/lib/demo/selectors";
+import type { SecurityCheck } from "@/lib/security/checks";
 import { cn } from "@/lib/utils";
 
 const statusMeta: Record<

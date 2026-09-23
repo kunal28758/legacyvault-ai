@@ -29,6 +29,8 @@ export interface BeneficiaryAssignment {
   beneficiaryId: string;
   resourceType: AssignmentResourceType;
   resourceId: string;
+  /** The resource's own name, resolved server-side; null once it is deleted. */
+  resourceName: string | null;
   allocationPercentage: number | null;
   createdAt: string;
 }

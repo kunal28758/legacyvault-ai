@@ -5,7 +5,7 @@ import { DashboardView } from "./_components/dashboard-view";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
-/** Dashboard (task T051 — UI; service-backed data arrives with the Phase 3 API). */
+/** Dashboard (task T051). Every figure comes from the versioned API. */
 export default async function DashboardPage() {
   const user = await currentUser();
   const firstName = user?.firstName || user?.fullName?.split(" ")[0] || null;

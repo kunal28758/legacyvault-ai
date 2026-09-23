@@ -1,7 +1,7 @@
 # Project Status — LegacyVault AI
 
-**Snapshot date**: 2026-09-18
-**Phase**: 2 — Foundational in progress (Phase 1 setup committed `556105f`; database foundation T018/T218/T019 committed `306b20f`; **website batch 2026-09-19** built the full user-facing application on a labelled demo workspace ahead of the remaining Phase 2 infrastructure; T195/T196/T210 pending manual verification)
+**Snapshot date**: 2026-09-24
+**Phase**: 3 — Product complete except AI (deliberately deferred) and the admin console. Every domain is backed by the real API, the real database and real storage; the demo layer has been deleted. T195/T196/T210 still pending manual verification of the hosted accounts.
 **Constitution**: v2.0.1 (amended 2026-09-18) · **Architecture**: ADR-001 … ADR-016 (ADR-004 r4, ADR-014 r4) · **Git checkpoint**: `4cac2d3`
 
 > This file records what is *actually true* about the repository right now.
@@ -12,16 +12,15 @@
 
 ## 1. One-line summary
 
-The architecture drift between the 2026-09-16 specification (Express/Prisma/
-S3/Redis two-project plan) and the 2026-09-17 root-level Next.js 16 scaffold
-has been **formally resolved** in favour of a single Next.js application with
-Clerk, Supabase PostgreSQL/Storage, a Postgres job table + Vercel Cron, and
-OpenAI/Gemini behind an abstraction. Implementation started 2026-09-19: Phase 1
-setup and the Phase 2 database foundation are committed, and the **website
-batch** delivered the complete user-facing application (public site, Clerk
-auth pages, protected shell and every product page) **on a labelled demo
-workspace** — real authentication, no real persistence yet (no Route Handlers,
-services or repositories). See § 2.
+LegacyVault AI is a working product: one Next.js application with Clerk for
+identity, Supabase PostgreSQL + private Storage for data and files, a Postgres
+job table driven by Vercel Cron for everything time-based, and Resend for mail.
+Legacy plans, beneficiaries, assets, documents, videos, the Dead Man's Switch,
+emergency access, notifications and the beneficiary access portal are all
+persisted through the versioned API, the service layer, guarded SQL functions
+and RLS. **The demo workspace is gone** — `lib/demo/` no longer exists. The AI
+assistant is deliberately deferred: no provider is connected, and the panel
+says so and answers from the caller's own data with local rules. See § 2.
 
 ---
 
@@ -39,14 +38,18 @@ services or repositories). See § 2.
 | Agent skills | ✅ 70 skills in `.agents/skills` (+ speckit backup) | `.agents/`, `.agents-backup/` |
 | Clerk | 🔧 `@clerk/nextjs` installed; proxy/layout activate when keys exist; **dashboard checklist ⏳ pending manual verification** (`docs/DEPLOYMENT.md` § 5, T195) | `proxy.ts`, `app/layout.tsx` |
 | Database schema / RLS / functions | ✅ **Migrations 0001–0003 applied on the local stack** (2026-09-19): 28 tables / 32 enums (T018); privilege baseline, RLS on all 28 tables (36 policies + 1 storage policy), column allow-lists, `protect_identity_columns`, append-only `audit_log`, `audit_class_a_change()` on 8 Class A tables (T218); 32 guarded + 11 system + 18 internal functions incl. `create_asset`, `set_encrypted_fields`, `delete_asset`, `resend_access_token`, `system_reissue_access_token`, DMS/EA transitions with outbox `access.deliver` jobs (T019). `lib/types/database.ts` generated. Verified by a 26-section security smoke script (rolled back) and an end-to-end PostgREST check with Clerk-shaped HS256 JWTs. Hosted projects: not yet pushed (T196/T238). | `supabase/migrations/`, `lib/types/database.ts` |
-| Application UI (website batch) | ✅ **Public site** — `(marketing)` landing (navbar, hero with procedural three.js vault, capabilities, how-it-works, feature showcase, security layers, CTA, footer + disclaimer); `(auth)` sign-in / sign-up rendering Clerk components with a not-configured fallback. **Authenticated app** — `(dashboard)` layout with real Clerk protection (`auth()` + `proxy.ts`), `AppShell` (collapsible sidebar, mobile sheet, breadcrumbs, notifications, theme toggle, `<UserButton/>`), and pages: dashboard, legacy-plan hub, 11-step will wizard (auto-save, per-step Zod validation, review with acknowledged-incomplete finalization, confirmation, versions), beneficiaries (add/edit/status/remove cascade/assign), assets overview + financial/physical/digital (masked encrypted fields), document vault (folders, grid/list, upload preview with real client pre-check), video legacy, Dead Man’s Switch (state machine, check-in/pause/resume/disable/recover, demo stage simulation), emergency access (contacts, verified-request approve/deny/revoke), AI assistant (local rule-based replies, AI-generated label, disclaimer), Security Center, notifications, settings. **All feature data is the demo workspace** (`lib/demo/*`: seed + Zustand store in sessionStorage, typed with the generated DB enums, labelled in the UI, never sent to a server). No Route Handler, service or repository exists yet. | `app/`, `components/`, `lib/demo/`, `hooks/` |
-| API `/api/v1` | ✅ **Foundation live (Phase A)** — `withApi()` pipeline (correlation id → `no-store` → auth → CSRF → rate limit → Zod → handler → envelope → safe errors + DENIED/FAILURE audit); routes: `GET /health`, `GET|PATCH /users/me`, `GET|PATCH /users/me/preferences`, `POST /users/me/onboarding/complete`, `POST /api/webhooks/clerk` (Svix-verified, idempotent). Business logic is in `lib/services`; data access in `lib/repositories`. | `app/api/v1/**`, `lib/api/**` |
+| Application UI | ✅ Public site, Clerk auth pages, the authenticated shell and every product page — **all backed by the real API**. Legacy-plan wizard with autosave, versions and finalization; beneficiaries with assignments, roles and access links; three asset classes with encrypted fields revealed only after re-verification; document vault with folders, upload, sharing and signed downloads; video legacy with delivery conditions; Dead Man's Switch with a release-scope picker; emergency access with contacts, decisions and resends; notifications; Security Center; settings with data export and account deletion. Public recipient pages: `/access` and the emergency request/verify flow. | `app/`, `components/`, `hooks/` |
+| API `/api/v1` | ✅ **Complete for every shipped domain** — `withApi()` pipeline (correlation id → `no-store` → auth → CSRF → step-up verification → rate limit → Zod → handler → envelope → safe errors + DENIED/FAILURE audit) across users, legacy plans, beneficiaries, assignments, access tokens, the three asset classes, documents, folders, uploads, videos, the Dead Man's Switch, emergency access (owner **and** public), notifications, activity, the beneficiary access portal, internal cron and the Clerk webhook. Business logic in `lib/services`, data access in `lib/repositories`. | `app/api/v1/**`, `lib/api/**` |
 | Auth → database identity | ✅ Clerk session → `public.users` via `ensureAppUser()` (T036) with the webhook (T198) as the primary sync path; `requireUser()` / `requireRole()` read the role from the database. Clerk issues `role: authenticated`; Supabase registers Clerk as a third-party issuer, so RLS applies to real sessions (verified end to end). | `lib/auth/**`, `app/api/webhooks/clerk` |
 | Platform services | ✅ Two Supabase clients with documented call sites (T028), AES-256-GCM field encryption (T020), Postgres rate limiter (T025), append-only audit service (T027), pino logging with redaction (T022), security headers (T024), health probes | `lib/db/`, `lib/security/`, `lib/audit/`, `lib/observability/` |
-| Jobs / cron / webhooks | ⬜ None | — |
-| Storage buckets / policies | ⬜ None | — |
-| AI, email, Sentry, logging | ⬜ None | — |
-| Tests / CI / deployment | 🔧 Vitest (unit + integration projects), Playwright (Chromium) with Clerk-aware global setup, JWT/DB test helpers (T015). **Integration workers now load `.env.local`, so database assertions genuinely run against the local stack instead of skipping silently.** — 56 unit (incl. demo-store invariants and rendered dashboard/wizard/DMS/EA views) + 2 integration + 3 E2E smoke tests passing; CI workflow (T016) and deployment not started; `docs/DEPLOYMENT.md` created (T202) with T195/T196/T210 checklists ⏳ | `vitest.config.mts`, `playwright.config.ts`, `tests/`, `docs/DEPLOYMENT.md` |
+| Jobs / cron / webhooks | ✅ `jobs` table + `claim_jobs()` runner with back-off and dead-lettering; handlers `access.deliver`, `notification.deliver`, `storage.remove-object`, `dms.scan`, `housekeeping`; Vercel Cron at `/api/internal/cron/{run-jobs,dms-scan,housekeeping}` behind `CRON_SECRET`; Clerk webhook (Svix) | `lib/jobs/**`, `app/api/internal/cron/**`, `vercel.json` |
+| Storage buckets / policies | ✅ Three **private** buckets (`quarantine`, `documents`, `videos`, migration `0004`); no storage policy for `authenticated` — every read and write is a short-lived signed URL minted server-side; quarantine → size/magic-byte/scan → `promote_upload()` move | `supabase/migrations/0004_storage_buckets.sql`, `lib/storage/`, `lib/services/upload.service.ts` |
+| Email | ✅ Resend + React Email templates (access link, DMS reminder, notification, emergency code, emergency designation) with provider-level idempotency keys; mail never contains vault contents and never blocks a state change | `lib/email/**` |
+| Beneficiary access portal | ✅ `/access?t=…` exchanges the token for an encrypted `httpOnly; SameSite=Strict` cookie scoped to `/api/v1/access`; read-only resource, document-download, asset, video and plan-section endpoints re-check revocation, expiry, beneficiary status and delivery condition on every request; public emergency request/verify flow with hashed one-time codes | `app/(public)/**`, `app/api/v1/access/**`, `lib/services/access-portal.service.ts` |
+| AI | ⏸️ **Deliberately deferred.** No provider is connected. The assistant panel is labelled "Not AI · local rules, no provider connected" and answers from the caller's real data; nothing it produces is written to an authoritative record | `lib/ai/preview-assistant.ts` |
+| Admin console | ⬜ Not built (`/admin/*` endpoints in the contract remain open) | — |
+| Sentry / logging | 🔧 pino JSON logs with redaction and correlation ids are live; Sentry DSN optional locally, required in production | `lib/observability/` |
+| Tests / CI / deployment | 🔧 Vitest (unit + integration) and Playwright (Chromium) with a Clerk-aware global setup. **137 unit + 86 integration (against the live local PostgreSQL stack) + 8 E2E all pass**, alongside `pnpm lint`, `tsc --noEmit`, `prettier --check` and `next build`. CI workflow (T016) and deployment not started; `docs/DEPLOYMENT.md` carries the T195/T196/T210 checklists ⏳ | `vitest.config.mts`, `playwright.config.ts`, `tests/`, `docs/DEPLOYMENT.md` |
 
 ---
 
@@ -124,13 +127,18 @@ services or repositories). See § 2.
 
 ## 6. Next steps (in order)
 
-1. Commit the r4 remediation (this working tree) as one focused commit on top
-   of `4cac2d3`.
-2. Owner confirms items 1–3 above.
-3. Create the feature branch; begin Phase 1 (Setup) tasks — including T009
-   (`.gitignore`, un-track `next-env.d.ts`) and T210 (platform prerequisites)
-   — **only after** explicit go-ahead for `/speckit-implement`. Phase 2 must
-   not start before T210 is recorded.
+1. **Hosted accounts (T195/T196/T210).** Clerk production instance, Supabase
+   project with the four migrations applied and the three private buckets
+   created, Resend domain, Sentry DSN, and a Vercel plan whose cron schedule
+   supports the five-minute job runner.
+2. **ClamAV (T247).** `MALWARE_SCANNER_PROVIDER=noop` is refused in production
+   by design, so a scanner host is a hard prerequisite for going live.
+3. **AI (ADR-008, ADR-016).** The assistant, will generator and document
+   analysis, behind the provider abstraction and the confirmation gates.
+4. **Admin console (`/admin/*`).** User search, role changes, unlock, MFA
+   reset, analytics and the dead-letter resend path.
+5. **CI (T016).** Run lint, typecheck, unit, integration and E2E on every
+   push; gate migrations on review.
 
 ---
 
@@ -149,3 +157,4 @@ services or repositories). See § 2.
 | 2026-09-19 | **Phase 1 setup batch** (uncommitted): T001 skeleton, T002 scaffold normalized (landing page, metadata), T003/T005 dependencies (see CHANGELOG), T006 scripts/Prettier/ESLint, T007 env schema, T008 `.env.example`, T009 `.gitignore` (+ `next-env.d.ts` un-tracked), T010/T011 design foundation, T012 shadcn/ui (sonner replaces the deprecated toast), T013/T014 API + query clients, T015 Vitest/Playwright + helpers + smoke tests, T017 root layout, T192 `proxy.ts`, T193 `vercel.json`, T194 Supabase CLI init + `db:*` scripts, T202 `docs/DEPLOYMENT.md`. T195/T196/T210 documented with ⏳ pending manual verification — no external dashboard was configured. Checks: typecheck, lint, format, unit, integration, E2E, production build all pass. |
 | 2026-09-19 | **Website batch** (`feat: build LegacyVault AI application experience`): complete public site and authenticated application UI on a labelled demo workspace; `three` + `@react-three/fiber` added for the procedural hero (lazy, WebGL/reduced-motion fallbacks); 9 shadcn primitives added (label, textarea, select, switch, checkbox, separator, alert, radio-group, scroll-area); `viz-1..3` categorical chart tokens validated for CVD; landing page moved to `app/(marketing)/page.tsx`; next-themes now receives the CSP nonce. 14 pure-UI tasks marked complete (T040/T041/T045/T047/T049/T050/T062/T063/T164–T169); page tasks with API wiring stay open. Remaining blockers for a live demo: Clerk keys (T195) and, for real persistence, T028/T030/T036 + services. |
 | 2026-09-19 | **Phase 2 database foundation** (T018 `0001_init.sql`, T218 `0002_rls_and_privileges.sql`, T019 `0003_functions.sql`): schema, RLS/privileges, guarded + system functions applied with `supabase start` (Docker Desktop started for it); `pnpm db:types` regenerated `lib/types/database.ts`; smoke-tested live (RLS isolation, column grants on encrypted columns, asset creation function-only, `delete_asset` atomic, DIRECT_SHARE scope ⊆ assignments, live-token uniqueness, reissue-on-retry, DMS release outbox jobs, EA lifecycle, append-only audit). No application service code, T020+ not started. |
+| 2026-09-24 | **Real platform batch** (`feat: complete real legacyvault platform`): documents + private storage, the lean Dead Man's Switch with the job queue, emergency access (owner and public), access delivery and the beneficiary portal, video legacy, notifications and email; the demo layer deleted in full; data export and account deletion; the step-up re-authentication gate; release/emergency scope pickers; cron routes moved to the contracted `/api/internal/cron/*` paths and a daily `housekeeping` sweep added. AI remains deliberately deferred. |

@@ -25,7 +25,7 @@ import {
 import { toast } from "sonner";
 
 import { DocumentIcon, VaultCard, documentKind } from "@/components/data-display/vault-card";
-import { AssignDialog } from "@/components/forms/assign-dialog";
+import { ShareDocumentDialog } from "@/components/forms/share-document-dialog";
 import { FormField } from "@/components/forms/form-field";
 import { UploadDialog } from "@/components/forms/upload-dialog";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -61,19 +61,30 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useDemoWorkspace, useNow } from "@/hooks/use-demo-workspace";
-import { useDemoStore } from "@/lib/demo/store";
-import type { DemoDocument } from "@/lib/demo/types";
+import {
+  useCreateFolder,
+  useDeleteDocument,
+  useDocument,
+  useDocumentAccess,
+  useDocuments,
+  useFolders,
+  useRenameDocument,
+  useUnshareDocument,
+} from "@/hooks/use-documents";
+import { useNow } from "@/hooks/use-now";
+import { ApiError } from "@/lib/api/client";
+import type { DocumentSummary } from "@/lib/types/document";
 import { formatBytes, formatDateTime, formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-/** Secure Document Vault (task T095 — UI; storage/API wiring pending T090/T093/T205). */
+/**
+ * Secure Document Vault (FR-H001–H010).
+ *
+ * Everything here is persisted: uploads go to a private quarantine bucket and
+ * are promoted by the server, downloads are short-lived signed links minted
+ * after an ownership check, and deletion runs `delete_document()`.
+ */
 export function DocumentsView() {
-  const { workspace: ws, ready } = useDemoWorkspace();
-  const addFolder = useDemoStore((s) => s.addFolder);
-  const renameDocument = useDemoStore((s) => s.renameDocument);
-  const removeDocument = useDemoStore((s) => s.removeDocument);
-  const unassign = useDemoStore((s) => s.unassign);
   const now = useNow();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -87,35 +98,57 @@ export function DocumentsView() {
   const [folderName, setFolderName] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [shareFor, setShareFor] = useState<string | null>(null);
-  const [renameTarget, setRenameTarget] = useState<DemoDocument | null>(null);
+  const [renameTarget, setRenameTarget] = useState<DocumentSummary | null>(null);
   const [renameValue, setRenameValue] = useState("");
-  const [removeTarget, setRemoveTarget] = useState<DemoDocument | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<DocumentSummary | null>(null);
+
+  const listQuery = useDocuments({
+    ...(folderId === "all" || folderId === "root" ? {} : { folderId }),
+    ...(query.trim() ? { q: query.trim() } : {}),
+  });
+  const everything = useDocuments();
+  const foldersQuery = useFolders();
+  const detailQuery = useDocument(detailId);
+  const createFolder = useCreateFolder();
+  const renameDoc = useRenameDocument();
+  const deleteDoc = useDeleteDocument();
+  const unshare = useUnshareDocument();
+  const accessDocument = useDocumentAccess();
+
+  const ready = !everything.isPending && !foldersQuery.isPending;
+  const folders = foldersQuery.data?.items ?? [];
+  const allDocuments = everything.data?.items ?? [];
 
   useEffect(() => {
     if (openUpload) router.replace("/documents");
   }, [openUpload, router]);
 
   const folderNameOf = (id: string | null) =>
-    id ? (ws.folders.find((f) => f.id === id)?.name ?? "Folder") : "Root";
-  const sharedCount = (doc: DemoDocument) =>
-    ws.assignments.filter((a) => a.resourceType === "DOCUMENT" && a.resourceId === doc.id).length;
+    id ? (folders.find((f) => f.id === id)?.name ?? "Folder") : "Root";
+  const sharedCount = (doc: DocumentSummary) => doc.shareCount;
 
+  // The root filter is the one case the API cannot express, so it is applied here.
   const rows = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return ws.documents.filter(
-      (d) =>
-        (folderId === "all" ||
-          (folderId === "root" ? d.folderId === null : d.folderId === folderId)) &&
-        (!q || d.name.toLowerCase().includes(q)),
-    );
-  }, [ws.documents, folderId, query]);
+    const items = listQuery.data?.items ?? [];
+    return folderId === "root" ? items.filter((d) => d.folderId === null) : items;
+  }, [listQuery.data, folderId]);
 
-  const detail = detailId ? (ws.documents.find((d) => d.id === detailId) ?? null) : null;
-  const totalBytes = ws.documents.reduce((s, d) => s + d.sizeBytes, 0);
-  const clean = ws.documents.filter((d) => d.scanStatus === "CLEAN").length;
-  const shared = ws.documents.filter((d) => sharedCount(d) > 0).length;
+  const detail = detailQuery.data ?? null;
+  const totalBytes = allDocuments.reduce((s, d) => s + d.sizeBytes, 0);
+  const clean = allDocuments.filter((d) => d.scan.status === "CLEAN").length;
+  const shared = allDocuments.filter((d) => d.shareCount > 0).length;
 
-  const menuFor = (doc: DemoDocument) => (
+  const download = async (id: string) => {
+    try {
+      const access = await accessDocument(id, "download");
+      // The signed link is opened immediately and never stored.
+      window.open(access.url, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : "Could not open this document.");
+    }
+  };
+
+  const menuFor = (doc: DocumentSummary) => (
     <DropdownMenu>
       <DropdownMenuTrigger
         render={<Button variant="ghost" size="icon-sm" aria-label={`Actions for ${doc.name}`} />}
@@ -145,7 +178,7 @@ export function DocumentsView() {
     </DropdownMenu>
   );
 
-  const columns: DataTableColumn<DemoDocument>[] = [
+  const columns: DataTableColumn<DocumentSummary>[] = [
     {
       id: "name",
       header: "Document",
@@ -186,9 +219,9 @@ export function DocumentsView() {
       id: "scan",
       header: "Scan",
       cell: (doc) => {
-        const s = toneForScanStatus(doc.scanStatus);
+        const s = toneForScanStatus(doc.scan.status);
         return (
-          <StatusBadge tone={s.tone} pulse={doc.scanStatus === "PENDING"}>
+          <StatusBadge tone={s.tone} pulse={doc.scan.status === "PENDING"}>
             {s.label}
           </StatusBadge>
         );
@@ -239,10 +272,10 @@ export function DocumentsView() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Documents"
-          value={ready ? ws.documents.length : "—"}
+          value={ready ? (everything.data?.total ?? allDocuments.length) : "—"}
           icon={FileText}
           accent="blue"
-          hint={`${ws.folders.length} folders`}
+          hint={`${folders.length} folders`}
         />
         <StatCard
           label="Storage used"
@@ -253,9 +286,9 @@ export function DocumentsView() {
         />
         <StatCard
           label="Scanned clean"
-          value={ready ? `${clean}/${ws.documents.length}` : "—"}
+          value={ready ? `${clean}/${allDocuments.length}` : "—"}
           icon={ShieldCheck}
-          accent={clean === ws.documents.length ? "success" : "warning"}
+          accent={clean === allDocuments.length ? "success" : "warning"}
         />
         <StatCard
           label="Shared"
@@ -272,16 +305,16 @@ export function DocumentsView() {
             Folders
           </p>
           {[
-            { id: "all" as const, name: "All documents", count: ws.documents.length },
+            { id: "all" as const, name: "All documents", count: allDocuments.length },
             {
               id: "root" as const,
               name: "Root",
-              count: ws.documents.filter((d) => !d.folderId).length,
+              count: allDocuments.filter((d) => !d.folderId).length,
             },
-            ...ws.folders.map((f) => ({
+            ...folders.map((f) => ({
               id: f.id,
               name: f.name,
-              count: ws.documents.filter((d) => d.folderId === f.id).length,
+              count: allDocuments.filter((d) => d.folderId === f.id).length,
             })),
           ].map((folder) => {
             const active = folderId === folder.id;
@@ -354,7 +387,7 @@ export function DocumentsView() {
           {!ready ? (
             <GridSkeleton />
           ) : rows.length === 0 ? (
-            ws.documents.length === 0 ? (
+            allDocuments.length === 0 ? (
               <EmptyState
                 icon={Lock}
                 title="Your vault is empty"
@@ -414,10 +447,10 @@ export function DocumentsView() {
         onOpenChange={setUploadOpen}
         defaultFolderId={folderId === "all" || folderId === "root" ? null : folderId}
       />
-      <AssignDialog
+      <ShareDocumentDialog
         open={Boolean(shareFor)}
         onOpenChange={(open) => !open && setShareFor(null)}
-        resource={shareFor ? { type: "DOCUMENT", id: shareFor } : null}
+        documentId={shareFor}
       />
 
       <Dialog open={folderOpen} onOpenChange={setFolderOpen}>
@@ -445,11 +478,18 @@ export function DocumentsView() {
             </Button>
             <Button
               onClick={() => {
-                const result = addFolder(folderName);
-                if (!result.ok) return toast.error(result.message);
-                toast.success("Folder created");
-                setFolderName("");
-                setFolderOpen(false);
+                void (async () => {
+                  try {
+                    await createFolder.mutateAsync({ name: folderName });
+                    toast.success("Folder created");
+                    setFolderName("");
+                    setFolderOpen(false);
+                  } catch (error) {
+                    toast.error(
+                      error instanceof ApiError ? error.message : "Could not create this folder.",
+                    );
+                  }
+                })();
               }}
             >
               Create folder
@@ -481,10 +521,17 @@ export function DocumentsView() {
             <Button
               onClick={() => {
                 if (!renameTarget) return;
-                const result = renameDocument(renameTarget.id, renameValue);
-                if (!result.ok) return toast.error(result.message);
-                toast.success("Document renamed");
-                setRenameTarget(null);
+                void (async () => {
+                  try {
+                    await renameDoc.mutateAsync({ id: renameTarget.id, name: renameValue });
+                    toast.success("Document renamed");
+                    setRenameTarget(null);
+                  } catch (error) {
+                    toast.error(
+                      error instanceof ApiError ? error.message : "Could not rename this document.",
+                    );
+                  }
+                })();
               }}
             >
               Save
@@ -500,13 +547,17 @@ export function DocumentsView() {
         description="The document is soft-deleted, its storage object is queued for removal, shares and plan attachments are removed. The audit trail is retained (FR-H017)."
         confirmLabel="Delete document"
         variant="destructive"
-        onConfirm={() => {
+        onConfirm={async () => {
           if (!removeTarget) return;
-          const result = removeDocument(removeTarget.id);
-          if (result.ok) {
+          try {
+            await deleteDoc.mutateAsync(removeTarget.id);
             toast.success("Document deleted");
             if (detailId === removeTarget.id) setDetailId(null);
-          } else toast.error(result.message);
+          } catch (error) {
+            toast.error(
+              error instanceof ApiError ? error.message : "Could not delete this document.",
+            );
+          }
         }}
       />
 
@@ -524,28 +575,31 @@ export function DocumentsView() {
               <div className="space-y-6 px-4 pb-6">
                 <div className="flex flex-wrap items-center gap-2">
                   <StatusBadge
-                    tone={toneForScanStatus(detail.scanStatus).tone}
-                    pulse={detail.scanStatus === "PENDING"}
+                    tone={toneForScanStatus(detail.scan.status).tone}
+                    pulse={detail.scan.status === "PENDING"}
                   >
-                    {toneForScanStatus(detail.scanStatus).label}
+                    {toneForScanStatus(detail.scan.status).label}
                   </StatusBadge>
                   <StatusBadge tone="info" icon={Lock}>
                     Private bucket
                   </StatusBadge>
-                  {detail.demoOnly && (
-                    <StatusBadge tone="warning">Demo only — not uploaded</StatusBadge>
-                  )}
+                  {!detail.scan.performed && <StatusBadge tone="warning">Not scanned</StatusBadge>}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Tooltip>
-                    <TooltipTrigger render={<Button size="sm" variant="outline" disabled />}>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void download(detail.id)}
+                        />
+                      }
+                    >
                       <Download data-icon="inline-start" />
                       Download
                     </TooltipTrigger>
-                    <TooltipContent>
-                      Signed 15-minute download links are minted by the storage API (not in the demo
-                      workspace)
-                    </TooltipContent>
+                    <TooltipContent>Opens a signed link that expires in 15 minutes</TooltipContent>
                   </Tooltip>
                   <Button size="sm" variant="outline" onClick={() => setShareFor(detail.id)}>
                     <Share2 data-icon="inline-start" />
@@ -625,37 +679,42 @@ export function DocumentsView() {
 
                 <div className="space-y-2">
                   <p className="text-sm font-medium">Shared with</p>
-                  {ws.assignments.filter(
-                    (a) => a.resourceType === "DOCUMENT" && a.resourceId === detail.id,
-                  ).length === 0 ? (
+                  {detail.shares.length === 0 ? (
                     <p className="rounded-lg border border-dashed border-border px-3 py-5 text-center text-sm text-muted-foreground">
                       Not shared with anyone. Only you can open it.
                     </p>
                   ) : (
                     <ul className="space-y-2">
-                      {ws.assignments
-                        .filter((a) => a.resourceType === "DOCUMENT" && a.resourceId === detail.id)
-                        .map((a) => (
-                          <li
-                            key={a.id}
-                            className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm"
-                          >
-                            <span>
-                              {ws.beneficiaries.find((b) => b.id === a.beneficiaryId)?.name ??
-                                "Beneficiary"}
-                            </span>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                unassign(a.id);
+                      {detail.shares.map((share) => (
+                        <li
+                          key={share.assignmentId}
+                          className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm"
+                        >
+                          <span>{share.beneficiaryName}</span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={unshare.isPending}
+                            onClick={async () => {
+                              try {
+                                await unshare.mutateAsync({
+                                  id: detail.id,
+                                  beneficiaryId: share.beneficiaryId,
+                                });
                                 toast.success("Share revoked");
-                              }}
-                            >
-                              Revoke
-                            </Button>
-                          </li>
-                        ))}
+                              } catch (error) {
+                                toast.error(
+                                  error instanceof ApiError
+                                    ? error.message
+                                    : "Could not revoke this share.",
+                                );
+                              }
+                            }}
+                          >
+                            Revoke
+                          </Button>
+                        </li>
+                      ))}
                     </ul>
                   )}
                 </div>

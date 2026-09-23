@@ -212,14 +212,57 @@ export async function listAssignments(
   const { data, error } = await query.order("created_at", { ascending: false });
   if (error) throw error;
 
-  return (data ?? []).map((row) => ({
+  const rows = data ?? [];
+  const names = await resourceNames(db, userId, rows);
+
+  return rows.map((row) => ({
     id: row.id,
     beneficiaryId: row.beneficiary_id,
     resourceType: row.resource_type,
     resourceId: row.resource_id,
+    resourceName: names.get(row.resource_id) ?? null,
     allocationPercentage: row.allocation_percentage,
     createdAt: row.created_at,
   }));
+}
+
+const NAME_SOURCE = {
+  FINANCIAL_ASSET: { table: "financial_assets", column: "name" },
+  PHYSICAL_ASSET: { table: "physical_assets", column: "name" },
+  DIGITAL_ASSET: { table: "digital_assets", column: "name" },
+  DOCUMENT: { table: "documents", column: "name" },
+  VIDEO_MESSAGE: { table: "video_messages", column: "title" },
+} as const;
+
+/**
+ * What each assignment actually points at.
+ *
+ * Resolved here, in one query per resource class, so the browser does not have
+ * to download whole catalogues of documents, assets and videos just to put a
+ * name next to a row.
+ */
+async function resourceNames(
+  db: TypedSupabaseClient,
+  userId: string,
+  rows: { resource_type: string; resource_id: string }[],
+): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+
+  for (const [type, source] of Object.entries(NAME_SOURCE)) {
+    const ids = rows.filter((row) => row.resource_type === type).map((row) => row.resource_id);
+    if (ids.length === 0) continue;
+
+    const { data, error } = await db
+      .from(source.table)
+      .select(`id, ${source.column}`)
+      .eq("user_id", userId)
+      .in("id", ids);
+    if (error) throw error;
+    for (const row of (data ?? []) as unknown as Record<string, string>[]) {
+      names.set(row.id, row[source.column]);
+    }
+  }
+  return names;
 }
 
 export async function findAssignmentById(
@@ -235,11 +278,13 @@ export async function findAssignmentById(
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
+  const names = await resourceNames(db, userId, [data]);
   return {
     id: data.id,
     beneficiaryId: data.beneficiary_id,
     resourceType: data.resource_type,
     resourceId: data.resource_id,
+    resourceName: names.get(data.resource_id) ?? null,
     allocationPercentage: data.allocation_percentage,
     createdAt: data.created_at,
   };

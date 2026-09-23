@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { Providers } from "@/components/providers";
-import { useDemoStore } from "@/lib/demo/store";
 
 import { DashboardView } from "@/app/(dashboard)/dashboard/_components/dashboard-view";
 import { DeadManSwitchView } from "@/app/(dashboard)/dead-man-switch/_components/dead-man-switch-view";
@@ -11,9 +10,12 @@ import { EmergencyAccessView } from "@/app/(dashboard)/emergency-access/_compone
 import { WizardView } from "@/app/(dashboard)/legacy-plan/wizard/_components/wizard-view";
 
 /**
- * Smoke-renders the main authenticated views inside the shell with the demo
- * workspace, the way the (dashboard) layout does once Clerk is configured.
- * Catches runtime errors in hydration, Base UI usage and store wiring.
+ * Smoke-renders the main authenticated views inside the shell, the way the
+ * (dashboard) layout does once Clerk is configured. Catches runtime errors in
+ * hydration, Base UI usage and query wiring.
+ *
+ * The API is stubbed rather than mocked per hook: these assert that the views
+ * render against the real envelope shape, not that a particular hook was called.
  */
 vi.mock("next/navigation", () => ({
   usePathname: () => "/dashboard",
@@ -25,6 +27,11 @@ vi.mock("@clerk/nextjs", () => ({
   UserButton: () => <span data-testid="user-button" />,
   SignedIn: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SignedOut: () => null,
+  useUser: () => ({ user: null, isLoaded: true }),
+  useSession: () => ({ session: null, isLoaded: true }),
+  // The re-auth gate only reaches Clerk when the API asks for verification,
+  // which none of these read-only renders do.
+  useClerk: () => ({ __internal_openReverification: () => {} }),
 }));
 
 /** Minimal API envelope, so views that fetch render against a predictable server. */
@@ -34,6 +41,28 @@ function apiResponse(data: unknown) {
     headers: { "Content-Type": "application/json" },
   });
 }
+
+const PROFILE = {
+  id: "33333333-3333-4333-8333-333333333333",
+  email: "aarav@example.com",
+  emailVerified: true,
+  name: "Aarav Mehta",
+  mfaEnabled: false,
+  role: "USER",
+  dateOfBirth: null,
+  phone: null,
+  alternateEmail: null,
+  address: null,
+  familyInfo: null,
+  preferences: {},
+  notificationPreferences: {},
+  securityPreferences: {},
+  hasIdentificationDetails: false,
+  onboardingCompletedAt: null,
+  lastLoginAt: null,
+  deletionRequestedAt: null,
+  createdAt: "2026-09-01T00:00:00.000Z",
+};
 
 const DRAFT_PLAN = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -59,6 +88,18 @@ function stubPlanApi() {
         return apiResponse({ items: [], total: 0, page: 1, limit: 50 });
       if (url.includes("/assets/"))
         return apiResponse({ items: [], total: 0, page: 1, limit: 100 });
+      if (url.includes("/documents/folders")) return apiResponse({ items: [] });
+      if (url.includes("/documents"))
+        return apiResponse({ items: [], total: 0, page: 1, limit: 50 });
+      if (url.includes("/videos")) return apiResponse({ items: [], total: 0, page: 1, limit: 50 });
+      if (url.includes("/notifications/unread-count")) return apiResponse({ count: 0 });
+      if (url.includes("/notifications"))
+        return apiResponse({ items: [], total: 0, unreadCount: 0, page: 1, limit: 30 });
+      if (url.includes("/dead-man-switch")) return apiResponse(null);
+      if (url.includes("/emergency-access")) return apiResponse({ contacts: [], requests: [] });
+      if (url.includes("/users/me/activity"))
+        return apiResponse({ items: [], total: 0, page: 1, limit: 25 });
+      if (url.includes("/users/me")) return apiResponse(PROFILE);
       return apiResponse({});
     }),
   );
@@ -83,7 +124,7 @@ function renderInShell(ui: React.ReactNode) {
   );
 }
 
-describe("authenticated views (demo workspace)", () => {
+describe("authenticated views", () => {
   beforeEach(() => {
     vi.stubGlobal("ResizeObserver", ResizeObserverStub);
     window.matchMedia =
@@ -103,8 +144,8 @@ describe("authenticated views (demo workspace)", () => {
     // jsdom has no Web Animations API; Base UI ScrollArea calls it from a timer.
     if (!Element.prototype.getAnimations) Element.prototype.getAnimations = () => [];
     window.scrollTo = vi.fn();
-    useDemoStore.getState().resetWorkspace();
-    useDemoStore.getState().setHydrated(false);
+    // Every view is API-backed now, so each test stubs the endpoints it needs.
+    stubPlanApi();
   });
 
   it("renders the dashboard with readiness, protection and quick actions", async () => {
@@ -114,14 +155,11 @@ describe("authenticated views (demo workspace)", () => {
     );
     expect(screen.getByText(/Legacy readiness/i)).toBeInTheDocument();
     expect(screen.getByRole("meter", { name: /legacy readiness score/i })).toBeInTheDocument();
-    expect(screen.getByText(/Dead Man’s Switch/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Dead Man’s Switch/).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("link", { name: /Continue Will/i }).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Demo workspace/)).toBeInTheDocument();
   });
 
   it("renders the will wizard on the saved step with the stepper", async () => {
-    // The wizard is API-backed: it opens the draft over HTTP on mount.
-    stubPlanApi();
     renderInShell(<WizardView />);
     await waitFor(() =>
       expect(screen.getByRole("navigation", { name: /plan steps/i })).toBeInTheDocument(),
@@ -136,17 +174,19 @@ describe("authenticated views (demo workspace)", () => {
     await waitFor(() =>
       expect(screen.getByRole("list", { name: /escalation stages/i })).toBeInTheDocument(),
     );
-    expect(screen.getByRole("button", { name: /^Check in$/i })).toBeEnabled();
-    expect(screen.getByRole("button", { name: /Pause/i })).toBeEnabled();
+    // With no switch configured the page renders its disabled state: check-in
+    // and pause are unavailable until it is enabled.
+    expect(screen.getByRole("button", { name: /^Check in$/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Enable/i })).toBeInTheDocument();
     expect(screen.getByText(/Trusted contacts/)).toBeInTheDocument();
   });
 
-  it("renders the pending emergency-access request with approve / deny", async () => {
+  it("renders emergency access with its empty state", async () => {
     renderInShell(<EmergencyAccessView />);
     await waitFor(() =>
-      expect(screen.getByText(/requested emergency access/i)).toBeInTheDocument(),
+      expect(screen.getByRole("heading", { name: /Emergency Access/i })).toBeInTheDocument(),
     );
-    expect(screen.getByRole("button", { name: /Approve/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Deny/i })).toBeInTheDocument();
+    // No contacts configured yet: the page offers to designate one.
+    expect(screen.getAllByRole("button", { name: /Designate/i }).length).toBeGreaterThan(0);
   });
 });

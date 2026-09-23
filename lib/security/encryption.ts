@@ -92,6 +92,25 @@ export function isEncryptionEnvelope(value: unknown): value is EncryptionEnvelop
   );
 }
 
+/**
+ * Decrypts a value as it is stored in an ENCRYPTED column.
+ *
+ * Anything that is not a well-formed envelope is a value that was written out
+ * of band, and is refused rather than returned as if it were plaintext.
+ */
+export function decryptStoredEnvelope(stored: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stored);
+  } catch {
+    throw new Error("stored value is not an encryption envelope");
+  }
+  if (!isEncryptionEnvelope(parsed)) {
+    throw new Error("stored value is not an encryption envelope");
+  }
+  return decrypt(parsed);
+}
+
 /** Encrypts when a value is present; `null` clears the column through the same guarded path. */
 export function encryptOptional(value: string | null | undefined): EncryptionEnvelope | null {
   const trimmed = typeof value === "string" ? value.trim() : "";

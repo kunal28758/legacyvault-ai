@@ -5,7 +5,7 @@ import { FileImage, FileText, FlaskConical, Lock, MoreHorizontal, Share2 } from 
 import { StatusBadge, toneForScanStatus } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import type { DemoDocument } from "@/lib/demo/types";
+import type { DocumentSummary } from "@/lib/types/document";
 import { formatBytes, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -28,7 +28,7 @@ export function documentKind(mimeType: string): string {
 }
 
 interface VaultCardProps {
-  document: DemoDocument;
+  document: DocumentSummary;
   folderName: string;
   sharedCount: number;
   onOpen: () => void;
@@ -45,7 +45,7 @@ export function VaultCard({
   menu,
   className,
 }: VaultCardProps) {
-  const scan = toneForScanStatus(document.scanStatus);
+  const scan = toneForScanStatus(document.scan.status);
   return (
     <Card
       className={cn(
@@ -85,14 +85,14 @@ export function VaultCard({
         <div className="mt-auto flex flex-wrap items-center gap-2">
           <StatusBadge
             tone={scan.tone}
-            pulse={document.scanStatus === "PENDING"}
+            pulse={document.scan.status === "PENDING"}
             className="h-5 text-[11px]"
           >
             {scan.label}
           </StatusBadge>
-          {document.demoOnly && (
+          {!document.scan.performed && (
             <span className="inline-flex items-center gap-1 rounded-full border border-warning/30 bg-warning/10 px-2 py-0.5 text-[11px] font-medium text-warning">
-              <FlaskConical className="size-3" aria-hidden /> Demo only
+              <FlaskConical className="size-3" aria-hidden /> Not scanned
             </span>
           )}
           <span className="ml-auto flex items-center gap-2 text-[11px] text-muted-foreground">

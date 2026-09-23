@@ -117,3 +117,22 @@ export async function updateProfile(
   if (error) throw error;
   return toUserProfile(data);
 }
+
+/**
+ * Sets or clears the deletion flag.
+ *
+ * `deletion_requested_at` is a Class C column — the `authenticated` role is
+ * refused by the identity-column trigger — so this takes the service client
+ * explicitly rather than accepting whatever the caller happens to hold.
+ */
+export async function setDeletionRequested(
+  serviceDb: TypedSupabaseClient,
+  userId: string,
+  at: string | null,
+): Promise<void> {
+  const { error } = await serviceDb
+    .from("users")
+    .update({ deletion_requested_at: at })
+    .eq("id", userId);
+  if (error) throw error;
+}

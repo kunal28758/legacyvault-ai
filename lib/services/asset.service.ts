@@ -6,7 +6,7 @@ import type { AppUser } from "@/lib/auth/ensure-app-user";
 import { assertAccountActive } from "@/lib/auth/require-user";
 import { createUserClient } from "@/lib/db/server";
 import * as assetRepository from "@/lib/repositories/asset.repository";
-import { decrypt, encrypt, isEncryptionEnvelope } from "@/lib/security/encryption";
+import { decryptStoredEnvelope, encrypt } from "@/lib/security/encryption";
 import type {
   Asset,
   AssetAssignment,
@@ -338,18 +338,12 @@ export async function revealSensitiveFields(
 /* ── Helpers ──────────────────────────────────────────────────────────────── */
 
 function decryptStored(stored: string): string {
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(stored);
-  } catch {
-    // A non-envelope in an ENCRYPTED column means the row predates the envelope
-    // rule or was written out of band; never return it as if it were plaintext.
-    throw ApiError.internal(new Error("stored value is not an encryption envelope"));
+    return decryptStoredEnvelope(stored);
+  } catch (error) {
+    // A value that is not an envelope is never handed back as plaintext.
+    throw ApiError.internal(error);
   }
-  if (!isEncryptionEnvelope(parsed)) {
-    throw ApiError.internal(new Error("stored value is not an encryption envelope"));
-  }
-  return decrypt(parsed);
 }
 
 /**

@@ -25,9 +25,17 @@ import { StaggerGrid, StaggerItem } from "@/components/shared/page-transition";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useDemoWorkspace, useNow } from "@/hooks/use-demo-workspace";
-import { securityChecks, securityScore } from "@/lib/demo/selectors";
-import { useDemoStore } from "@/lib/demo/store";
+import { useSession } from "@clerk/nextjs";
+
+import { useActivity } from "@/hooks/use-activity";
+import { useBeneficiaries } from "@/hooks/use-beneficiaries";
+import { useClerkSessions } from "@/hooks/use-clerk-sessions";
+import { useDeadManSwitch } from "@/hooks/use-dead-man-switch";
+import { useEmergencyAccess } from "@/hooks/use-emergency-access";
+import { useLegacyPlanOverview } from "@/hooks/use-legacy-plan";
+import { useNow } from "@/hooks/use-now";
+import { useProfile } from "@/hooks/use-profile";
+import { securityChecks, securityScore } from "@/lib/security/checks";
 import { formatRelative } from "@/lib/format";
 
 const icons = {
@@ -39,18 +47,43 @@ const icons = {
   sessions: Monitor,
 } as const;
 
-/** Security Center (task T118 — UI; Clerk Backend API session data pending T113/T115). */
+/**
+ * Security Centre.
+ *
+ * Every control is evaluated from real state — Clerk for the account factors,
+ * the API for beneficiaries, the plan, the switch and emergency access — and
+ * the event list is the caller's own append-only audit trail.
+ */
 export function SecurityCenterView() {
-  const { workspace: ws, ready } = useDemoWorkspace();
-  const revokeSession = useDemoStore((s) => s.revokeSession);
   const now = useNow();
-  if (!ready) return <PageSkeleton stats={0} />;
+  const profile = useProfile();
+  const beneficiaries = useBeneficiaries();
+  const plan = useLegacyPlanOverview();
+  const dms = useDeadManSwitch();
+  const emergency = useEmergencyAccess();
+  const activity = useActivity(50);
+  const clerkSessions = useClerkSessions();
+  const { session } = useSession();
+  const currentSessionId = session?.id ?? null;
 
-  const score = securityScore(ws);
-  const checks = securityChecks(ws);
+  if (profile.isPending) return <PageSkeleton stats={0} />;
+
+  const beneficiaryItems = beneficiaries.data?.items ?? [];
+  const checks = securityChecks({
+    mfaEnabled: profile.data?.mfaEnabled ?? false,
+    emailVerified: profile.data?.emailVerified ?? false,
+    alternateEmail: profile.data?.alternateEmail ?? null,
+    beneficiaryCount: beneficiaryItems.length,
+    activeBeneficiaryCount: beneficiaryItems.filter((b) => b.status !== "INACTIVE").length,
+    planFinalized: (plan.data?.versions.length ?? 0) > 0,
+    deadManSwitch: dms.data ?? null,
+    emergencyContactCount: emergency.data?.contacts.length ?? 0,
+    encryptedFieldCount: profile.data?.hasIdentificationDetails ? 1 : 0,
+  });
+  const score = securityScore(checks);
   const recommendations = checks.filter((c) => c.status !== "good");
-  const securityEvents = ws.activity.filter((a) =>
-    /^(auth|session|access|ea|dms)\.|credential/.test(a.action),
+  const securityEvents = (activity.data?.items ?? []).filter((entry) =>
+    /^(auth|session|access|ea|dms|user)\.|credential|sensitive/.test(entry.action),
   );
 
   return (
@@ -89,7 +122,7 @@ export function SecurityCenterView() {
                   : "Every control is in a good state."}
               </p>
               <StatusBadge tone={score >= 80 ? "success" : score >= 60 ? "warning" : "danger"}>
-                {ws.security.mfaEnabled ? "2FA on" : "2FA off"}
+                {profile.data?.mfaEnabled ? "2FA on" : "2FA off"}
               </StatusBadge>
             </div>
           </CardContent>
@@ -161,47 +194,67 @@ export function SecurityCenterView() {
             </p>
           </CardHeader>
           <CardContent>
-            <ul className="space-y-2">
-              {ws.security.sessions.map((session) => {
-                const Icon = /phone|iphone|android/i.test(session.device) ? Smartphone : Monitor;
-                return (
-                  <li
-                    key={session.id}
-                    className="flex items-center gap-3 rounded-lg border border-border p-3"
-                  >
-                    <span className="flex size-9 items-center justify-center rounded-lg bg-accent text-accent-foreground">
-                      <Icon className="size-4" aria-hidden />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">
-                        {session.browser} · {session.device}
-                        {session.current && (
-                          <span className="ml-2 rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-medium text-success">
-                            This device
-                          </span>
-                        )}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {session.location} · active {formatRelative(session.lastActiveAt, now)}
-                      </p>
-                    </div>
-                    {!session.current && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          const result = revokeSession(session.id);
-                          if (result.ok) toast.success("Session revoked");
-                          else toast.error(result.message);
-                        }}
-                      >
-                        Revoke
-                      </Button>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
+            {clerkSessions.loading ? (
+              <p className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                Loading your devices…
+              </p>
+            ) : clerkSessions.sessions.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                No other active sessions.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {clerkSessions.sessions.map((session) => {
+                  const activityInfo = session.latestActivity;
+                  const deviceLabel = activityInfo?.deviceType ?? "Unknown device";
+                  const Icon = /phone|mobile|android|ios/i.test(deviceLabel) ? Smartphone : Monitor;
+                  const isCurrent = session.id === currentSessionId;
+                  const place = [activityInfo?.city, activityInfo?.country]
+                    .filter(Boolean)
+                    .join(", ");
+                  return (
+                    <li
+                      key={session.id}
+                      className="flex items-center gap-3 rounded-lg border border-border p-3"
+                    >
+                      <span className="flex size-9 items-center justify-center rounded-lg bg-accent text-accent-foreground">
+                        <Icon className="size-4" aria-hidden />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium">
+                          {activityInfo?.browserName ?? "Browser"} · {deviceLabel}
+                          {isCurrent && (
+                            <span className="ml-2 rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-medium text-success">
+                              This device
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {place ? `${place} · ` : ""}active{" "}
+                          {formatRelative(session.lastActiveAt.toISOString(), now)}
+                        </p>
+                      </div>
+                      {!isCurrent && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={async () => {
+                            try {
+                              await clerkSessions.revoke(session.id);
+                              toast.success("Session revoked");
+                            } catch {
+                              toast.error("Could not revoke that session.");
+                            }
+                          }}
+                        >
+                          Revoke
+                        </Button>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </CardContent>
         </Card>
 

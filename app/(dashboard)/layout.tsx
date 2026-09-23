@@ -7,17 +7,17 @@ import { AppShell, type ShellUser } from "@/components/layout/app-shell";
 import { isClerkConfigured } from "@/lib/config/public-env";
 
 /**
- * Protected application shell (task T048 — partial: Clerk protection + shell;
- * `ensureAppUser()` / onboarding redirect / idle-timeout provider arrive with
- * T036 / T200 / T220).
+ * Protected application shell (task T048): Clerk protection and the shell.
+ * `ensureAppUser()` runs inside the API pipeline rather than here, so a page
+ * render never depends on it.
  *
  * Rendered dynamically on every request (`connection()`): this route group must
  * never be statically prerendered or served from a shared cache (ADR-001 cache
  * safety), and the per-request CSP nonce from proxy.ts must apply.
  *
  * Authentication is real: `proxy.ts` already enforces Clerk on this group and the
- * layout re-checks the session. Everything shown inside is the demo workspace
- * (`lib/demo`) until the Route Handlers and services exist.
+ * layout re-checks the session. Everything shown inside is served by the
+ * versioned API from PostgreSQL.
  */
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
   await connection();

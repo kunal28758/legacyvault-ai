@@ -36,7 +36,7 @@ const legalName = `E2E Planner ${unique}`;
 async function gotoAndSettle(page: Page, path: string, apiPath: string): Promise<void> {
   const settled = page.waitForResponse(
     (response) => response.url().includes(apiPath) && response.request().method() === "GET",
-    { timeout: 60_000 },
+    { timeout: 120_000 },
   );
   await page.goto(path);
   await settled;

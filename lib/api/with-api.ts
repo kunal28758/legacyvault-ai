@@ -7,8 +7,10 @@ import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/api/correlation"
 import { ApiError, mapDatabaseError, toErrorResponse } from "@/lib/api/errors";
 import { parseJsonBody, parseOrThrow, parseQuery } from "@/lib/api/validate";
 import { audit } from "@/lib/audit/audit.service";
+import { requireAccessGrant } from "@/lib/auth/require-access-grant";
 import { requireRole, requireUser, type UserRole } from "@/lib/auth/require-user";
 import type { AppUser } from "@/lib/auth/ensure-app-user";
+import type { AccessGrant } from "@/lib/services/access-portal.service";
 import { getEnvGroup } from "@/lib/config/env";
 import { requestLogger, redactPath } from "@/lib/observability/logger";
 import {
@@ -37,6 +39,8 @@ export interface ApiContext<TBody = unknown, TQuery = unknown, TParams = unknown
   request: Request;
   /** Present for `user` and `admin` modes; never derived from client input. */
   user: AppUser;
+  /** Present for `access-cookie` mode: the beneficiary grant, re-checked per request. */
+  grant: AccessGrant;
   body: TBody;
   query: TQuery;
   params: TParams;
@@ -48,8 +52,8 @@ export interface ApiContext<TBody = unknown, TQuery = unknown, TParams = unknown
 /** Same as `ApiContext` but without a guaranteed user (public/cron/webhook). */
 export type AnonymousApiContext<TBody = unknown, TQuery = unknown, TParams = unknown> = Omit<
   ApiContext<TBody, TQuery, TParams>,
-  "user"
-> & { user: AppUser | null };
+  "user" | "grant"
+> & { user: AppUser | null; grant: AccessGrant | null };
 
 export interface WithApiOptions<TBody, TQuery, TParams> {
   auth: AuthMode;
@@ -157,6 +161,7 @@ export function withApi<
     });
     const ip = clientIpFrom(request.headers);
     let user: AppUser | null = null;
+    let grant: AccessGrant | null = null;
 
     try {
       // 1. Authentication — before anything reads the body.
@@ -177,6 +182,9 @@ export function withApi<
         user = await requireUser();
       } else if (options.auth === "admin") {
         user = await requireRole(options.roles ?? ["SUPER_ADMIN"]);
+      } else if (options.auth === "access-cookie") {
+        // No Clerk session exists here; the token row is the authorization.
+        grant = await requireAccessGrant();
       }
 
       // 2. CSRF for ambient-credential modes only.
@@ -187,7 +195,10 @@ export function withApi<
 
       // 4. Rate limit — keyed by user where we have one, else by client IP.
       if (options.rateLimit) {
-        await enforceRateLimit({ policy: options.rateLimit, subject: user?.id ?? ip });
+        await enforceRateLimit({
+          policy: options.rateLimit,
+          subject: user?.id ?? grant?.tokenId ?? ip,
+        });
       }
 
       // 5. Validation.
@@ -205,6 +216,7 @@ export function withApi<
       const result = await handler({
         request,
         user: user as AppUser,
+        grant: grant as AccessGrant,
         body,
         query,
         params,

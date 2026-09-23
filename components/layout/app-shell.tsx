@@ -20,7 +20,6 @@ import { PAGE_TITLES, breadcrumbsFor } from "@/components/layout/nav-config";
 import { SidebarNav } from "@/components/layout/sidebar-nav";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { BrandLogo } from "@/components/shared/brand-logo";
-import { DemoWorkspaceBadge } from "@/components/shared/demo-workspace-badge";
 import { PageTransition } from "@/components/shared/page-transition";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -43,9 +42,8 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useDemoWorkspace } from "@/hooks/use-demo-workspace";
-import { unreadNotifications } from "@/lib/demo/selectors";
-import { useDemoStore } from "@/lib/demo/store";
+import { useUnreadCount } from "@/hooks/use-notifications";
+import { useProfile, useUpdatePreferences } from "@/hooks/use-profile";
 import { initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -68,12 +66,15 @@ interface AppShellProps {
  */
 export function AppShell({ user, clerkEnabled, children }: AppShellProps) {
   const pathname = usePathname();
-  const { workspace, ready } = useDemoWorkspace();
-  const compact = useDemoStore((s) => s.workspace.preferences.compactSidebar);
-  const updatePreferences = useDemoStore((s) => s.updatePreferences);
+  const unreadQuery = useUnreadCount();
+  const profile = useProfile();
+  const updatePreferences = useUpdatePreferences();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const unread = ready ? unreadNotifications(workspace) : 0;
+  const compact =
+    (profile.data?.preferences as { compactSidebar?: boolean } | undefined)?.compactSidebar ??
+    false;
+  const unread = unreadQuery.data?.count ?? 0;
   const badges: Record<string, number> = unread ? { "/notifications": unread } : {};
   const crumbs = breadcrumbsFor(pathname);
   const title = PAGE_TITLES[pathname] ?? crumbs.at(-1)?.label ?? "LegacyVault";
@@ -127,7 +128,14 @@ export function AppShell({ user, clerkEnabled, children }: AppShellProps) {
                   className={cn("w-full justify-start text-muted-foreground", compact && "w-auto")}
                   aria-label={compact ? "Expand sidebar" : "Collapse sidebar"}
                   aria-pressed={compact}
-                  onClick={() => updatePreferences({ compactSidebar: !compact })}
+                  onClick={() =>
+                    updatePreferences.mutate({
+                      preferences: {
+                        ...(profile.data?.preferences ?? {}),
+                        compactSidebar: !compact,
+                      },
+                    })
+                  }
                 />
               }
             >
@@ -195,7 +203,6 @@ export function AppShell({ user, clerkEnabled, children }: AppShellProps) {
             <p className="truncate text-sm font-semibold sm:hidden">{title}</p>
           </div>
 
-          <DemoWorkspaceBadge className="hidden md:flex" />
           <ThemeToggle />
           <Tooltip>
             <TooltipTrigger

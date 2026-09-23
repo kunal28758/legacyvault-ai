@@ -1,5 +1,6 @@
 import { clerkSetup } from "@clerk/testing/playwright";
 
+import { createServiceScopedClient, hasLocalStackConfig } from "../helpers/db";
 import { loadLocalEnv } from "../helpers/load-env";
 import { E2E_USER_EMAILS } from "./users";
 
@@ -63,11 +64,22 @@ async function warmRoutes(): Promise<void> {
     process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${process.env.PLAYWRIGHT_PORT ?? 3000}`;
   const paths = [
     "/",
+    "/dashboard",
     "/beneficiaries",
     "/legacy-plan",
     "/legacy-plan/wizard",
     "/assets/financial",
     "/assets/physical",
+    "/assets/digital",
+    "/documents",
+    "/dead-man-switch",
+    "/emergency-access",
+    "/video-legacy",
+    "/notifications",
+    "/security-center",
+    "/settings",
+    "/ai",
+    "/access",
     "/api/v1/health",
     "/api/v1/beneficiaries",
     "/api/v1/legacy-plans",
@@ -75,17 +87,43 @@ async function warmRoutes(): Promise<void> {
     "/api/v1/assets/financial",
     "/api/v1/assets/physical",
     "/api/v1/assets/digital",
+    "/api/v1/documents",
+    "/api/v1/videos",
+    "/api/v1/dead-man-switch",
+    "/api/v1/emergency-access/contacts",
+    "/api/v1/notifications",
+    "/api/v1/access/resources",
   ];
 
-  await Promise.all(
-    paths.map(async (path) => {
-      try {
-        await fetch(`${base}${path}`, { signal: AbortSignal.timeout(60_000) });
-      } catch {
-        // A cold route that refuses to answer is the tests' problem to report.
-      }
-    }),
-  );
+  // Sequentially: `next dev` compiles on demand, and asking for twenty routes
+  // at once makes the compiler contend with itself — which is exactly the
+  // stall the warm-up exists to avoid.
+  for (const path of paths) {
+    try {
+      await fetch(`${base}${path}`, { signal: AbortSignal.timeout(90_000) });
+    } catch {
+      // A cold route that refuses to answer is the tests' problem to report.
+    }
+  }
+}
+
+/**
+ * Starts each run with a clean rate-limit window.
+ *
+ * The limiter is a production security control and is NOT relaxed for the
+ * tests: it runs with its contracted policies throughout. What is reset here is
+ * the *local test database's* fixed-window counter, so a suite run does not
+ * inherit the budget spent by the previous one — the same isolation a fresh
+ * account would give, without inventing new Clerk users on every run.
+ */
+async function resetRateLimitWindows(): Promise<void> {
+  if (!hasLocalStackConfig()) return;
+  try {
+    const service = createServiceScopedClient();
+    await service.from("rate_limits").delete().not("key", "is", null);
+  } catch (error) {
+    console.warn("[e2e] could not reset rate-limit counters:", error);
+  }
 }
 
 export default async function globalSetup() {
@@ -101,5 +139,6 @@ export default async function globalSetup() {
   // application's per-user rate-limit bucket.
   for (const email of E2E_USER_EMAILS) await ensureTestUser(email);
 
+  await resetRateLimitWindows();
   await warmRoutes();
 }

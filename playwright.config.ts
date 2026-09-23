@@ -15,7 +15,10 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  // `next dev` compiles on demand in a single process, so more browser workers
+  // than this make the specs queue behind the compiler rather than the app —
+  // which shows up as timeouts that have nothing to do with the product.
+  workers: process.env.CI ? 1 : 3,
   reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "list",
   use: {
     baseURL,

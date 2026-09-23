@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   Clock,
   FileText,
-  FlaskConical,
   Gem,
   Pause,
   Play,
@@ -24,6 +23,12 @@ import {
 import { toast } from "sonner";
 
 import { FormField } from "@/components/forms/form-field";
+import {
+  ScopePicker,
+  describeScope,
+  scopeSize,
+  useScopeCatalog,
+} from "@/components/forms/scope-picker";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { PageHeader, SectionHeading } from "@/components/shared/page-header";
 import { PageSkeleton } from "@/components/shared/loading-skeleton";
@@ -42,13 +47,32 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { useDemoWorkspace, useNow } from "@/hooks/use-demo-workspace";
+import {
+  useCancelEscalation,
+  useCheckIn,
+  useConfigureDms,
+  useDeadManSwitch,
+  useDisableDms,
+  usePauseDms,
+  useResumeDms,
+} from "@/hooks/use-dead-man-switch";
+import { useBeneficiaries } from "@/hooks/use-beneficiaries";
+import { useNow } from "@/hooks/use-now";
+import { isReverificationCancelled, useReverifiedAction } from "@/hooks/use-reverified-action";
+import { ApiError } from "@/lib/api/client";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
-import { DMS_STAGES, PLAN_SECTION_TITLES, dmsView } from "@/lib/demo/selectors";
-import { useDemoStore } from "@/lib/demo/store";
-import type { DmsEventType } from "@/lib/demo/types";
+import { DMS_STAGES, dmsView } from "@/lib/dms/presentation";
+import type { DeadManSwitch, DmsEventType } from "@/lib/types/dms";
+import type { AccessScopeInput } from "@/lib/validators/dms.validators";
 import { formatDateTime, formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
+
+const EMPTY_SCOPE: AccessScopeInput = {
+  documents: [],
+  assets: [],
+  videos: [],
+  planSections: [],
+};
 
 const eventTone: Record<DmsEventType, "neutral" | "success" | "warning" | "danger" | "info"> = {
   CHECK_IN: "success",
@@ -72,41 +96,73 @@ const eventLabel: Record<DmsEventType, string> = {
   CONFIG_CHANGE: "Configuration changed",
 };
 
-/** Dead Man's Switch (tasks T124/T129 — UI; guarded functions `dms_*` wired later via API). */
+/**
+ * Dead Man's Switch (FR-I001–I012).
+ *
+ * Every control here asks the server for a transition; the state shown is
+ * whatever came back. The timed transitions — reminder, grace period,
+ * escalation, release — are applied by the scheduled scan, not by this page.
+ */
 export function DeadManSwitchView() {
-  const { workspace: ws, ready } = useDemoWorkspace();
-  const checkIn = useDemoStore((s) => s.dmsCheckIn);
-  const pause = useDemoStore((s) => s.dmsPause);
-  const resume = useDemoStore((s) => s.dmsResume);
-  const disable = useDemoStore((s) => s.dmsDisable);
-  const cancelEscalation = useDemoStore((s) => s.dmsCancelEscalation);
-  const simulate = useDemoStore((s) => s.dmsSimulateNextStage);
+  const switchQuery = useDeadManSwitch();
+  const checkInMutation = useCheckIn();
+  const pauseMutation = usePauseDms();
+  const resumeMutation = useResumeDms();
+  const disableMutation = useDisableDms();
+  const cancelMutation = useCancelEscalation();
   const now = useNow(30_000);
   const reduced = useReducedMotion();
+  const reverified = useReverifiedAction();
+  // The resources named by the scope, so the card can show names and not ids.
+  // Nothing is fetched while the scope is empty.
+  const scopeCatalog = useScopeCatalog(
+    scopeSize(switchQuery.data?.releaseScope ?? EMPTY_SCOPE) > 0,
+  );
 
   const [configOpen, setConfigOpen] = useState(false);
   const [disableOpen, setDisableOpen] = useState(false);
   const [recoverOpen, setRecoverOpen] = useState(false);
 
-  if (!ready) return <PageSkeleton stats={0} />;
+  if (switchQuery.isPending) return <PageSkeleton stats={0} />;
 
-  const dms = ws.dms;
+  // Never configured: an empty switch renders the same page in its disabled state.
+  const dms: DeadManSwitch = switchQuery.data ?? {
+    id: "",
+    status: "INACTIVE",
+    inactivityPeriodDays: 90,
+    checkInFrequencyDays: 30,
+    escalationDelayHours: 24,
+    lastCheckInAt: null,
+    nextCheckInAt: null,
+    currentEscalationStep: 0,
+    pausedAt: null,
+    releaseScope: EMPTY_SCOPE,
+    contacts: [],
+    events: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
   const view = dmsView(dms.status);
   const canCheckIn = ["ACTIVE", "REMINDER_SENT", "GRACE_PERIOD"].includes(dms.status);
   const escalated = ["ESCALATING", "RELEASING", "RELEASED"].includes(dms.status);
   const monitoring = dms.status !== "INACTIVE" && dms.status !== "PAUSED";
-  const contacts = dms.contactIds
-    .map((id) => ws.beneficiaries.find((b) => b.id === id))
-    .filter(Boolean);
+  const contacts = dms.contacts;
   const scope = dms.releaseScope;
+  const scopeNames = describeScope(scope, scopeCatalog);
   const dueMs = dms.nextCheckInAt ? Date.parse(dms.nextCheckInAt) - now : null;
   const windowMs = dms.checkInFrequencyDays * 86_400_000;
   const windowPct = dueMs === null ? 0 : Math.max(0, Math.min(100, 100 - (dueMs / windowMs) * 100));
 
-  const run = (action: () => { ok: boolean; message?: string }, success: string) => {
-    const result = action();
-    if (result.ok) toast.success(success);
-    else toast.error(result.message);
+  // Check-in and recovery are re-verified (FR-I003/I007); the gate is a no-op
+  // for the actions that are not.
+  const run = async (action: () => Promise<unknown>, success: string) => {
+    try {
+      await reverified(action);
+      toast.success(success);
+    } catch (error) {
+      if (isReverificationCancelled(error)) return;
+      toast.error(error instanceof ApiError ? error.message : "That change was not applied.");
+    }
   };
 
   return (
@@ -124,7 +180,9 @@ export function DeadManSwitchView() {
             <Button
               className="shadow-glow-blue"
               disabled={!canCheckIn}
-              onClick={() => run(checkIn, "Check-in recorded — thank you")}
+              onClick={() =>
+                void run(() => checkInMutation.mutateAsync(), "Check-in recorded — thank you")
+              }
             >
               <CheckCircle2 data-icon="inline-start" />
               Check in
@@ -263,7 +321,10 @@ export function DeadManSwitchView() {
 
           <div className="flex flex-wrap items-center gap-2">
             {dms.status === "PAUSED" ? (
-              <Button variant="outline" onClick={() => run(resume, "Monitoring resumed")}>
+              <Button
+                variant="outline"
+                onClick={() => void run(() => resumeMutation.mutateAsync(), "Monitoring resumed")}
+              >
                 <Play data-icon="inline-start" />
                 Resume
               </Button>
@@ -271,7 +332,7 @@ export function DeadManSwitchView() {
               <Button
                 variant="outline"
                 disabled={!monitoring}
-                onClick={() => run(pause, "Monitoring paused")}
+                onClick={() => void run(() => pauseMutation.mutateAsync(), "Monitoring paused")}
               >
                 <Pause data-icon="inline-start" />
                 Pause
@@ -297,16 +358,9 @@ export function DeadManSwitchView() {
               Disable
             </Button>
             <span className="mx-1 hidden h-6 w-px bg-border sm:block" aria-hidden />
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-warning"
-              disabled={!monitoring || dms.status === "RELEASED"}
-              onClick={() => run(simulate, "Simulated the next stage")}
-            >
-              <FlaskConical data-icon="inline-start" />
-              Demo: simulate missed check-in
-            </Button>
+            <span className="text-xs text-muted-foreground">
+              Reminders, escalation and release are applied by the scheduled scan.
+            </span>
           </div>
           {dms.status === "RELEASED" && (
             <p className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
@@ -340,16 +394,16 @@ export function DeadManSwitchView() {
               <ol className="space-y-2">
                 {contacts.map((contact, index) => (
                   <li
-                    key={contact!.id}
+                    key={contact.beneficiaryId}
                     className="flex items-center gap-3 rounded-lg border border-border px-3 py-2.5"
                   >
                     <span className="flex size-7 items-center justify-center rounded-full bg-brand-purple/15 text-xs font-semibold text-brand-purple">
                       {index + 1}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{contact!.name}</p>
+                      <p className="truncate text-sm font-medium">{contact.beneficiaryName}</p>
                       <p className="truncate text-xs text-muted-foreground">
-                        {contact!.relationship} · {contact!.email}
+                        Notified in position {contact.notifyOrder}
                       </p>
                     </div>
                     <Users className="size-4 text-muted-foreground" aria-hidden />
@@ -372,27 +426,15 @@ export function DeadManSwitchView() {
               {
                 icon: FileText,
                 label: "Documents",
-                items: scope.documents.map(
-                  (id) => ws.documents.find((d) => d.id === id)?.name ?? id,
-                ),
+                items: scopeNames.documents,
                 href: "/documents",
               },
-              {
-                icon: Gem,
-                label: "Assets",
-                items: scope.assets.map((a) => ws.assets.find((x) => x.id === a.id)?.name ?? a.id),
-                href: "/assets",
-              },
-              {
-                icon: Video,
-                label: "Videos",
-                items: scope.videos.map((id) => ws.videos.find((v) => v.id === id)?.title ?? id),
-                href: "/video-legacy",
-              },
+              { icon: Gem, label: "Assets", items: scopeNames.assets, href: "/assets" },
+              { icon: Video, label: "Videos", items: scopeNames.videos, href: "/video-legacy" },
               {
                 icon: ScrollText,
                 label: "Plan sections",
-                items: scope.planSections.map((k) => PLAN_SECTION_TITLES[k]),
+                items: scopeNames.planSections,
                 href: "/legacy-plan",
               },
             ].map(({ icon: Icon, label, items, href }) => (
@@ -434,7 +476,7 @@ export function DeadManSwitchView() {
               items={dms.events.slice(0, 12).map((event) => ({
                 id: event.id,
                 title: eventLabel[event.eventType],
-                description: `${event.previousState.replace(/_/g, " ").toLowerCase()} → ${event.newState.replace(/_/g, " ").toLowerCase()}${event.note ? ` · ${event.note}` : ""}`,
+                description: `${event.previousState.replace(/_/g, " ").toLowerCase()} → ${event.newState.replace(/_/g, " ").toLowerCase()}${typeof event.metadata.note === "string" ? ` · ${event.metadata.note}` : ""}`,
                 timestamp: event.createdAt,
                 tone: eventTone[event.eventType],
                 icon:
@@ -464,7 +506,7 @@ export function DeadManSwitchView() {
         confirmLabel="Disable switch"
         variant="destructive"
         requiresReverification
-        onConfirm={() => run(disable, "Dead Man’s Switch disabled")}
+        onConfirm={() => run(() => disableMutation.mutateAsync(), "Dead Man’s Switch disabled")}
       />
       <ConfirmDialog
         open={recoverOpen}
@@ -473,7 +515,9 @@ export function DeadManSwitchView() {
         description="The switch returns to Active with a fresh check-in. Any release links already issued are revoked."
         confirmLabel="Recover now"
         requiresReverification
-        onConfirm={() => run(cancelEscalation, "Escalation cancelled — switch is Active again")}
+        onConfirm={() =>
+          run(() => cancelMutation.mutateAsync(), "Escalation cancelled — switch is Active again")
+        }
       />
     </div>
   );
@@ -481,20 +525,28 @@ export function DeadManSwitchView() {
 
 /** Mounted with the sheet, so the form seeds from the current configuration without effects. */
 function DmsConfigForm({ onClose }: { onClose: () => void }) {
-  const { workspace: ws } = useDemoWorkspace();
-  const configure = useDemoStore((s) => s.configureDms);
-  const dms = ws.dms;
+  const switchQuery = useDeadManSwitch();
+  const beneficiariesQuery = useBeneficiaries();
+  const configure = useConfigureDms();
+
+  const dms = switchQuery.data;
+  const status = dms?.status ?? "INACTIVE";
+  const beneficiaries = beneficiariesQuery.data?.items ?? [];
   const [form, setForm] = useState({
-    inactivityPeriodDays: dms.inactivityPeriodDays,
-    checkInFrequencyDays: dms.checkInFrequencyDays,
-    escalationDelayHours: dms.escalationDelayHours,
-    contactIds: dms.contactIds,
+    inactivityPeriodDays: dms?.inactivityPeriodDays ?? 90,
+    checkInFrequencyDays: dms?.checkInFrequencyDays ?? 30,
+    escalationDelayHours: dms?.escalationDelayHours ?? 24,
+    contactIds: (dms?.contacts ?? []).map((contact) => contact.beneficiaryId),
   });
+  // A release must name something, so the scope is chosen here rather than
+  // being carried over empty — `lv_validate_scope()` refuses an empty one.
+  const [scope, setScope] = useState<AccessScopeInput>(dms?.releaseScope ?? EMPTY_SCOPE);
+  const catalog = useScopeCatalog(true);
   return (
     <>
       <SheetHeader className="pr-10">
         <SheetTitle>
-          {dms.status === "INACTIVE" ? "Enable the Dead Man’s Switch" : "Configure the switch"}
+          {status === "INACTIVE" ? "Enable the Dead Man’s Switch" : "Configure the switch"}
         </SheetTitle>
         <SheetDescription>
           Schedule, escalation timing and who is contacted. Saving requires re-verification in the
@@ -548,7 +600,7 @@ function DmsConfigForm({ onClose }: { onClose: () => void }) {
           <legend className="text-sm font-medium">Trusted contacts</legend>
           <p className="text-xs text-muted-foreground">Choose at least one active beneficiary.</p>
           <ul className="space-y-2">
-            {ws.beneficiaries
+            {beneficiaries
               .filter((b) => b.status !== "INACTIVE")
               .map((b) => (
                 <li key={b.id}>
@@ -575,22 +627,42 @@ function DmsConfigForm({ onClose }: { onClose: () => void }) {
               ))}
           </ul>
         </fieldset>
+        <ScopePicker grant="DMS_RELEASE" value={scope} onChange={setScope} catalog={catalog} />
       </div>
-      <SheetFooter className="flex-row justify-end gap-2 border-t border-border">
+      <SheetFooter className="flex-col items-stretch gap-2 border-t border-border sm:flex-row sm:items-center sm:justify-end">
+        {form.contactIds.length === 0 || scopeSize(scope) === 0 ? (
+          <p className="flex-1 text-xs text-muted-foreground">
+            Choose at least one trusted contact and at least one thing to release.
+          </p>
+        ) : null}
         <Button variant="outline" onClick={onClose}>
           Cancel
         </Button>
         <Button
+          disabled={configure.isPending || form.contactIds.length === 0 || scopeSize(scope) === 0}
           onClick={() => {
-            const result = configure(form);
-            if (!result.ok) return toast.error(result.message);
-            toast.success(
-              dms.status === "INACTIVE" ? "Dead Man’s Switch enabled" : "Configuration saved",
-            );
-            onClose();
+            void (async () => {
+              try {
+                await configure.mutateAsync({
+                  inactivityPeriodDays: form.inactivityPeriodDays,
+                  checkInFrequencyDays: form.checkInFrequencyDays,
+                  escalationDelayHours: form.escalationDelayHours,
+                  contactBeneficiaryIds: form.contactIds,
+                  releaseScope: scope,
+                });
+                toast.success(
+                  status === "INACTIVE" ? "Dead Man’s Switch enabled" : "Configuration saved",
+                );
+                onClose();
+              } catch (error) {
+                toast.error(
+                  error instanceof ApiError ? error.message : "Could not save this configuration.",
+                );
+              }
+            })();
           }}
         >
-          {dms.status === "INACTIVE" ? "Enable switch" : "Save"}
+          {status === "INACTIVE" ? "Enable switch" : "Save"}
         </Button>
       </SheetFooter>
     </>

@@ -40,8 +40,43 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useDemoWorkspace, useNow } from "@/hooks/use-demo-workspace";
-import { useDemoStore } from "@/lib/demo/store";
+import { useClerkSessions } from "@/hooks/use-clerk-sessions";
+import { useNow } from "@/hooks/use-now";
+import {
+  useCancelAccountDeletion,
+  useExportMyData,
+  useProfile,
+  useRequestAccountDeletion,
+  useUpdatePreferences,
+  useUpdateProfile,
+} from "@/hooks/use-profile";
+import { isReverificationCancelled, useReverifiedAction } from "@/hooks/use-reverified-action";
+import { ApiError } from "@/lib/api/client";
+
+/**
+ * Preference defaults.
+ *
+ * `users.preferences` and friends are free-form JSON, so the view reads through
+ * these rather than assuming a shape that an older row may not have.
+ */
+const DEFAULT_PREFERENCES = {
+  currency: "INR",
+  dateFormat: "DD MMM YYYY",
+  compactSidebar: false,
+} as const;
+
+const DEFAULT_NOTIFICATIONS = {
+  email: true,
+  securityAlerts: true,
+  checkInReminders: true,
+  productUpdates: false,
+} as const;
+
+const DEFAULT_SECURITY = {
+  idleTimeoutMinutes: 30 as number | null,
+  loginNotifications: true,
+  securityReviewReminder: true,
+} as const;
 import { formatRelative, initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -62,9 +97,9 @@ export function SettingsView({
   user: SettingsUser;
   clerkEnabled: boolean;
 }) {
-  const { workspace: ws, ready } = useDemoWorkspace();
-  const updatePreferences = useDemoStore((s) => s.updatePreferences);
-  const revokeSession = useDemoStore((s) => s.revokeSession);
+  const profile = useProfile();
+  const updatePreferencesMutation = useUpdatePreferences();
+  const clerkSessions = useClerkSessions();
   const { resolvedTheme, setTheme } = useTheme();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -72,10 +107,65 @@ export function SettingsView({
   const requested = searchParams.get("tab");
   const tab: Tab = TABS.includes(requested as Tab) ? (requested as Tab) : "profile";
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const exportMyData = useExportMyData();
+  const requestDeletion = useRequestAccountDeletion();
+  const cancelDeletion = useCancelAccountDeletion();
+  const reverified = useReverifiedAction();
+  const [exporting, setExporting] = useState(false);
 
-  if (!ready) return <PageSkeleton stats={0} />;
+  if (profile.isPending) return <PageSkeleton stats={0} />;
 
-  const prefs = ws.preferences;
+  const prefs = {
+    ...DEFAULT_PREFERENCES,
+    ...(profile.data?.preferences ?? {}),
+    notificationPreferences: {
+      ...DEFAULT_NOTIFICATIONS,
+      ...(profile.data?.notificationPreferences ?? {}),
+    },
+    securityPreferences: {
+      ...DEFAULT_SECURITY,
+      ...(profile.data?.securityPreferences ?? {}),
+    },
+  } as {
+    currency: string;
+    dateFormat: string;
+    compactSidebar: boolean;
+    notificationPreferences: Record<string, boolean>;
+    securityPreferences: {
+      idleTimeoutMinutes: number | null;
+      loginNotifications: boolean;
+      securityReviewReminder: boolean;
+    };
+  };
+
+  /** Merges a patch into the three preference objects and saves it. */
+  const updatePreferences = (patch: Record<string, unknown>) => {
+    const { notificationPreferences, securityPreferences, ...rest } = patch;
+    void (async () => {
+      try {
+        await updatePreferencesMutation.mutateAsync({
+          ...(Object.keys(rest).length > 0
+            ? {
+                preferences: {
+                  currency: prefs.currency,
+                  dateFormat: prefs.dateFormat,
+                  compactSidebar: prefs.compactSidebar,
+                  ...rest,
+                },
+              }
+            : {}),
+          ...(notificationPreferences
+            ? { notificationPreferences: notificationPreferences as Record<string, unknown> }
+            : {}),
+          ...(securityPreferences
+            ? { securityPreferences: securityPreferences as Record<string, unknown> }
+            : {}),
+        });
+      } catch (error) {
+        toast.error(error instanceof ApiError ? error.message : "Could not save that preference.");
+      }
+    })();
+  };
   // The view only renders after hydration, so next-themes has resolved by now.
   const isDark = resolvedTheme !== "light";
 
@@ -358,8 +448,8 @@ export function SettingsView({
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <StatusBadge tone={ws.security.mfaEnabled ? "success" : "warning"}>
-                    {ws.security.mfaEnabled ? "Enabled" : "Off"}
+                  <StatusBadge tone={profile.data?.mfaEnabled ? "success" : "warning"}>
+                    {profile.data?.mfaEnabled ? "Enabled" : "Off"}
                   </StatusBadge>
                   <Button
                     size="sm"
@@ -367,7 +457,7 @@ export function SettingsView({
                     disabled={!clerkEnabled}
                     onClick={() => toast.info("Opens Clerk's security settings")}
                   >
-                    {ws.security.mfaEnabled ? "Manage" : "Enable"}
+                    {profile.data?.mfaEnabled ? "Manage" : "Enable"}
                   </Button>
                 </div>
               </div>
@@ -405,8 +495,7 @@ export function SettingsView({
                       updatePreferences({
                         securityPreferences: {
                           ...prefs.securityPreferences,
-                          idleTimeoutMinutes:
-                            v === "off" ? null : (Number(v) as 15 | 30 | 60 | 240),
+                          idleTimeoutMinutes: v === "off" ? null : Number(v),
                         },
                       })
                     }
@@ -464,38 +553,42 @@ export function SettingsView({
             </CardHeader>
             <CardContent>
               <ul className="space-y-2">
-                {ws.security.sessions.map((session) => {
-                  const Icon = /phone|iphone|android/i.test(session.device) ? Smartphone : Monitor;
+                {clerkSessions.sessions.map((session) => {
+                  const info = session.latestActivity;
+                  const deviceLabel = info?.deviceType ?? "Unknown device";
+                  const Icon = /phone|mobile|android|ios/i.test(deviceLabel) ? Smartphone : Monitor;
+                  const place = [info?.city, info?.country].filter(Boolean).join(", ");
                   return (
                     <li
                       key={session.id}
                       className="flex items-center gap-3 rounded-lg border border-border p-3"
                     >
-                      <Icon className="size-4 text-muted-foreground" aria-hidden />
+                      <span className="flex size-9 items-center justify-center rounded-lg bg-accent text-accent-foreground">
+                        <Icon className="size-4" aria-hidden />
+                      </span>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium">
-                          {session.browser} · {session.device}
-                          {session.current && (
-                            <span className="ml-2 text-xs text-success">this device</span>
-                          )}
+                          {info?.browserName ?? "Browser"} · {deviceLabel}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {session.location} · {formatRelative(session.lastActiveAt, now)}
+                          {place ? `${place} · ` : ""}active{" "}
+                          {formatRelative(session.lastActiveAt.toISOString(), now)}
                         </p>
                       </div>
-                      {!session.current && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            const result = revokeSession(session.id);
-                            if (result.ok) toast.success("Session revoked");
-                            else toast.error(result.message);
-                          }}
-                        >
-                          Revoke
-                        </Button>
-                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            await clerkSessions.revoke(session.id);
+                            toast.success("Session revoked");
+                          } catch {
+                            toast.error("Could not revoke that session.");
+                          }
+                        }}
+                      >
+                        Revoke
+                      </Button>
                     </li>
                   );
                 })}
@@ -517,14 +610,32 @@ export function SettingsView({
             <CardContent>
               <Button
                 variant="outline"
-                onClick={() =>
-                  toast.info(
-                    "Export requires re-verification and the data-export endpoint (not available in the demo workspace)",
-                  )
-                }
+                disabled={exporting}
+                onClick={() => {
+                  void (async () => {
+                    setExporting(true);
+                    try {
+                      // Straight from the response to a download: the payload
+                      // holds decrypted fields and is never cached or stored.
+                      const payload = await reverified(exportMyData);
+                      downloadJson(payload, `legacyvault-export-${todayStamp()}.json`);
+                      toast.success("Your export has been downloaded");
+                    } catch (error) {
+                      if (!isReverificationCancelled(error)) {
+                        toast.error(
+                          error instanceof ApiError
+                            ? error.message
+                            : "Could not prepare your export.",
+                        );
+                      }
+                    } finally {
+                      setExporting(false);
+                    }
+                  })();
+                }}
               >
                 <Download data-icon="inline-start" />
-                Export my data
+                {exporting ? "Preparing…" : "Export my data"}
               </Button>
             </CardContent>
           </Card>
@@ -538,11 +649,41 @@ export function SettingsView({
                 is paused and access links are revoked. You can cancel during the grace period.
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
-                <Trash2 data-icon="inline-start" />
-                Request account deletion
-              </Button>
+            <CardContent className="space-y-3">
+              {profile.data?.deletionRequestedAt ? (
+                <>
+                  <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
+                    Deletion was requested {formatRelative(profile.data.deletionRequestedAt, now)}.
+                    Everything is deleted 30 days after that, and the account is read-only until you
+                    cancel.
+                  </p>
+                  <Button
+                    variant="outline"
+                    disabled={cancelDeletion.isPending}
+                    onClick={() => {
+                      void (async () => {
+                        try {
+                          await cancelDeletion.mutateAsync();
+                          toast.success("Deletion cancelled — your account is active again");
+                        } catch (error) {
+                          toast.error(
+                            error instanceof ApiError
+                              ? error.message
+                              : "Could not cancel the deletion.",
+                          );
+                        }
+                      })();
+                    }}
+                  >
+                    Cancel deletion
+                  </Button>
+                </>
+              ) : (
+                <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
+                  <Trash2 data-icon="inline-start" />
+                  Request account deletion
+                </Button>
+              )}
             </CardContent>
           </Card>
           <p className="text-xs text-muted-foreground">
@@ -565,28 +706,56 @@ export function SettingsView({
         variant="destructive"
         requiresReverification
         acknowledgement="I understand my legacy plan, assets, documents and beneficiary access will be deleted after 30 days."
-        onConfirm={() => {
-          toast.info(
-            "Deletion requests need the account API (not available in the demo workspace)",
-          );
+        onConfirm={async () => {
+          try {
+            await reverified(() => requestDeletion.mutateAsync());
+            toast.success("Deletion requested — you have 30 days to change your mind");
+          } catch (error) {
+            if (isReverificationCancelled(error)) return;
+            toast.error(error instanceof ApiError ? error.message : "Could not request deletion.");
+          }
         }}
       />
     </div>
   );
 }
 
-/** Seeds from the (hydrated) demo profile on mount; saved explicitly. */
+/**
+ * The app-owned half of the profile.
+ *
+ * Name, email and password belong to Clerk and are changed there (FR-B007);
+ * these are the columns `PATCH /users/me` may write.
+ */
 function ProfileForm() {
-  const profileSaved = useDemoStore((s) => s.workspace.preferences.profile);
-  const updatePreferences = useDemoStore((s) => s.updatePreferences);
-  const [profile, setProfile] = useState(profileSaved);
+  const profileQuery = useProfile();
+  const updateProfile = useUpdateProfile();
+  const saved = profileQuery.data;
+  const address = (saved?.address ?? {}) as { city?: string; country?: string };
+  const [profile, setProfile] = useState({
+    phone: saved?.phone ?? "",
+    alternateEmail: saved?.alternateEmail ?? "",
+    dateOfBirth: saved?.dateOfBirth ?? "",
+    city: address.city ?? "",
+    country: address.country ?? "",
+  });
+
   return (
     <form
       className="grid gap-4 sm:grid-cols-2"
       onSubmit={(e) => {
         e.preventDefault();
-        updatePreferences({ profile });
-        toast.success("Profile saved");
+        void (async () => {
+          try {
+            await updateProfile.mutateAsync({
+              phone: profile.phone || null,
+              alternateEmail: profile.alternateEmail || null,
+              dateOfBirth: profile.dateOfBirth || null,
+            });
+            toast.success("Profile saved");
+          } catch (error) {
+            toast.error(error instanceof ApiError ? error.message : "Could not save your profile.");
+          }
+        })();
       }}
     >
       <FormField label="Phone" optional>
@@ -642,4 +811,25 @@ function ProfileForm() {
       </div>
     </form>
   );
+}
+
+function todayStamp(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * Hands a payload to the browser as a file.
+ *
+ * The object URL is revoked immediately afterwards so the export — which holds
+ * decrypted values — does not stay reachable from the page.
+ */
+function downloadJson(payload: unknown, filename: string): void {
+  const url = URL.createObjectURL(
+    new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }),
+  );
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
