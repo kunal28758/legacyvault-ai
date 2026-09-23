@@ -16,4 +16,21 @@ export const queryKeys = {
     details: () => ["beneficiaries", "detail"] as const,
     detail: (id: string) => ["beneficiaries", "detail", id] as const,
   },
+  assets: {
+    all: () => ["assets"] as const,
+    ofKind: (kind: string) => ["assets", kind] as const,
+    list: (kind: string, filters: Record<string, unknown>) =>
+      ["assets", kind, "list", filters] as const,
+    detail: (kind: string, id: string) => ["assets", kind, "detail", id] as const,
+    assignments: (kind: string, id: string) => ["assets", kind, "assignments", id] as const,
+  },
+  legacyPlan: {
+    all: () => ["legacy-plan"] as const,
+    overview: () => ["legacy-plan", "overview"] as const,
+    current: () => ["legacy-plan", "current"] as const,
+    detail: (id: string) => ["legacy-plan", "detail", id] as const,
+    review: (id: string) => ["legacy-plan", "review", id] as const,
+    versions: (id: string) => ["legacy-plan", "versions", id] as const,
+    version: (id: string, versionId: string) => ["legacy-plan", "versions", id, versionId] as const,
+  },
 } as const;

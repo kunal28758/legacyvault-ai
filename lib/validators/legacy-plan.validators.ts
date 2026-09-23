@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { PLAN_SECTION_KEYS } from "@/lib/demo/types";
+import { PLAN_SECTION_KEYS } from "@/lib/types/legacy-plan";
 
 /**
  * Zod schemas for the legacy-plan sections (task T057 — shared by the wizard
@@ -136,3 +136,41 @@ export function fieldErrors(error: z.ZodError): Record<string, string> {
   }
   return result;
 }
+
+/* ── API request shapes ───────────────────────────────────────────────────── */
+
+export const planIdParamSchema = z.object({ id: z.uuid("Unknown plan.") });
+
+export const planStepParamSchema = z.object({
+  id: z.uuid("Unknown plan."),
+  step: planSectionKeySchema,
+});
+
+export const planVersionParamSchema = z.object({
+  id: z.uuid("Unknown plan."),
+  versionId: z.uuid("Unknown version."),
+});
+
+/**
+ * Auto-save body. `data` is re-parsed against the section's own schema in the
+ * service only when the section claims to be complete — a half-typed draft must
+ * still save, which is the whole point of auto-save, so the section schema
+ * decides completeness rather than acceptance.
+ *
+ * `lockVersion` is the optimistic token `save_plan_step()` compares under a row
+ * lock; a stale one is a 409 rather than a silent overwrite.
+ */
+export const savePlanStepBodySchema = z.object({
+  data: z.record(z.string(), z.unknown()),
+  lockVersion: z.number().int().nonnegative(),
+});
+
+export const createPlanBodySchema = z.object({}).optional();
+
+export const newDraftBodySchema = z.object({
+  confirmed: z.literal(true, { error: "Confirm this to start a new draft." }),
+});
+
+export type SavePlanStepBody = z.infer<typeof savePlanStepBodySchema>;
+export type FinalizePlanBody = z.infer<typeof finalizeSchema>;
+export type NewDraftBody = z.infer<typeof newDraftBodySchema>;

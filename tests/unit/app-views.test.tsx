@@ -27,6 +27,43 @@ vi.mock("@clerk/nextjs", () => ({
   SignedOut: () => null,
 }));
 
+/** Minimal API envelope, so views that fetch render against a predictable server. */
+function apiResponse(data: unknown) {
+  return new Response(JSON.stringify({ success: true, data, meta: { correlationId: "test" } }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+const DRAFT_PLAN = {
+  id: "11111111-1111-4111-8111-111111111111",
+  status: "DRAFT",
+  version: 1,
+  currentStep: 6,
+  stepsData: {},
+  completionStatus: {},
+  lockVersion: 0,
+  finalizedAt: null,
+  createdAt: "2026-09-01T00:00:00.000Z",
+  updatedAt: "2026-09-01T00:00:00.000Z",
+};
+
+function stubPlanApi() {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/legacy-plans/current")) return apiResponse(DRAFT_PLAN);
+      if (url.includes("/versions")) return apiResponse({ items: [] });
+      if (url.includes("/beneficiaries"))
+        return apiResponse({ items: [], total: 0, page: 1, limit: 50 });
+      if (url.includes("/assets/"))
+        return apiResponse({ items: [], total: 0, page: 1, limit: 100 });
+      return apiResponse({});
+    }),
+  );
+}
+
 class ResizeObserverStub {
   observe() {}
   unobserve() {}
@@ -83,6 +120,8 @@ describe("authenticated views (demo workspace)", () => {
   });
 
   it("renders the will wizard on the saved step with the stepper", async () => {
+    // The wizard is API-backed: it opens the draft over HTTP on mount.
+    stubPlanApi();
     renderInShell(<WizardView />);
     await waitFor(() =>
       expect(screen.getByRole("navigation", { name: /plan steps/i })).toBeInTheDocument(),

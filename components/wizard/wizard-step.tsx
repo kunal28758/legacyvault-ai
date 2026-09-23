@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, ArrowRight, Check, CloudUpload, Loader2, Save } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, CloudOff, CloudUpload, Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,11 @@ function SaveIndicator({ status }: { status: SaveStatus }) {
       icon: <Check className="size-3.5" aria-hidden />,
       label: "Saved",
       className: "text-success",
+    },
+    error: {
+      icon: <CloudOff className="size-3.5" aria-hidden />,
+      label: "Not saved",
+      className: "text-destructive",
     },
   };
   const item = map[status];

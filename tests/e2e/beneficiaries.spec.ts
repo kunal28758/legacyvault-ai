@@ -2,6 +2,7 @@ import { clerk } from "@clerk/testing/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
 import { loadLocalEnv } from "../helpers/load-env";
+import { E2E_USERS } from "./users";
 
 /**
  * Authenticated beneficiary journey (tasks T071–T076).
@@ -17,7 +18,7 @@ import { loadLocalEnv } from "../helpers/load-env";
  */
 loadLocalEnv();
 
-const email = process.env.E2E_CLERK_USER_EMAIL ?? "demo+clerk_test@example.com";
+const email = E2E_USERS.beneficiaries;
 const configured = Boolean(
   process.env.CLERK_SECRET_KEY && process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
 );

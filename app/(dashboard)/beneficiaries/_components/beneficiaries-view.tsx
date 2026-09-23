@@ -96,9 +96,12 @@ export function BeneficiariesView() {
     ...(filter === "all" ? {} : { status: filter }),
     ...(search ? { q: search } : {}),
   });
-  // Unfiltered companion query: the header stats describe the whole roster, not
-  // the current filter, and it is served from cache once loaded.
-  const everyone = useBeneficiaries();
+  // The header stats describe the whole roster. With no filter applied the list
+  // query already is the whole roster, so the companion query only runs when a
+  // filter or search would otherwise hide part of it.
+  const filtering = filter !== "all" || Boolean(search);
+  const everyone = useBeneficiaries({}, { enabled: filtering });
+  const roster = filtering ? everyone : list;
 
   const detail = useBeneficiary(detailId);
   const setStatus = useSetBeneficiaryStatus();
@@ -107,11 +110,11 @@ export function BeneficiariesView() {
   const unassign = useUnassignBeneficiary();
 
   const rows = useMemo(() => list.data?.items ?? [], [list.data]);
-  const all = useMemo(() => everyone.data?.items ?? [], [everyone.data]);
-  const ready = !everyone.isPending;
+  const all = useMemo(() => roster.data?.items ?? [], [roster.data]);
+  const ready = !roster.isPending;
 
   const stats = {
-    total: everyone.data?.total ?? all.length,
+    total: roster.data?.total ?? all.length,
     active: all.filter((b) => b.status === "ACTIVE").length,
     pending: all.filter((b) => b.status === "PENDING").length,
     withAssignments: all.filter((b) => b.roles.assignmentCount > 0).length,

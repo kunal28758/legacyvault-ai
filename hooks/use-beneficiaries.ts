@@ -29,6 +29,7 @@ export interface BeneficiaryFilters {
 
 export function useBeneficiaries(
   filters: BeneficiaryFilters = {},
+  options: { enabled?: boolean } = {},
 ): UseQueryResult<BeneficiaryListResult> {
   const query = {
     ...(filters.status ? { status: filters.status } : {}),
@@ -39,6 +40,7 @@ export function useBeneficiaries(
 
   return useQuery({
     queryKey: queryKeys.beneficiaries.list(query),
+    enabled: options.enabled ?? true,
     queryFn: async ({ signal }) => {
       const { data } = await apiClient.get<BeneficiaryListResult>("/beneficiaries", {
         query,

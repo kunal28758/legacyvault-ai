@@ -13,26 +13,60 @@ import {
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/shared/empty-state";
+import { ErrorState } from "@/components/shared/error-state";
 import { PageHeader, SectionHeading } from "@/components/shared/page-header";
 import { PageSkeleton } from "@/components/shared/loading-skeleton";
 import { ProgressRing } from "@/components/shared/progress-card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useDemoWorkspace } from "@/hooks/use-demo-workspace";
-import { PLAN_STEPS, getPlanCompleteness } from "@/lib/demo/selectors";
-import { useDemoStore } from "@/lib/demo/store";
+import { useAssets } from "@/hooks/use-assets";
+import { useBeneficiaries } from "@/hooks/use-beneficiaries";
+import { useCreateNewDraft, useLegacyPlanOverview } from "@/hooks/use-legacy-plan";
+import { useNow } from "@/hooks/use-now";
+import { ApiError } from "@/lib/api/client";
+import { computeCompleteness } from "@/lib/legacy-plan/completeness";
+import { PLAN_STEPS, stepForSection } from "@/lib/legacy-plan/steps";
 import { formatDateTime, formatRelative } from "@/lib/format";
-import { useNow } from "@/hooks/use-demo-workspace";
 
+/**
+ * Legacy-plan overview (tasks T063/T070).
+ *
+ * Reads the real plan, its version history and the records the completeness
+ * rules cross-check against. "Create new draft" goes through
+ * `create_plan_draft()`, which refuses unless the source plan is finalized and
+ * no draft is already open.
+ */
 export function LegacyPlanView() {
-  const { workspace: ws, ready } = useDemoWorkspace();
-  const createNewDraft = useDemoStore((s) => s.createNewDraft);
+  const overview = useLegacyPlanOverview();
+  const beneficiariesQuery = useBeneficiaries();
+  const financial = useAssets("FINANCIAL_ASSET");
+  const physical = useAssets("PHYSICAL_ASSET");
+  const digital = useAssets("DIGITAL_ASSET");
+  const newDraft = useCreateNewDraft();
   const now = useNow();
-  if (!ready) return <PageSkeleton stats={0} />;
 
-  const plan = ws.plan;
-  const completeness = getPlanCompleteness(ws);
+  if (overview.isError) {
+    return (
+      <div className="space-y-6">
+        <PageHeader eyebrow="Legacy" title="Legacy plan" />
+        <ErrorState
+          title="Could not load your legacy plan"
+          description={
+            overview.error instanceof ApiError
+              ? overview.error.message
+              : "Please try again in a moment."
+          }
+          onRetry={() => void overview.refetch()}
+        />
+      </div>
+    );
+  }
+
+  if (overview.isPending) return <PageSkeleton stats={0} />;
+
+  const plan = overview.data.current;
+  const versions = overview.data.versions;
 
   if (!plan) {
     return (
@@ -61,6 +95,19 @@ export function LegacyPlanView() {
     );
   }
 
+  const assets = [
+    ...(financial.data?.items ?? []),
+    ...(physical.data?.items ?? []),
+    ...(digital.data?.items ?? []),
+  ].map((item) => ({ id: item.asset.id, kind: item.asset.kind }));
+
+  const completeness = computeCompleteness({
+    stepsData: plan.stepsData,
+    beneficiaries: beneficiariesQuery.data?.items ?? [],
+    assets,
+    documents: [],
+  });
+
   const finalized = plan.status === "FINALIZED";
 
   return (
@@ -77,10 +124,16 @@ export function LegacyPlanView() {
           finalized ? (
             <Button
               className="shadow-glow-blue"
-              onClick={() => {
-                const result = createNewDraft();
-                if (result.ok) toast.success(`Draft v${plan.version + 1} created`);
-                else toast.error(result.message);
+              disabled={newDraft.isPending}
+              onClick={async () => {
+                try {
+                  await newDraft.mutateAsync(plan.id);
+                  toast.success(`Draft v${plan.version + 1} created`);
+                } catch (error) {
+                  toast.error(
+                    error instanceof ApiError ? error.message : "Could not start a new draft.",
+                  );
+                }
               }}
             >
               <Pencil data-icon="inline-start" />
@@ -131,12 +184,12 @@ export function LegacyPlanView() {
               <div>
                 <dt className="text-xs text-muted-foreground">Current step</dt>
                 <dd className="font-medium">
-                  {PLAN_STEPS.find((s) => s.step === plan.currentStep)?.title ?? "—"}
+                  {PLAN_STEPS.find((step) => step.step === plan.currentStep)?.title ?? "—"}
                 </dd>
               </div>
               <div>
                 <dt className="text-xs text-muted-foreground">Finalized versions</dt>
-                <dd className="font-medium">{ws.planVersions.length}</dd>
+                <dd className="font-medium">{versions.length}</dd>
               </div>
             </dl>
           </CardContent>
@@ -152,7 +205,7 @@ export function LegacyPlanView() {
           <CardContent>
             <ul className="grid gap-2 sm:grid-cols-2">
               {Object.values(completeness.sections).map((section) => {
-                const step = PLAN_STEPS.find((s) => s.key === section.key)?.step ?? 1;
+                const step = stepForSection(section.key);
                 return (
                   <li key={section.key}>
                     <Link
@@ -193,7 +246,7 @@ export function LegacyPlanView() {
           title="Version history"
           description="Every finalized version is preserved with its completeness snapshot (FR-C008)."
         />
-        {ws.planVersions.length === 0 ? (
+        {versions.length === 0 ? (
           <EmptyState
             compact
             icon={History}
@@ -202,7 +255,7 @@ export function LegacyPlanView() {
           />
         ) : (
           <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {ws.planVersions.map((version) => (
+            {versions.map((version) => (
               <li key={version.id}>
                 <Card className="h-full glass">
                   <CardContent className="space-y-3 p-5">
@@ -224,7 +277,7 @@ export function LegacyPlanView() {
                       <p className="text-xs text-muted-foreground">
                         Incomplete:{" "}
                         {version.incompleteSections
-                          .map((k) => PLAN_STEPS.find((s) => s.key === k)?.title)
+                          .map((key) => PLAN_STEPS.find((step) => step.key === key)?.title)
                           .join(", ")}
                       </p>
                     )}

@@ -11,7 +11,7 @@ import { Stepper } from "@/components/wizard/stepper";
 import { WizardProvider, useWizard } from "@/components/wizard/wizard-provider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { PLAN_STEPS } from "@/lib/demo/selectors";
+import { PLAN_STEPS } from "@/lib/legacy-plan/steps";
 
 import { FamilyInformationStep } from "../_steps/family-information";
 import { AssetsStep, BeneficiariesStep, DocumentAttachmentsStep } from "../_steps/module-steps";

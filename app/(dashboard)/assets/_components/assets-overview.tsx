@@ -3,17 +3,15 @@
 import Link from "next/link";
 import { ArrowRight, Coins, Gem, Globe, Lock, Plus, Users } from "lucide-react";
 
-import { hasSensitiveFields } from "@/components/data-display/asset-card";
-import { ActivityFeed } from "@/components/shared/activity-feed";
-import { PageHeader, SectionHeading } from "@/components/shared/page-header";
+import { PageHeader } from "@/components/shared/page-header";
 import { PageSkeleton } from "@/components/shared/loading-skeleton";
 import { StaggerGrid, StaggerItem } from "@/components/shared/page-transition";
 import { StatCard } from "@/components/shared/stat-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useDemoWorkspace } from "@/hooks/use-demo-workspace";
-import { ASSET_KIND_META, assetTotal, assetsOfKind, unassignedAssets } from "@/lib/demo/selectors";
-import type { AssetKind } from "@/lib/demo/types";
+import { useAssets } from "@/hooks/use-assets";
+import { ASSET_KIND_META, assetTotal, hasSensitiveFields } from "@/lib/assets/meta";
+import type { AssetKind, AssetWithAssignments } from "@/lib/types/asset";
 import { formatCompactCurrency, formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -28,17 +26,29 @@ const fills: Record<AssetKind, string> = {
   DIGITAL_ASSET: "bg-viz-3",
 };
 
-/** Assets overview (task T089 — UI). */
+const KINDS: AssetKind[] = ["FINANCIAL_ASSET", "PHYSICAL_ASSET", "DIGITAL_ASSET"];
+
+/** Assets overview (task T089) — aggregates the three real asset lists. */
 export function AssetsOverview() {
-  const { workspace: ws, ready } = useDemoWorkspace();
+  const financial = useAssets("FINANCIAL_ASSET");
+  const physical = useAssets("PHYSICAL_ASSET");
+  const digital = useAssets("DIGITAL_ASSET");
+
+  const byKind: Record<AssetKind, AssetWithAssignments[]> = {
+    FINANCIAL_ASSET: financial.data?.items ?? [],
+    PHYSICAL_ASSET: physical.data?.items ?? [],
+    DIGITAL_ASSET: digital.data?.items ?? [],
+  };
+  const ready = !financial.isPending && !physical.isPending && !digital.isPending;
   if (!ready) return <PageSkeleton stats={3} />;
 
-  const kinds: AssetKind[] = ["FINANCIAL_ASSET", "PHYSICAL_ASSET", "DIGITAL_ASSET"];
-  const total = assetTotal(ws.assets);
-  const unassigned = unassignedAssets(ws);
-  const encrypted = ws.assets.filter(hasSensitiveFields).length;
-  const distribution = kinds.map((kind) => {
-    const list = assetsOfKind(ws, kind);
+  const items = KINDS.flatMap((kind) => byKind[kind]);
+  const assets = items.map((item) => item.asset);
+  const total = assetTotal(assets);
+  const unassigned = items.filter((item) => item.assignments.length === 0).map((i) => i.asset);
+  const encrypted = assets.filter(hasSensitiveFields).length;
+  const distribution = KINDS.map((kind) => {
+    const list = byKind[kind].map((item) => item.asset);
     const value = assetTotal(list);
     return {
       kind,
@@ -78,7 +88,7 @@ export function AssetsOverview() {
         <StaggerItem>
           <StatCard
             label="Assets recorded"
-            value={ws.assets.length}
+            value={assets.length}
             hint={`${distribution.map((d) => `${d.count} ${ASSET_KIND_META[d.kind].label.toLowerCase()}`).join(" · ")}`}
             accent="purple"
           />
@@ -201,21 +211,6 @@ export function AssetsOverview() {
                 })}
               </ul>
             )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="space-y-4">
-        <SectionHeading title="Recent asset changes" />
-        <Card className="glass">
-          <CardContent className="p-5">
-            <ActivityFeed
-              items={ws.activity.filter(
-                (a) => a.action.startsWith("asset.") || a.action.startsWith("assignment."),
-              )}
-              limit={5}
-              emptyTitle="No asset changes yet"
-            />
           </CardContent>
         </Card>
       </div>

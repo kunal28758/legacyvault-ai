@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 
-import type { PlanSectionKey } from "@/lib/demo/types";
+import type { PlanSectionKey } from "@/lib/types/legacy-plan";
 
 import { useWizard } from "./wizard-provider";
 

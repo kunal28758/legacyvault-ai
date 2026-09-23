@@ -14,39 +14,28 @@ import {
 import { AllocationBar, type AllocationSegment } from "@/components/data-display/allocation-bar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import type { DemoAsset } from "@/lib/demo/types";
-import { formatCurrency, titleCase } from "@/lib/format";
+import { assetSubtitle, hasSensitiveFields } from "@/lib/assets/meta";
+import type { Asset } from "@/lib/types/asset";
+import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-const kindIcon: Record<DemoAsset["kind"], LucideIcon> = {
+const kindIcon: Record<Asset["kind"], LucideIcon> = {
   FINANCIAL_ASSET: Coins,
   PHYSICAL_ASSET: Gem,
   DIGITAL_ASSET: Globe,
 };
 
-const kindAccent: Record<DemoAsset["kind"], string> = {
+const kindAccent: Record<Asset["kind"], string> = {
   FINANCIAL_ASSET: "bg-viz-1/20 text-viz-1",
   PHYSICAL_ASSET: "bg-viz-2/20 text-viz-2",
   DIGITAL_ASSET: "bg-viz-3/20 text-viz-3",
 };
 
-export function assetSubtitle(asset: DemoAsset): string {
-  if (asset.kind === "FINANCIAL_ASSET")
-    return [titleCase(asset.category), asset.institution].filter(Boolean).join(" · ");
-  if (asset.kind === "PHYSICAL_ASSET")
-    return [titleCase(asset.category), asset.location].filter(Boolean).join(" · ");
-  return [titleCase(asset.category), asset.platform].filter(Boolean).join(" · ");
-}
-
-export function hasSensitiveFields(asset: DemoAsset): boolean {
-  if (asset.kind === "FINANCIAL_ASSET")
-    return Boolean(asset.accountNumberHint || asset.policyNumberHint);
-  if (asset.kind === "DIGITAL_ASSET") return asset.hasCredentials || asset.hasRecoveryInfo;
-  return false;
-}
+/** Re-exported so existing call sites keep one import site. */
+export { assetSubtitle, hasSensitiveFields };
 
 interface AssetCardProps {
-  asset: DemoAsset;
+  asset: Asset;
   allocation: AllocationSegment[];
   onOpen: () => void;
   menu?: React.ReactNode;

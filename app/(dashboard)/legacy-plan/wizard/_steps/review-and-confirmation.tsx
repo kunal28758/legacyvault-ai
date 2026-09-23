@@ -22,33 +22,29 @@ import { useWizard } from "@/components/wizard/wizard-provider";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { PLAN_STEPS } from "@/lib/demo/selectors";
-import type { PlanSectionKey } from "@/lib/demo/types";
+import { PLAN_STEPS } from "@/lib/legacy-plan/steps";
+import { stepForSection } from "@/lib/legacy-plan/steps";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-const stepForSection = (key: PlanSectionKey) => PLAN_STEPS.find((s) => s.key === key)?.step ?? 1;
-
 /* Step 10 — review (T069 / T103) */
 export function ReviewStep() {
-  const { completeness, goTo, previous, finalize, plan, workspace, readOnly } = useWizard();
+  const { completeness, goTo, previous, finalize, plan, unassignedAssetCount, readOnly, busy } =
+    useWizard();
   const [open, setOpen] = useState(false);
   const sections = Object.values(completeness.sections);
   const incomplete = completeness.incompleteSections;
   const personalMissing = !completeness.sections["personal-details"].complete;
   const optionalIncomplete = incomplete.filter((k) => k !== "personal-details");
-  const unassignedInPlan = workspace.assets.filter(
-    (a) => !workspace.assignments.some((asg) => asg.resourceId === a.id),
-  ).length;
+  const unassignedInPlan = unassignedAssetCount;
 
-  const handleFinalize = () => {
-    const result = finalize(optionalIncomplete.length > 0);
-    if (result.ok) {
+  const handleFinalize = async () => {
+    // The wizard flushes pending edits, re-checks completeness server-side and
+    // only then calls finalize_legacy_plan(); any refusal is surfaced by it.
+    if (await finalize(optionalIncomplete.length > 0)) {
       toast.success(`Legacy plan v${plan.version} finalized`, {
         description: "Previous versions stay available in the history.",
       });
-    } else {
-      toast.error(result.message ?? "Could not finalize");
     }
   };
 
@@ -158,7 +154,7 @@ export function ReviewStep() {
           !readOnly && (
             <Button
               className="shadow-glow-blue"
-              disabled={personalMissing}
+              disabled={personalMissing || busy}
               onClick={() => setOpen(true)}
             >
               <FileCheck2 data-icon="inline-start" />
@@ -199,8 +195,8 @@ export function ReviewStep() {
 
 /* Step 11 — confirmation (T224) */
 export function ConfirmationStep() {
-  const { plan, workspace, createNewDraft, goTo } = useWizard();
-  const latest = workspace.planVersions[0];
+  const { plan, versions, createNewDraft, goTo, busy } = useWizard();
+  const latest = versions[0];
   const finalized = plan.status === "FINALIZED";
 
   if (!finalized) {
@@ -307,11 +303,10 @@ export function ConfirmationStep() {
           </Button>
           <Button
             className="w-full justify-start shadow-glow-blue"
-            onClick={() => {
-              const result = createNewDraft();
-              if (result.ok)
+            disabled={busy}
+            onClick={async () => {
+              if (await createNewDraft())
                 toast.success(`Draft v${plan.version + 1} created from the finalized plan`);
-              else toast.error(result.message);
             }}
           >
             <ArrowRight data-icon="inline-start" />

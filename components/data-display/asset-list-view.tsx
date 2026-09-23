@@ -1,16 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { KeyRound, MoreHorizontal, Pencil, Plus, Search, Trash2, Wallet } from "lucide-react";
 import { toast } from "sonner";
 
 import { AllocationBar } from "@/components/data-display/allocation-bar";
-import { AssetCard, assetSubtitle, hasSensitiveFields } from "@/components/data-display/asset-card";
-import { AssignDialog } from "@/components/forms/assign-dialog";
+import { AssetCard } from "@/components/data-display/asset-card";
+import { AssignAssetDialog } from "@/components/forms/assign-asset-dialog";
 import { AssetFormSheet } from "@/components/forms/asset-form";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { EmptyState } from "@/components/shared/empty-state";
+import { ErrorState } from "@/components/shared/error-state";
 import { GridSkeleton } from "@/components/shared/loading-skeleton";
 import { MaskedField } from "@/components/shared/masked-field";
 import { PageHeader } from "@/components/shared/page-header";
@@ -33,15 +34,16 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useDemoWorkspace, useNow } from "@/hooks/use-demo-workspace";
 import {
-  ASSET_KIND_META,
-  assetTotal,
-  assetsOfKind,
-  assignmentsForResource,
-} from "@/lib/demo/selectors";
-import { useDemoStore } from "@/lib/demo/store";
-import type { AssetKind, DemoAsset } from "@/lib/demo/types";
+  useAssets,
+  useDeleteAsset,
+  useRevealSensitiveFields,
+  useUnassignBeneficiary,
+} from "@/hooks/use-assets";
+import { useNow } from "@/hooks/use-now";
+import { ApiError } from "@/lib/api/client";
+import { ASSET_KIND_META, assetSubtitle, assetTotal, hasSensitiveFields } from "@/lib/assets/meta";
+import type { Asset, AssetKind, AssetWithAssignments } from "@/lib/types/asset";
 import { formatCompactCurrency, formatCurrency, formatRelative, titleCase } from "@/lib/format";
 import {
   DIGITAL_CATEGORIES,
@@ -70,62 +72,89 @@ const COPY: Record<AssetKind, { title: string; description: string; icon: typeof
   },
 };
 
-/** Shared list view for the three asset classes (tasks T083 / T086 / T088 — UI). */
+function messageFor(error: unknown, fallback: string): string {
+  return error instanceof ApiError ? error.message : fallback;
+}
+
+/**
+ * Shared list view for the three asset classes (tasks T083 / T086 / T088).
+ *
+ * Everything here is persisted through `/api/v1/assets/:type`: creation runs in
+ * `create_asset()`, deletion in `delete_asset()`, assignment in
+ * `assign_beneficiary()`. Sensitive values are only ever fetched by the reveal
+ * dialog, which is gated on Clerk re-verification server-side.
+ */
 export function AssetListView({ kind }: { kind: AssetKind }) {
-  const { workspace: ws, ready } = useDemoWorkspace();
-  const removeAsset = useDemoStore((s) => s.removeAsset);
-  const unassign = useDemoStore((s) => s.unassign);
-  const now = useNow();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const now = useNow();
   const meta = ASSET_KIND_META[kind];
   const copy = COPY[kind];
 
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string>("all");
-  const openNew = searchParams.get("new") === "1";
-  const [formOpen, setFormOpen] = useState(openNew);
-  const [editing, setEditing] = useState<DemoAsset | null>(null);
+  const [formOpen, setFormOpen] = useState(() => searchParams.get("new") === "1");
+  const [editing, setEditing] = useState<Asset | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [assignFor, setAssignFor] = useState<string | null>(null);
-  const [removeTarget, setRemoveTarget] = useState<DemoAsset | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<Asset | null>(null);
 
-  useEffect(() => {
-    if (openNew) router.replace(meta.href);
-  }, [openNew, router, meta.href]);
+  const search = useDeferredValue(query.trim());
+  const list = useAssets(kind, {
+    ...(category === "all" ? {} : { category }),
+    ...(search ? { q: search } : {}),
+  });
+  // Only fetch the unfiltered inventory when a filter would otherwise hide part
+  // of it; without one the list query already covers the whole class.
+  const filtering = category !== "all" || Boolean(search);
+  const everything = useAssets(kind, {}, { enabled: filtering });
+  const inventory = filtering ? everything : list;
 
-  const assets = assetsOfKind(ws, kind);
+  const remove = useDeleteAsset(kind);
+  const unassign = useUnassignBeneficiary(kind);
+  const reveal = useRevealSensitiveFields(kind);
+
+  const rows = useMemo(() => list.data?.items ?? [], [list.data]);
+  const all = useMemo(() => inventory.data?.items ?? [], [inventory.data]);
+  const ready = !inventory.isPending;
+
   const categories =
     kind === "FINANCIAL_ASSET"
       ? FINANCIAL_CATEGORIES
       : kind === "PHYSICAL_ASSET"
         ? PHYSICAL_CATEGORIES
         : DIGITAL_CATEGORIES;
-  const rows = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return assets.filter(
-      (a) =>
-        (category === "all" || a.category === category) &&
-        (!q || a.name.toLowerCase().includes(q) || assetSubtitle(a).toLowerCase().includes(q)),
-    );
-  }, [assets, query, category]);
 
-  const allocationFor = (asset: DemoAsset) =>
-    assignmentsForResource(ws, kind, asset.id)
-      .filter((a) => a.allocationPercentage)
-      .map((a) => ({
-        id: a.id,
-        label: ws.beneficiaries.find((b) => b.id === a.beneficiaryId)?.name ?? "Beneficiary",
-        value: a.allocationPercentage ?? 0,
-      }));
-
-  const detail = detailId ? (assets.find((a) => a.id === detailId) ?? null) : null;
-  const unassignedCount = assets.filter(
-    (a) => assignmentsForResource(ws, kind, a.id).length === 0,
-  ).length;
+  const assets = all.map((item) => item.asset);
+  const unassignedCount = all.filter((item) => item.assignments.length === 0).length;
   const encryptedCount = assets.filter(hasSensitiveFields).length;
 
-  const menuFor = (asset: DemoAsset) => (
+  const detail = detailId ? (rows.find((item) => item.asset.id === detailId) ?? null) : null;
+  const assignTarget = assignFor
+    ? (rows.find((item) => item.asset.id === assignFor) ?? null)
+    : null;
+
+  const segmentsFor = (item: AssetWithAssignments) =>
+    item.assignments
+      .filter((assignment) => assignment.allocationPercentage)
+      .map((assignment) => ({
+        id: assignment.id,
+        label: assignment.beneficiaryName,
+        value: assignment.allocationPercentage ?? 0,
+      }));
+
+  const openForm = (asset: Asset | null) => {
+    setEditing(asset);
+    setFormOpen(true);
+    if (searchParams.get("new") === "1") router.replace(meta.href);
+  };
+
+  const revealField = (assetId: string, field: string) => async () => {
+    const values = await reveal.mutateAsync(assetId);
+    return (values as Record<string, string | null | undefined>)[field] ?? null;
+  };
+
+  const menuFor = (asset: Asset) => (
     <DropdownMenu>
       <DropdownMenuTrigger
         render={<Button variant="ghost" size="icon-sm" aria-label={`Actions for ${asset.name}`} />}
@@ -136,12 +165,7 @@ export function AssetListView({ kind }: { kind: AssetKind }) {
         <DropdownMenuItem onClick={() => setDetailId(asset.id)}>
           <Search /> View details
         </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => {
-            setEditing(asset);
-            setFormOpen(true);
-          }}
-        >
+        <DropdownMenuItem onClick={() => openForm(asset)}>
           <Pencil /> Edit
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setAssignFor(asset.id)}>
@@ -162,13 +186,7 @@ export function AssetListView({ kind }: { kind: AssetKind }) {
         title={copy.title}
         description={copy.description}
         actions={
-          <Button
-            className="shadow-glow-blue"
-            onClick={() => {
-              setEditing(null);
-              setFormOpen(true);
-            }}
-          >
+          <Button className="shadow-glow-blue" onClick={() => openForm(null)}>
             <Plus data-icon="inline-start" />
             Add asset
           </Button>
@@ -178,7 +196,7 @@ export function AssetListView({ kind }: { kind: AssetKind }) {
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard
           label="Recorded"
-          value={ready ? assets.length : "—"}
+          value={ready ? (inventory.data?.total ?? assets.length) : "—"}
           icon={copy.icon}
           accent="blue"
         />
@@ -204,61 +222,67 @@ export function AssetListView({ kind }: { kind: AssetKind }) {
           />
           <Input
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(event) => setQuery(event.target.value)}
             placeholder="Search assets"
             className="pl-8"
             aria-label="Search assets"
           />
         </div>
-        <Tabs value={category} onValueChange={(v) => setCategory(String(v))} className="max-w-full">
+        <Tabs
+          value={category}
+          onValueChange={(value) => setCategory(String(value))}
+          className="max-w-full"
+        >
           <TabsList className="h-auto flex-wrap">
             <TabsTrigger value="all">All</TabsTrigger>
-            {categories.map((c) => (
-              <TabsTrigger key={c.value} value={c.value}>
-                {c.label}
+            {categories.map((entry) => (
+              <TabsTrigger key={entry.value} value={entry.value}>
+                {entry.label}
               </TabsTrigger>
             ))}
           </TabsList>
         </Tabs>
       </div>
 
-      {!ready ? (
+      {list.isError ? (
+        <ErrorState
+          title="Could not load these assets"
+          description={messageFor(list.error, "Please try again in a moment.")}
+          correlationId={list.error instanceof ApiError ? list.error.correlationId : undefined}
+          onRetry={() => void list.refetch()}
+        />
+      ) : list.isPending ? (
         <GridSkeleton />
       ) : rows.length === 0 ? (
-        assets.length === 0 ? (
-          <EmptyState
-            icon={copy.icon}
-            title={`No ${copy.title.toLowerCase()} yet`}
-            description="Record what you own so it can be assigned to the right people and included in your plan."
-            action={
-              <Button
-                onClick={() => {
-                  setEditing(null);
-                  setFormOpen(true);
-                }}
-              >
-                <Plus data-icon="inline-start" />
-                Add your first asset
-              </Button>
-            }
-          />
-        ) : (
+        search || category !== "all" ? (
           <EmptyState
             compact
             icon={Search}
             title="No matches"
             description="Try a different search or category."
           />
+        ) : (
+          <EmptyState
+            icon={copy.icon}
+            title={`No ${copy.title.toLowerCase()} yet`}
+            description="Record what you own so it can be assigned to the right people and included in your plan."
+            action={
+              <Button onClick={() => openForm(null)}>
+                <Plus data-icon="inline-start" />
+                Add your first asset
+              </Button>
+            }
+          />
         )
       ) : (
         <StaggerGrid className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {rows.map((asset) => (
-            <StaggerItem key={asset.id}>
+          {rows.map((item) => (
+            <StaggerItem key={item.asset.id}>
               <AssetCard
-                asset={asset}
-                allocation={allocationFor(asset)}
-                onOpen={() => setDetailId(asset.id)}
-                menu={menuFor(asset)}
+                asset={item.asset}
+                allocation={segmentsFor(item)}
+                onOpen={() => setDetailId(item.asset.id)}
+                menu={menuFor(item.asset)}
               />
             </StaggerItem>
           ))}
@@ -266,11 +290,17 @@ export function AssetListView({ kind }: { kind: AssetKind }) {
       )}
 
       <AssetFormSheet kind={kind} open={formOpen} onOpenChange={setFormOpen} asset={editing} />
-      <AssignDialog
+
+      <AssignAssetDialog
         open={Boolean(assignFor)}
         onOpenChange={(open) => !open && setAssignFor(null)}
-        resource={assignFor ? { type: kind, id: assignFor } : null}
+        kind={kind}
+        assetId={assignFor}
+        assetName={assignTarget?.asset.name}
+        assignments={assignTarget?.assignments ?? []}
+        remainingPercentage={assignTarget?.remainingPercentage ?? 100}
       />
+
       <ConfirmDialog
         open={Boolean(removeTarget)}
         onOpenChange={(open) => !open && setRemoveTarget(null)}
@@ -278,41 +308,33 @@ export function AssetListView({ kind }: { kind: AssetKind }) {
         description="The asset is soft-deleted in one transaction together with its beneficiary assignments and document attachments. The audit record is kept."
         confirmLabel="Delete asset"
         variant="destructive"
-        requiresReverification={Boolean(
-          removeTarget && assignmentsForResource(ws, kind, removeTarget.id).length,
-        )}
-        onConfirm={() => {
+        onConfirm={async () => {
           if (!removeTarget) return;
-          const result = removeAsset(removeTarget.id);
-          if (result.ok) {
+          try {
+            await remove.mutateAsync(removeTarget.id);
             toast.success(`${removeTarget.name} deleted`);
             if (detailId === removeTarget.id) setDetailId(null);
-          } else toast.error(result.message);
+          } catch (error) {
+            toast.error(messageFor(error, "Could not delete this asset."));
+          }
         }}
       />
 
-      <Sheet open={Boolean(detail)} onOpenChange={(open) => !open && setDetailId(null)}>
+      <Sheet open={Boolean(detailId)} onOpenChange={(open) => !open && setDetailId(null)}>
         <SheetContent className="w-full overflow-y-auto glass-strong sm:max-w-lg">
           {detail && (
             <>
               <SheetHeader className="pr-10">
-                <SheetTitle>{detail.name}</SheetTitle>
-                <SheetDescription>{assetSubtitle(detail)}</SheetDescription>
+                <SheetTitle>{detail.asset.name}</SheetTitle>
+                <SheetDescription>{assetSubtitle(detail.asset)}</SheetDescription>
               </SheetHeader>
               <div className="space-y-6 px-4 pb-6">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      setEditing(detail);
-                      setFormOpen(true);
-                    }}
-                  >
+                  <Button size="sm" variant="outline" onClick={() => openForm(detail.asset)}>
                     <Pencil data-icon="inline-start" />
                     Edit
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => setAssignFor(detail.id)}>
+                  <Button size="sm" variant="outline" onClick={() => setAssignFor(detail.asset.id)}>
                     <KeyRound data-icon="inline-start" />
                     Assign beneficiary
                   </Button>
@@ -320,7 +342,7 @@ export function AssetListView({ kind }: { kind: AssetKind }) {
                     size="sm"
                     variant="ghost"
                     className="text-destructive"
-                    onClick={() => setRemoveTarget(detail)}
+                    onClick={() => setRemoveTarget(detail.asset)}
                   >
                     <Trash2 data-icon="inline-start" />
                     Delete
@@ -331,108 +353,132 @@ export function AssetListView({ kind }: { kind: AssetKind }) {
                   <div>
                     <dt className="text-xs text-muted-foreground">Estimated value</dt>
                     <dd className="font-medium">
-                      {formatCurrency(detail.estimatedValue, detail.currency)}
+                      {formatCurrency(detail.asset.estimatedValue, detail.asset.currency)}
                     </dd>
                   </div>
                   <div>
                     <dt className="text-xs text-muted-foreground">Category</dt>
-                    <dd className="font-medium">{titleCase(detail.category)}</dd>
+                    <dd className="font-medium">{titleCase(detail.asset.category)}</dd>
                   </div>
-                  {detail.kind === "FINANCIAL_ASSET" && (
+                  {detail.asset.kind === "FINANCIAL_ASSET" && (
                     <div>
                       <dt className="text-xs text-muted-foreground">Institution</dt>
-                      <dd className="font-medium">{detail.institution ?? "—"}</dd>
+                      <dd className="font-medium">{detail.asset.institution ?? "—"}</dd>
                     </div>
                   )}
-                  {detail.kind === "PHYSICAL_ASSET" && (
+                  {detail.asset.kind === "PHYSICAL_ASSET" && (
                     <>
                       <div>
                         <dt className="text-xs text-muted-foreground">Location</dt>
-                        <dd className="font-medium">{detail.location ?? "—"}</dd>
+                        <dd className="font-medium">{detail.asset.location ?? "—"}</dd>
                       </div>
                       <div className="col-span-2">
                         <dt className="text-xs text-muted-foreground">Ownership</dt>
-                        <dd className="font-medium">{detail.ownershipDetails ?? "—"}</dd>
+                        <dd className="font-medium">{detail.asset.ownershipDetails ?? "—"}</dd>
                       </div>
                     </>
                   )}
-                  {detail.kind === "DIGITAL_ASSET" && (
+                  {detail.asset.kind === "DIGITAL_ASSET" && (
                     <>
                       <div>
                         <dt className="text-xs text-muted-foreground">Platform</dt>
-                        <dd className="font-medium">{detail.platform ?? "—"}</dd>
+                        <dd className="font-medium">{detail.asset.platform ?? "—"}</dd>
                       </div>
                       <div>
                         <dt className="text-xs text-muted-foreground">Username</dt>
-                        <dd className="font-medium">{detail.username ?? "—"}</dd>
+                        <dd className="font-medium">{detail.asset.username ?? "—"}</dd>
                       </div>
                     </>
                   )}
                   <div>
                     <dt className="text-xs text-muted-foreground">Updated</dt>
-                    <dd className="font-medium">{formatRelative(detail.updatedAt, now)}</dd>
+                    <dd className="font-medium">{formatRelative(detail.asset.updatedAt, now)}</dd>
                   </div>
                 </dl>
 
-                {detail.kind === "FINANCIAL_ASSET" && (
+                {detail.asset.kind === "FINANCIAL_ASSET" && (
                   <div className="space-y-2">
                     <MaskedField
                       label="Account number"
-                      hint={detail.accountNumberHint}
-                      present={Boolean(detail.accountNumberHint)}
+                      present={detail.asset.hasAccountNumber}
+                      onReveal={revealField(detail.asset.id, "accountNumber")}
                     />
                     <MaskedField
                       label="Policy number"
-                      hint={detail.policyNumberHint}
-                      present={Boolean(detail.policyNumberHint)}
+                      present={detail.asset.hasPolicyNumber}
+                      onReveal={revealField(detail.asset.id, "policyNumber")}
                     />
                   </div>
                 )}
-                {detail.kind === "DIGITAL_ASSET" && (
+                {detail.asset.kind === "DIGITAL_ASSET" && (
                   <div className="space-y-2">
-                    <MaskedField label="Credentials" present={detail.hasCredentials} />
-                    <MaskedField label="Recovery information" present={detail.hasRecoveryInfo} />
+                    <MaskedField
+                      label="Credentials"
+                      present={detail.asset.hasCredentials}
+                      onReveal={revealField(detail.asset.id, "credentials")}
+                    />
+                    <MaskedField
+                      label="Recovery information"
+                      present={detail.asset.hasRecoveryInfo}
+                      onReveal={revealField(detail.asset.id, "recoveryInfo")}
+                    />
                   </div>
                 )}
-                {detail.kind === "PHYSICAL_ASSET" && detail.description && (
+                {detail.asset.kind === "PHYSICAL_ASSET" && detail.asset.description && (
                   <p className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-                    {detail.description}
+                    {detail.asset.description}
                   </p>
                 )}
-                {detail.notes && <p className="text-sm text-muted-foreground">{detail.notes}</p>}
+                {detail.asset.notes && (
+                  <p className="text-sm text-muted-foreground">{detail.asset.notes}</p>
+                )}
 
                 <div className="space-y-3">
-                  <p className="text-sm font-medium">Beneficiaries</p>
-                  {assignmentsForResource(ws, kind, detail.id).length === 0 ? (
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium">Beneficiaries</p>
+                    <span className="text-xs text-muted-foreground">
+                      {detail.allocatedPercentage}% allocated · {detail.remainingPercentage}% free
+                    </span>
+                  </div>
+                  {detail.assignments.length === 0 ? (
                     <p className="rounded-lg border border-dashed border-border px-3 py-5 text-center text-sm text-muted-foreground">
                       Nobody is assigned to this asset yet.
                     </p>
                   ) : (
                     <>
-                      <AllocationBar segments={allocationFor(detail)} />
+                      <AllocationBar segments={segmentsFor(detail)} />
                       <ul className="space-y-2">
-                        {assignmentsForResource(ws, kind, detail.id).map((a) => (
+                        {detail.assignments.map((assignment) => (
                           <li
-                            key={a.id}
+                            key={assignment.id}
                             className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm"
                           >
                             <span>
-                              {ws.beneficiaries.find((b) => b.id === a.beneficiaryId)?.name ??
-                                "Beneficiary"}
+                              {assignment.beneficiaryName}
                               <span className="text-muted-foreground">
                                 {" "}
                                 ·{" "}
-                                {a.allocationPercentage !== null
-                                  ? `${a.allocationPercentage}%`
+                                {assignment.allocationPercentage !== null
+                                  ? `${assignment.allocationPercentage}%`
                                   : "no percentage"}
                               </span>
                             </span>
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => {
-                                unassign(a.id);
-                                toast.success("Assignment removed");
+                              disabled={unassign.isPending}
+                              onClick={async () => {
+                                try {
+                                  await unassign.mutateAsync({
+                                    id: detail.asset.id,
+                                    assignmentId: assignment.id,
+                                  });
+                                  toast.success("Assignment removed");
+                                } catch (error) {
+                                  toast.error(
+                                    messageFor(error, "Could not remove this assignment."),
+                                  );
+                                }
                               }}
                             >
                               Remove

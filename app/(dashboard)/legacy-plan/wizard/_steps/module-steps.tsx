@@ -7,17 +7,18 @@ import { ResourcePicker } from "@/components/wizard/resource-picker";
 import { WizardStep } from "@/components/wizard/wizard-step";
 import { useSectionForm } from "@/components/wizard/use-section-form";
 import { useWizard } from "@/components/wizard/wizard-provider";
-import { ASSET_KIND_META, allocatedPercent, assetsOfKind } from "@/lib/demo/selectors";
-import type { AssetKind, PlanSectionKey } from "@/lib/demo/types";
-import { formatBytes, formatCompactCurrency, titleCase } from "@/lib/format";
+import { ASSET_KIND_META } from "@/lib/assets/meta";
+import type { AssetKind } from "@/lib/types/asset";
+import type { PlanSectionKey } from "@/lib/types/legacy-plan";
+import { formatCompactCurrency, titleCase } from "@/lib/format";
 
 /* Step 3 — beneficiaries (embeds the beneficiary module; stores ids — T221) */
 export function BeneficiariesStep() {
-  const { workspace } = useWizard();
+  const { beneficiaries } = useWizard();
   const { values, setField, errors, readOnly } = useSectionForm("beneficiaries", {
     beneficiaryIds: [] as string[],
   });
-  const items = workspace.beneficiaries
+  const items = beneficiaries
     .filter((b) => b.status !== "INACTIVE")
     .map((b) => {
       const status = toneForBeneficiaryStatus(b.status);
@@ -98,15 +99,14 @@ const assetStepMeta: Record<
 
 export function AssetsStep({ kind }: { kind: AssetKind }) {
   const meta = assetStepMeta[kind];
-  const { workspace } = useWizard();
+  const { assetItems } = useWizard();
   const { values, setField, errors, readOnly } = useSectionForm(meta.key, {
     assetIds: [] as string[],
     none: false,
   });
-  const assets = assetsOfKind(workspace, kind);
-  const items = assets.map((asset) => {
-    const allocated = allocatedPercent(workspace, kind, asset.id);
-    return {
+  const items = assetItems
+    .filter((item) => item.asset.kind === kind)
+    .map(({ asset, allocatedPercentage }) => ({
       id: asset.id,
       title: asset.name,
       subtitle: `${titleCase(asset.category)}${"institution" in asset && asset.institution ? ` · ${asset.institution}` : "platform" in asset && asset.platform ? ` · ${asset.platform}` : ""}`,
@@ -116,11 +116,10 @@ export function AssetsStep({ kind }: { kind: AssetKind }) {
           <span className="block font-medium text-foreground">
             {formatCompactCurrency(asset.estimatedValue, asset.currency)}
           </span>
-          <span className="block">{allocated}% allocated</span>
+          <span className="block">{allocatedPercentage}% allocated</span>
         </span>
       ),
-    };
-  });
+    }));
   return (
     <WizardStep eyebrow={`Step ${meta.step}`} title={meta.title} description={meta.description}>
       <ResourcePicker
@@ -144,18 +143,14 @@ export function AssetsStep({ kind }: { kind: AssetKind }) {
 
 /* Step 9 — document attachments (T223) */
 export function DocumentAttachmentsStep() {
-  const { workspace } = useWizard();
   const { values, setField, errors, readOnly } = useSectionForm("document-attachments", {
     documentIds: [] as string[],
     none: false,
   });
-  const items = workspace.documents.map((doc) => ({
-    id: doc.id,
-    title: doc.name,
-    subtitle: `${workspace.folders.find((f) => f.id === doc.folderId)?.name ?? "Root"} · ${formatBytes(doc.sizeBytes)} · v${doc.versionCount}`,
-    icon: FileText,
-    meta: doc.scanStatus === "CLEAN" ? "Scanned" : "Scanning",
-  }));
+  // The vault becomes real in its own batch; until then there is nothing to
+  // attach, and the step is completed by marking it "none" rather than by
+  // offering documents that were never uploaded.
+  const items: never[] = [];
   return (
     <WizardStep
       eyebrow="Step 9"
