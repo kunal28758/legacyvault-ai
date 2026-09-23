@@ -11,10 +11,13 @@ function Progress({ className, children, value, ...props }: ProgressPrimitive.Ro
       className={cn("flex flex-wrap gap-3", className)}
       {...props}
     >
-      {children}
-      <ProgressTrack>
-        <ProgressIndicator />
-      </ProgressTrack>
+      {/* Callers may supply their own <ProgressTrack> to restyle the bar;
+          rendering the default one as well would draw two tracks. */}
+      {children ?? (
+        <ProgressTrack>
+          <ProgressIndicator />
+        </ProgressTrack>
+      )}
     </ProgressPrimitive.Root>
   );
 }

@@ -17,16 +17,17 @@ export function useSectionForm<T extends Record<string, unknown>>(
   const { getSection, updateSection, errors, clearError, readOnly } = useWizard();
   const [values, setValues] = useState<T>(() => getSection(key, defaults));
 
+  // `updateSection` writes to the wizard provider, so it must stay out of the
+  // `setValues` updater — React runs updaters during render, and updating
+  // another component from there is a setState-in-render bug.
   const setField = useCallback(
     <K extends keyof T>(field: K, value: T[K]) => {
-      setValues((prev) => {
-        const nextValues = { ...prev, [field]: value };
-        updateSection(key, nextValues);
-        return nextValues;
-      });
+      const nextValues = { ...values, [field]: value };
+      setValues(nextValues);
+      updateSection(key, nextValues);
       clearError(String(field));
     },
-    [key, updateSection, clearError],
+    [values, key, updateSection, clearError],
   );
 
   const setAll = useCallback(

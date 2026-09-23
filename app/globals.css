@@ -209,6 +209,14 @@
     min-height: 100dvh;
   }
 
+  /* Grids that only declare columns from a breakpoint up (`sm:grid-cols-2`)
+     fall back to a single *implicit* column sized `auto` (max-content), so a
+     wide card can push past the viewport on phones. Explicit `grid-cols-*`
+     templates take precedence and are unaffected. */
+  .grid {
+    grid-auto-columns: minmax(0, 1fr);
+  }
+
   h1,
   h2,
   h3,

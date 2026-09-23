@@ -27,9 +27,18 @@ test.describe("public landing page", () => {
     expect(overflow).toBeLessThanOrEqual(0);
   });
 
-  test("protected routes fail closed while authentication is not configured", async ({ page }) => {
-    test.skip(Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY), "Clerk is configured");
+  test("an anonymous visitor never reaches the dashboard", async ({ page }) => {
+    // Two legitimate outcomes, both fail closed (constitution III):
+    // Clerk configured → redirected to the sign-in page;
+    // Clerk not configured → proxy.ts answers 503 AUTH_NOT_CONFIGURED.
     const response = await page.goto("/dashboard");
-    expect(response?.status()).toBe(503);
+    const status = response?.status();
+    if (status === 503) {
+      expect(await page.content()).toContain("not configured");
+      return;
+    }
+    expect(status).toBe(200);
+    await expect(page).toHaveURL(/\/sign-in/);
+    await expect(page.getByRole("heading", { name: /sign in/i }).first()).toBeVisible();
   });
 });

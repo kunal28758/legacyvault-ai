@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { SignedIn, SignedOut } from "@clerk/nextjs";
+import { useAuth } from "@clerk/nextjs";
 import { ArrowRight, Menu } from "lucide-react";
 
 import { ThemeToggle } from "@/components/layout/theme-toggle";
@@ -25,6 +25,38 @@ const links = [
   { href: "#showcase", label: "Product" },
 ];
 
+/** Signed-out call to action; also the pre-hydration state so nothing shifts. */
+function SignedOutActions() {
+  return (
+    <>
+      <Link href="/sign-in" className={buttonVariants({ variant: "ghost" })}>
+        Sign in
+      </Link>
+      <Link href="/sign-up" className={cn(buttonVariants(), "shadow-glow-blue")}>
+        Create account
+        <ArrowRight className="size-4" aria-hidden />
+      </Link>
+    </>
+  );
+}
+
+/**
+ * Session-aware navbar actions. `<SignedIn>` / `<SignedOut>` were removed in
+ * Clerk Core 3 and `<Show>` is an async Server Component, so the client navbar
+ * reads the session through `useAuth()` instead. Only mounted when Clerk is
+ * configured — the hook requires `<ClerkProvider>`.
+ */
+function ClerkAccountActions() {
+  const { isLoaded, isSignedIn } = useAuth();
+  if (!isLoaded || !isSignedIn) return <SignedOutActions />;
+  return (
+    <Link href="/dashboard" className={cn(buttonVariants(), "shadow-glow-blue")}>
+      Open dashboard
+      <ArrowRight className="size-4" aria-hidden />
+    </Link>
+  );
+}
+
 export function SiteNavbar({ clerkEnabled }: { clerkEnabled: boolean }) {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
@@ -36,39 +68,7 @@ export function SiteNavbar({ clerkEnabled }: { clerkEnabled: boolean }) {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  const accountActions = (
-    <>
-      {clerkEnabled ? (
-        <>
-          <SignedOut>
-            <Link href="/sign-in" className={buttonVariants({ variant: "ghost" })}>
-              Sign in
-            </Link>
-            <Link href="/sign-up" className={cn(buttonVariants(), "shadow-glow-blue")}>
-              Create account
-              <ArrowRight className="size-4" aria-hidden />
-            </Link>
-          </SignedOut>
-          <SignedIn>
-            <Link href="/dashboard" className={cn(buttonVariants(), "shadow-glow-blue")}>
-              Open dashboard
-              <ArrowRight className="size-4" aria-hidden />
-            </Link>
-          </SignedIn>
-        </>
-      ) : (
-        <>
-          <Link href="/sign-in" className={buttonVariants({ variant: "ghost" })}>
-            Sign in
-          </Link>
-          <Link href="/sign-up" className={cn(buttonVariants(), "shadow-glow-blue")}>
-            Create account
-            <ArrowRight className="size-4" aria-hidden />
-          </Link>
-        </>
-      )}
-    </>
-  );
+  const accountActions = clerkEnabled ? <ClerkAccountActions /> : <SignedOutActions />;
 
   return (
     <header

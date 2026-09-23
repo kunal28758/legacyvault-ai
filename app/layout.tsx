@@ -57,6 +57,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
     <html
       lang="en"
       data-theme="dark"
+      data-scroll-behavior="smooth"
       className={`${geistSans.variable} ${geistMono.variable} h-full`}
       suppressHydrationWarning
     >
@@ -71,7 +72,12 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   }
 
   return (
+    // `dynamic` makes Clerk render its own scripts through the nonce-aware
+    // server component; without it the clerk-js tag carries no nonce and the
+    // strict CSP from proxy.ts (T192/T024) blocks it. Every route in this app
+    // is already dynamic (ADR-001 cache safety), so nothing is given up.
     <ClerkProvider
+      dynamic
       appearance={{
         variables: {
           colorPrimary: "#6d8dff",
