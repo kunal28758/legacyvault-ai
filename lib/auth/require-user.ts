@@ -56,3 +56,16 @@ export async function requireRole(roles: readonly UserRole[]): Promise<AppUser> 
 export function isSuperAdmin(user: AppUser): boolean {
   return user.role === "SUPER_ADMIN";
 }
+
+/**
+ * An account inside its deletion grace period may be read but not modified, so
+ * the owner can still sign in and cancel. Every mutating service calls this
+ * before its first write.
+ */
+export function assertAccountActive(user: AppUser): void {
+  if (user.deletionRequestedAt) {
+    throw ApiError.forbidden(
+      "This account is scheduled for deletion. Cancel the deletion to make changes.",
+    );
+  }
+}

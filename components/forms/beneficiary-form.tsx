@@ -22,20 +22,21 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
-import { useDemoStore } from "@/lib/demo/store";
-import type { DemoBeneficiary } from "@/lib/demo/types";
+import { useCreateBeneficiary, useUpdateBeneficiary } from "@/hooks/use-beneficiaries";
+import { ApiError } from "@/lib/api/client";
+import type { Beneficiary } from "@/lib/types/beneficiary";
 import { RELATIONSHIPS, createBeneficiarySchema } from "@/lib/validators/beneficiary.validators";
 import { fieldErrors } from "@/lib/validators/legacy-plan.validators";
 
 interface BeneficiaryFormSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  beneficiary?: DemoBeneficiary | null;
+  beneficiary?: Beneficiary | null;
 }
 
 const empty = { name: "", relationship: "", email: "", phone: "", notes: "" };
 
-/** Add / edit beneficiary in a side sheet with Zod validation and duplicate-email handling. */
+/** Add / edit beneficiary in a side sheet. Persists through the versioned API. */
 export function BeneficiaryFormSheet({
   open,
   onOpenChange,
@@ -55,11 +56,11 @@ function BeneficiaryForm({
   beneficiary,
   onOpenChange,
 }: {
-  beneficiary: DemoBeneficiary | null;
+  beneficiary: Beneficiary | null;
   onOpenChange: (open: boolean) => void;
 }) {
-  const addBeneficiary = useDemoStore((s) => s.addBeneficiary);
-  const updateBeneficiary = useDemoStore((s) => s.updateBeneficiary);
+  const create = useCreateBeneficiary();
+  const update = useUpdateBeneficiary();
   const [values, setValues] = useState(() =>
     beneficiary
       ? {
@@ -72,135 +73,152 @@ function BeneficiaryForm({
       : empty,
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [busy, setBusy] = useState(false);
   const editing = Boolean(beneficiary);
+  const busy = create.isPending || update.isPending;
 
   const set = (field: keyof typeof empty, value: string) => {
     setValues((prev) => ({ ...prev, [field]: value }));
     setErrors((prev) => (prev[field] ? { ...prev, [field]: "" } : prev));
   };
 
-  const submit = (event: React.FormEvent) => {
+  /** Server-side validation is authoritative; map its field errors back onto the form. */
+  const applyServerError = (error: unknown) => {
+    if (error instanceof ApiError) {
+      if (error.code === "DUPLICATE") {
+        setErrors({ email: "A beneficiary with this email already exists." });
+        return;
+      }
+      if (error.fields) {
+        const mapped: Record<string, string> = {};
+        for (const [field, messages] of Object.entries(error.fields)) {
+          if (messages[0]) mapped[field] = messages[0];
+        }
+        setErrors(mapped);
+        if (Object.keys(mapped).length > 0) return;
+      }
+      toast.error(error.message);
+      return;
+    }
+    toast.error("Could not save this beneficiary. Please try again.");
+  };
+
+  const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     const parsed = createBeneficiarySchema.safeParse(values);
     if (!parsed.success) {
       setErrors(fieldErrors(parsed.error));
       return;
     }
-    setBusy(true);
     const payload = {
       ...parsed.data,
       phone: parsed.data.phone || null,
       notes: parsed.data.notes || null,
     };
-    const result = beneficiary
-      ? updateBeneficiary(beneficiary.id, payload)
-      : addBeneficiary(payload);
-    setBusy(false);
-    if (!result.ok) {
-      if (result.code === "DUPLICATE_EMAIL")
-        setErrors({ email: result.message ?? "Duplicate email" });
-      else toast.error(result.message);
-      return;
+
+    try {
+      if (beneficiary) {
+        await update.mutateAsync({ id: beneficiary.id, values: payload });
+        toast.success("Beneficiary updated", {
+          description: "The change is recorded in your audit log.",
+        });
+      } else {
+        await create.mutateAsync(payload);
+        toast.success("Beneficiary added", {
+          description: "Use “Send invitation” when you are ready to share access.",
+        });
+      }
+      onOpenChange(false);
+    } catch (error) {
+      applyServerError(error);
     }
-    toast.success(beneficiary ? "Beneficiary updated" : "Beneficiary added", {
-      description: beneficiary ? undefined : "An invitation email is sent in the live application.",
-    });
-    onOpenChange(false);
   };
 
   return (
-    <>
-      <form onSubmit={submit} className="flex h-full flex-col gap-6">
-        <SheetHeader className="pr-10">
-          <SheetTitle>{editing ? "Edit beneficiary" : "Add beneficiary"}</SheetTitle>
-          <SheetDescription>
-            {editing
-              ? "Changing the name or email is an authoritative change and is recorded in your audit log."
-              : "Beneficiaries receive scoped, time-limited access links — they never need an account."}
-          </SheetDescription>
-        </SheetHeader>
-        <div className="flex-1 space-y-5 px-4">
-          <FormField label="Full name" required error={errors.name}>
-            {(props) => (
-              <Input
-                {...props}
-                value={values.name}
-                onChange={(e) => set("name", e.target.value)}
-                autoComplete="off"
-              />
-            )}
-          </FormField>
-          <FormField label="Relationship" required error={errors.relationship}>
-            {(props) => (
-              <Select
-                value={values.relationship || null}
-                onValueChange={(value) => set("relationship", String(value ?? ""))}
-                items={RELATIONSHIPS.map((r) => ({ value: r, label: r }))}
-              >
-                <SelectTrigger
-                  id={props.id}
-                  className="w-full"
-                  aria-invalid={props["aria-invalid"]}
-                >
-                  <SelectValue placeholder="Choose a relationship" />
-                </SelectTrigger>
-                <SelectContent>
-                  {RELATIONSHIPS.map((r) => (
-                    <SelectItem key={r} value={r}>
-                      {r}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </FormField>
-          <FormField
-            label="Email"
-            required
-            error={errors.email}
-            hint="Access links and one-time codes are sent here."
-          >
-            {(props) => (
-              <Input
-                {...props}
-                type="email"
-                value={values.email}
-                onChange={(e) => set("email", e.target.value)}
-                autoComplete="off"
-              />
-            )}
-          </FormField>
-          <FormField label="Phone" optional error={errors.phone}>
-            {(props) => (
-              <Input
-                {...props}
-                type="tel"
-                value={values.phone}
-                onChange={(e) => set("phone", e.target.value)}
-              />
-            )}
-          </FormField>
-          <FormField label="Notes" optional error={errors.notes}>
-            {(props) => (
-              <Textarea
-                {...props}
-                rows={3}
-                value={values.notes}
-                onChange={(e) => set("notes", e.target.value)}
-              />
-            )}
-          </FormField>
-        </div>
-        <SheetFooter className="flex-row justify-end gap-2 border-t border-border">
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button type="submit" disabled={busy}>
-            {busy ? "Saving…" : editing ? "Save changes" : "Add beneficiary"}
-          </Button>
-        </SheetFooter>
-      </form>
-    </>
+    <form onSubmit={submit} className="flex h-full flex-col gap-6">
+      <SheetHeader className="pr-10">
+        <SheetTitle>{editing ? "Edit beneficiary" : "Add beneficiary"}</SheetTitle>
+        <SheetDescription>
+          {editing
+            ? "Changing the name or email is an authoritative change and is recorded in your audit log."
+            : "Beneficiaries receive scoped, time-limited access links — they never need an account."}
+        </SheetDescription>
+      </SheetHeader>
+      <div className="flex-1 space-y-5 px-4">
+        <FormField label="Full name" required error={errors.name}>
+          {(props) => (
+            <Input
+              {...props}
+              value={values.name}
+              onChange={(e) => set("name", e.target.value)}
+              autoComplete="off"
+            />
+          )}
+        </FormField>
+        <FormField label="Relationship" required error={errors.relationship}>
+          {(props) => (
+            <Select
+              value={values.relationship || null}
+              onValueChange={(value) => set("relationship", String(value ?? ""))}
+              items={RELATIONSHIPS.map((r) => ({ value: r, label: r }))}
+            >
+              <SelectTrigger id={props.id} className="w-full" aria-invalid={props["aria-invalid"]}>
+                <SelectValue placeholder="Choose a relationship" />
+              </SelectTrigger>
+              <SelectContent>
+                {RELATIONSHIPS.map((r) => (
+                  <SelectItem key={r} value={r}>
+                    {r}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </FormField>
+        <FormField
+          label="Email"
+          required
+          error={errors.email}
+          hint="Access links and one-time codes are sent here."
+        >
+          {(props) => (
+            <Input
+              {...props}
+              type="email"
+              value={values.email}
+              onChange={(e) => set("email", e.target.value)}
+              autoComplete="off"
+            />
+          )}
+        </FormField>
+        <FormField label="Phone" optional error={errors.phone}>
+          {(props) => (
+            <Input
+              {...props}
+              type="tel"
+              value={values.phone}
+              onChange={(e) => set("phone", e.target.value)}
+            />
+          )}
+        </FormField>
+        <FormField label="Notes" optional error={errors.notes}>
+          {(props) => (
+            <Textarea
+              {...props}
+              rows={3}
+              value={values.notes}
+              onChange={(e) => set("notes", e.target.value)}
+            />
+          )}
+        </FormField>
+      </div>
+      <SheetFooter className="flex-row justify-end gap-2 border-t border-border">
+        <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          Cancel
+        </Button>
+        <Button type="submit" disabled={busy}>
+          {busy ? "Saving…" : editing ? "Save changes" : "Add beneficiary"}
+        </Button>
+      </SheetFooter>
+    </form>
   );
 }

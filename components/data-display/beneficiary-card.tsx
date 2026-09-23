@@ -7,16 +7,11 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import type { DemoBeneficiary } from "@/lib/demo/types";
+import type { Beneficiary, BeneficiaryRoles } from "@/lib/types/beneficiary";
 import { initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-export interface BeneficiaryRoles {
-  assignmentCount: number;
-  isTrustedContact: boolean;
-  isEmergencyContact: boolean;
-  averageAllocation: number;
-}
+export type { BeneficiaryRoles };
 
 export function RoleChips({ roles, className }: { roles: BeneficiaryRoles; className?: string }) {
   if (!roles.isTrustedContact && !roles.isEmergencyContact)
@@ -56,7 +51,7 @@ export function RoleChips({ roles, className }: { roles: BeneficiaryRoles; class
 }
 
 interface BeneficiaryCardProps {
-  beneficiary: DemoBeneficiary;
+  beneficiary: Beneficiary;
   roles: BeneficiaryRoles;
   onOpen: () => void;
   onMenu?: () => void;

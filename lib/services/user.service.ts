@@ -3,6 +3,7 @@ import "server-only";
 import { ApiError } from "@/lib/api/errors";
 import { audit } from "@/lib/audit/audit.service";
 import type { AppUser } from "@/lib/auth/ensure-app-user";
+import { assertAccountActive } from "@/lib/auth/require-user";
 import { createUserClient } from "@/lib/db/server";
 import * as userRepository from "@/lib/repositories/user.repository";
 import type { UserProfile } from "@/lib/repositories/user.repository";
@@ -47,7 +48,7 @@ export async function updateProfile(
   input: UpdateProfileInput,
   correlationId: string,
 ): Promise<UserProfile> {
-  assertActive(user);
+  assertAccountActive(user);
   const db = await createUserClient();
   const before = await userRepository.findById(db, user.id);
   if (!before) throw ApiError.notFound();
@@ -88,7 +89,7 @@ export async function updatePreferences(
   input: PreferencesInput,
   correlationId: string,
 ): Promise<UserProfile> {
-  assertActive(user);
+  assertAccountActive(user);
   const db = await createUserClient();
   const patch: userRepository.ProfilePatch = {};
   if (input.preferences) patch.preferences = input.preferences as never;
@@ -116,7 +117,7 @@ export async function completeOnboarding(
   user: AppUser,
   correlationId: string,
 ): Promise<UserProfile> {
-  assertActive(user);
+  assertAccountActive(user);
   const db = await createUserClient();
   const updated = await userRepository.updateProfile(db, user.id, {
     onboarding_completed_at: new Date().toISOString(),
@@ -131,13 +132,4 @@ export async function completeOnboarding(
     correlationId,
   });
   return updated;
-}
-
-/** An account inside its deletion grace period may be read but not modified. */
-function assertActive(user: AppUser): void {
-  if (user.deletionRequestedAt) {
-    throw ApiError.forbidden(
-      "This account is scheduled for deletion. Cancel the deletion to make changes.",
-    );
-  }
 }
