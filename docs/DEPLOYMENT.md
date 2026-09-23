@@ -102,6 +102,41 @@ Supabase CLI (v2.117.0, dev dependency) and `supabase/config.toml` are in place
 storage `file_size_limit = "500MiB"` for FR-K002). Hosted projects have not
 received the migrations yet (§ 6, T238).
 
+## 3a. Authentication wiring (Clerk ↔ Supabase) — required for any data access
+
+Two settings must both be in place or **every** database query fails as `anon`:
+
+1. **Clerk issues the role claim.** Supabase maps the JWT `role` claim to the
+   PostgreSQL role. A stock Clerk session token has no `role`, so the request
+   arrives as `anon`, which has no grants and no policies anywhere — the
+   symptom is `42501 permission denied` with a misleading hint to grant
+   privileges to `anon` (never do that).
+
+   ```bash
+   npx clerk config patch --json '{"session":{"claims":{"role":"authenticated"}}}'
+   npx clerk config pull        # verify: session.claims.role === "authenticated"
+   ```
+
+2. **Supabase trusts the Clerk issuer.** `supabase/config.toml`:
+
+   ```toml
+   [auth.third_party.clerk]
+   enabled = true
+   domain = "<your-instance>.clerk.accounts.dev"   # Clerk Frontend API host
+   ```
+
+   Restart the stack after changing this (`pnpm db:stop && pnpm db:start`).
+   Staging and production register their own instance domain (§ 6, T196).
+
+Verify both at once — this must return the caller's own row and nothing else:
+
+```js
+const token = await window.Clerk.session.getToken();
+await fetch(`${SUPABASE_URL}/rest/v1/users?select=id`, {
+  headers: { apikey: PUBLISHABLE_KEY, Authorization: `Bearer ${token}` },
+});
+```
+
 ## 4. Migration workflow (ADR-002 — SQL migrations, no ORM)
 
 1. `pnpm db:migrate:new <name>` creates `supabase/migrations/<timestamp>_<name>.sql`.
@@ -143,7 +178,7 @@ Code that depends on this checklist: `proxy.ts` (T192), `app/layout.tsx`
 
 | # | Setting (source) | Local stack | Staging | Production |
 |---|---|---|---|---|
-| 1 | Clerk added as third-party auth provider (ADR-004 r2) | 🔧 pending `[auth.third_party.clerk]` in `config.toml` once the Clerk domain exists | ⏳ | ⏳ |
+| 1 | Clerk added as third-party auth provider (ADR-004 r2) | ✅ `[auth.third_party.clerk] enabled = true` with the development Frontend API domain in `config.toml` | ⏳ | ⏳ |
 | 2 | Private buckets `quarantine`, `documents`, `videos` (ADR-005) | ⬜ created by migration/T029 | ⏳ | ⏳ |
 | 3 | Global file-size limit ≥ 500 MB (FR-K002) — **Pro plan or higher** | 🔧 `file_size_limit = "500MiB"` | ⏳ | ⏳ |
 | 4 | Automated backups on; **PITR add-on** for production (NFR-DR-001) | n/a | ⏳ | ⏳ |

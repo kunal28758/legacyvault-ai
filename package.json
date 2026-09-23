@@ -25,7 +25,8 @@
     "db:migrate:new": "supabase migration new",
     "db:types": "supabase gen types typescript --local > lib/types/database.ts",
     "db:push": "supabase db push",
-    "db:lint": "supabase db lint"
+    "db:lint": "supabase db lint",
+    "seed:admin": "tsx scripts/seed-admin.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
@@ -36,7 +37,6 @@
     "@react-pdf/renderer": "^4.9.0",
     "@react-three/fiber": "^9.7.0",
     "@sentry/nextjs": "^10.75.0",
-    "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.116.0",
     "@tanstack/react-query": "^5.103.1",
     "class-variance-authority": "^0.7.1",

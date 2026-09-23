@@ -71,9 +71,15 @@ const clerkConfigured = Boolean(
 
 const clerkProxy = clerkMiddleware(
   async (auth, request) => {
-    if (!isPublicRoute(request)) {
-      await auth.protect();
-    }
+    if (isPublicRoute(request)) return;
+
+    // API routes must answer with the JSON error envelope, not a redirect to a
+    // sign-in page, so `withApi()` (T030) performs the check and returns
+    // 401 UNAUTHENTICATED. The proxy is a UX / defence layer only — every
+    // handler re-checks authentication and authorization (constitution III).
+    if (request.nextUrl.pathname.startsWith("/api/")) return;
+
+    await auth.protect();
   },
   {
     contentSecurityPolicy: {

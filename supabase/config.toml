@@ -359,11 +359,15 @@ enabled = false
 # user_pool_id = "my-user-pool-id"
 # user_pool_region = "us-east-1"
 
-# Use Clerk as a third-party provider alongside Supabase Auth.
+# Clerk is the sole application authentication provider (ADR-003); Supabase Auth
+# stays disabled as a sign-in method and Clerk is registered as a third-party
+# issuer so RLS can read `auth.jwt() ->> 'sub'` (ADR-004 § 2). The domain is the
+# Clerk *development* Frontend API host; staging/production projects register
+# their own instance domain through the T196 checklist.
 [auth.third_party.clerk]
-enabled = false
+enabled = true
 # Obtain from https://clerk.com/setup/supabase
-# domain = "example.clerk.accounts.dev"
+domain = "needed-turkey-5633.clerk.accounts.dev"
 
 # OAuth server configuration
 [auth.oauth_server]

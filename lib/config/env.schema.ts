@@ -42,83 +42,134 @@ const booleanString = z
   .default("false")
   .transform((value) => value === "true" || value === "1");
 
-export const serverEnvSchema = z
-  .object({
+/**
+ * Field definitions, grouped by the feature that consumes them.
+ *
+ * The full schema below is composed from these groups and is unchanged: every
+ * variable is still required, nothing is optional that was not optional before,
+ * and production start-up validates the whole set.
+ *
+ * The grouping exists so a feature can validate exactly what it uses at the
+ * moment it uses it (`lib/config/env.ts`). A developer running the database
+ * locally then gets a precise error about the database variables instead of
+ * being blocked by an unrelated AI or email credential they do not need — which
+ * is what `docs/DEPLOYMENT.md` § 3 describes. It is a narrower failure, never a
+ * weaker one.
+ */
+export const serverEnvGroups = {
+  core: {
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
     APP_URL: z.url(),
-
-    // Identity (ADR-003)
+  },
+  // Identity (ADR-003)
+  clerk: {
     CLERK_SECRET_KEY: z.string().min(1),
+  },
+  clerkWebhook: {
     CLERK_WEBHOOK_SIGNING_SECRET: z.string().min(1),
-
-    // Database / storage (ADR-002, ADR-005)
+  },
+  // Database / storage (ADR-002, ADR-005)
+  database: {
     SUPABASE_URL: z.url(),
     SUPABASE_SECRET_KEY: z.string().min(1),
-
-    // Application cryptography (constitution IV, ADR-014)
+  },
+  // Application cryptography (constitution IV, ADR-014)
+  encryption: {
     ENCRYPTION_KEY: versionedKey,
     ENCRYPTION_KEY_PREVIOUS: versionedKey.optional(),
+  },
+  accessCookie: {
     ACCESS_COOKIE_KEY: rawKey32,
-
-    // AI providers (ADR-008)
+  },
+  // AI providers (ADR-008)
+  ai: {
     OPENAI_API_KEY: z.string().min(1),
     GEMINI_API_KEY: z.string().min(1),
     AI_DEFAULT_PROVIDER: z.enum(["openai", "gemini"]).default("openai"),
-
-    // Email (ADR-009)
+  },
+  // Email (ADR-009)
+  email: {
     RESEND_API_KEY: z.string().min(1),
     EMAIL_FROM: z.string().min(3),
     EMAIL_WEBHOOK_SECRET: z.string().min(1),
-
-    // Observability (ADR-010) — optional locally, expected in production
+  },
+  // Observability (ADR-010) — optional locally, required in production below
+  observability: {
     SENTRY_DSN: z.url().optional(),
-
-    // Internal automation (ADR-006)
+  },
+  // Internal automation (ADR-006)
+  cron: {
     CRON_SECRET: z.string().min(32, "CRON_SECRET must be at least 32 characters"),
-
-    // Malware scanning (ADR-015)
+  },
+  // Malware scanning (ADR-015)
+  malwareScanner: {
     MALWARE_SCANNER_PROVIDER: z.enum(["noop", "clamav"]).default("noop"),
     CLAMAV_HOST: z.string().min(1).optional(),
     CLAMAV_PORT: z.coerce.number().int().min(1).max(65535).default(3310),
     CLAMAV_TLS: booleanString,
-
-    // Operations
+  },
+  // Operations
+  operations: {
     ADMIN_EMAIL: z.email(),
-  })
-  .superRefine((env, ctx) => {
-    if (env.NODE_ENV === "production" && env.MALWARE_SCANNER_PROVIDER === "noop") {
-      ctx.addIssue({
-        code: "custom",
-        path: ["MALWARE_SCANNER_PROVIDER"],
-        message:
-          "MALWARE_SCANNER_PROVIDER=noop is refused in production (ADR-015): configure clamav.",
-      });
-    }
-    if (env.MALWARE_SCANNER_PROVIDER === "clamav" && !env.CLAMAV_HOST) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["CLAMAV_HOST"],
-        message: "CLAMAV_HOST is required when MALWARE_SCANNER_PROVIDER=clamav.",
-      });
-    }
-    if (env.NODE_ENV === "production" && !env.SENTRY_DSN) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["SENTRY_DSN"],
-        message: "SENTRY_DSN is required in production (constitution XXI, ADR-010).",
-      });
-    }
-    if (
-      env.ENCRYPTION_KEY_PREVIOUS &&
-      env.ENCRYPTION_KEY_PREVIOUS.keyId === env.ENCRYPTION_KEY.keyId
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["ENCRYPTION_KEY_PREVIOUS"],
-        message: "ENCRYPTION_KEY_PREVIOUS must use a different keyId than ENCRYPTION_KEY.",
-      });
-    }
-  });
+  },
+} as const;
+
+export type ServerEnvGroupName = keyof typeof serverEnvGroups;
+
+/** Validates one feature's variables. The rules are identical to the full schema. */
+export function groupSchema<K extends ServerEnvGroupName>(name: K) {
+  return z.object(serverEnvGroups[name]);
+}
+
+export const serverEnvShape = {
+  ...serverEnvGroups.core,
+  ...serverEnvGroups.clerk,
+  ...serverEnvGroups.clerkWebhook,
+  ...serverEnvGroups.database,
+  ...serverEnvGroups.encryption,
+  ...serverEnvGroups.accessCookie,
+  ...serverEnvGroups.ai,
+  ...serverEnvGroups.email,
+  ...serverEnvGroups.observability,
+  ...serverEnvGroups.cron,
+  ...serverEnvGroups.malwareScanner,
+  ...serverEnvGroups.operations,
+} as const;
+
+export const serverEnvSchema = z.object(serverEnvShape).superRefine((env, ctx) => {
+  if (env.NODE_ENV === "production" && env.MALWARE_SCANNER_PROVIDER === "noop") {
+    ctx.addIssue({
+      code: "custom",
+      path: ["MALWARE_SCANNER_PROVIDER"],
+      message:
+        "MALWARE_SCANNER_PROVIDER=noop is refused in production (ADR-015): configure clamav.",
+    });
+  }
+  if (env.MALWARE_SCANNER_PROVIDER === "clamav" && !env.CLAMAV_HOST) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["CLAMAV_HOST"],
+      message: "CLAMAV_HOST is required when MALWARE_SCANNER_PROVIDER=clamav.",
+    });
+  }
+  if (env.NODE_ENV === "production" && !env.SENTRY_DSN) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["SENTRY_DSN"],
+      message: "SENTRY_DSN is required in production (constitution XXI, ADR-010).",
+    });
+  }
+  if (
+    env.ENCRYPTION_KEY_PREVIOUS &&
+    env.ENCRYPTION_KEY_PREVIOUS.keyId === env.ENCRYPTION_KEY.keyId
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["ENCRYPTION_KEY_PREVIOUS"],
+      message: "ENCRYPTION_KEY_PREVIOUS must use a different keyId than ENCRYPTION_KEY.",
+    });
+  }
+});
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
 

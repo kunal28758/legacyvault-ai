@@ -55,6 +55,11 @@ export default defineConfig({
           name: "integration",
           environment: "node",
           include: ["tests/integration/**/*.test.ts"],
+          // Loads .env.local into the worker so the local Supabase stack is reachable.
+          setupFiles: [
+            path.resolve(rootDir, "tests/integration-setup.ts"),
+            path.resolve(rootDir, "tests/setup.ts"),
+          ],
           testTimeout: 30_000,
           hookTimeout: 60_000,
         },
