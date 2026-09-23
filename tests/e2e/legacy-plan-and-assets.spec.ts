@@ -16,7 +16,6 @@ import { E2E_USERS } from "./users";
  */
 loadLocalEnv();
 
-const email = E2E_USERS.legacyPlan;
 const configured = Boolean(
   process.env.CLERK_SECRET_KEY && process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
 );
@@ -27,6 +26,22 @@ const assetName = `E2E Savings ${unique}`;
 const renamedAsset = `${assetName} renamed`;
 const legalName = `E2E Planner ${unique}`;
 
+/**
+ * Navigates and waits for the page's own list request to come back.
+ *
+ * Clicking straight after `goto` can land before React has hydrated, and the
+ * click is then swallowed by the server-rendered markup. Waiting for the
+ * client-issued fetch proves the page is interactive.
+ */
+async function gotoAndSettle(page: Page, path: string, apiPath: string): Promise<void> {
+  const settled = page.waitForResponse(
+    (response) => response.url().includes(apiPath) && response.request().method() === "GET",
+    { timeout: 60_000 },
+  );
+  await page.goto(path);
+  await settled;
+}
+
 async function dismissToasts(page: Page): Promise<void> {
   // Sonner pauses its dismiss timer while the pointer is over the notification
   // region, and that region overlaps the sheet footer.
@@ -34,24 +49,31 @@ async function dismissToasts(page: Page): Promise<void> {
   await expect(page.locator("[data-sonner-toast]")).toHaveCount(0, { timeout: 30_000 });
 }
 
-test.describe("legacy plan and assets", () => {
-  test.skip(
-    !configured,
-    "Clerk development keys are not configured — see docs/DEPLOYMENT.md § Clerk.",
-  );
-  test.describe.configure({ mode: "serial" });
-
+/**
+ * Each journey signs in as its own account: the two are individually heavy
+ * enough that sharing one would approach the contracted 100-requests-per-15-min
+ * budget, and the limiter is one of the things these tests exist to run against.
+ */
+function signInAs(email: string) {
   test.beforeEach(async ({ page }) => {
     test.setTimeout(180_000);
     await page.goto("/");
     await clerk.signIn({ page, signInParams: { strategy: "email_code", identifier: email } });
   });
+}
+
+test.describe("legacy plan and assets", () => {
+  test.skip(
+    !configured,
+    "Clerk development keys are not configured — see docs/DEPLOYMENT.md § Clerk.",
+  );
+  signInAs(E2E_USERS.legacyPlan);
 
   test("saves a plan section, then creates, assigns, edits and deletes an asset", async ({
     page,
   }) => {
     // ── A beneficiary to assign the asset to ────────────────────────────────
-    await page.goto("/beneficiaries");
+    await gotoAndSettle(page, "/beneficiaries", "/api/v1/beneficiaries");
     await page
       .getByRole("button", { name: /Add (your first )?beneficiary/ })
       .first()
@@ -96,7 +118,7 @@ test.describe("legacy plan and assets", () => {
     ).toBeAttached();
 
     // ── Create an asset through create_asset() ──────────────────────────────
-    await page.goto("/assets/financial");
+    await gotoAndSettle(page, "/assets/financial", "/api/v1/assets/financial");
     await page
       .getByRole("button", { name: /Add (your first )?asset/ })
       .first()
@@ -142,7 +164,7 @@ test.describe("legacy plan and assets", () => {
     await dismissToasts(page);
 
     // ── Clean up the beneficiary this run created ───────────────────────────
-    await page.goto("/beneficiaries");
+    await gotoAndSettle(page, "/beneficiaries", "/api/v1/beneficiaries");
     await page.getByRole("button", { name: `Actions for ${beneficiaryName}` }).click();
     await page.getByRole("menuitem", { name: "Remove" }).click();
     await page.getByRole("checkbox").first().check();
@@ -152,26 +174,43 @@ test.describe("legacy plan and assets", () => {
       { timeout: 30_000 },
     );
   });
+});
+
+test.describe("asset allocation limits", () => {
+  test.skip(
+    !configured,
+    "Clerk development keys are not configured — see docs/DEPLOYMENT.md § Clerk.",
+  );
+  signInAs(E2E_USERS.assetAllocation);
 
   test("refuses an allocation that would exceed 100%", async ({ page }) => {
     const name = `E2E Overallocated ${unique}`;
     const heir = `E2E Second Heir ${unique}`;
+    const other = `E2E Third Heir ${unique}`;
 
-    await page.goto("/beneficiaries");
-    await page
-      .getByRole("button", { name: /Add (your first )?beneficiary/ })
-      .first()
-      .click();
-    await page.getByLabel("Full name").fill(heir);
-    await page.locator('[data-slot="select-trigger"]').click();
-    await page.getByRole("option", { name: "Friend", exact: true }).click();
-    await page.getByLabel("Email").fill(`e2e-second+${unique}@example.com`);
-    await page.getByRole("button", { name: "Add beneficiary", exact: true }).last().click();
-    await expect(page.getByRole("table").locator("tr", { hasText: heir })).toBeVisible({
-      timeout: 20_000,
-    });
+    // Two beneficiaries: the dialog hides anyone already assigned to the asset,
+    // so attempting the overflow needs somebody who is not the first heir.
+    await gotoAndSettle(page, "/beneficiaries", "/api/v1/beneficiaries");
+    for (const [person, address] of [
+      [heir, `e2e-second+${unique}@example.com`],
+      [other, `e2e-third+${unique}@example.com`],
+    ]) {
+      await page
+        .getByRole("button", { name: /Add (your first )?beneficiary/ })
+        .first()
+        .click();
+      await page.getByLabel("Full name").fill(person);
+      await page.locator('[data-slot="select-trigger"]').click();
+      await page.getByRole("option", { name: "Friend", exact: true }).click();
+      await page.getByLabel("Email").fill(address);
+      await page.getByRole("button", { name: "Add beneficiary", exact: true }).last().click();
+      await expect(page.getByRole("table").locator("tr", { hasText: person })).toBeVisible({
+        timeout: 20_000,
+      });
+      await dismissToasts(page);
+    }
 
-    await page.goto("/assets/physical");
+    await gotoAndSettle(page, "/assets/physical", "/api/v1/assets/physical");
     await page
       .getByRole("button", { name: /Add (your first )?asset/ })
       .first()
@@ -197,7 +236,7 @@ test.describe("legacy plan and assets", () => {
     await page.getByRole("menuitem", { name: "Assign beneficiary" }).click();
     const dialog = page.getByRole("dialog");
     await dialog.locator('[data-slot="select-trigger"]').click();
-    await page.getByRole("option").first().click();
+    await page.getByRole("option", { name: new RegExp(other) }).click();
     await page.getByLabel("Allocation").fill("10");
     await page.getByRole("button", { name: "Confirm assignment" }).click();
 
@@ -212,13 +251,16 @@ test.describe("legacy plan and assets", () => {
     await page.getByRole("button", { name: "Delete asset" }).click();
     await expect(page.getByText(name)).toHaveCount(0, { timeout: 30_000 });
 
-    await page.goto("/beneficiaries");
-    await page.getByRole("button", { name: `Actions for ${heir}` }).click();
-    await page.getByRole("menuitem", { name: "Remove" }).click();
-    await page.getByRole("checkbox").first().check();
-    await page.getByRole("button", { name: "Remove beneficiary" }).click();
-    await expect(page.getByRole("table").locator("tr", { hasText: heir })).toHaveCount(0, {
-      timeout: 30_000,
-    });
+    await gotoAndSettle(page, "/beneficiaries", "/api/v1/beneficiaries");
+    for (const person of [heir, other]) {
+      await page.getByRole("button", { name: `Actions for ${person}` }).click();
+      await page.getByRole("menuitem", { name: "Remove" }).click();
+      await page.getByRole("checkbox").first().check();
+      await page.getByRole("button", { name: "Remove beneficiary" }).click();
+      await expect(page.getByRole("table").locator("tr", { hasText: person })).toHaveCount(0, {
+        timeout: 30_000,
+      });
+      await dismissToasts(page);
+    }
   });
 });

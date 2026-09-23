@@ -120,12 +120,38 @@ export const assetAssignmentParamSchema = z.object({
   assignmentId: z.uuid("Unknown assignment."),
 });
 
-export const assetListQuerySchema = z.object({
-  category: z.string().trim().max(40).optional(),
+const listWindow = {
   q: z.string().trim().max(100).optional(),
   page: z.coerce.number().int().min(1).max(10_000).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(100),
-});
+};
+
+/**
+ * The category filter is an enum column, so it is checked against the class it
+ * belongs to. Without that, an arbitrary string reaches PostgREST and Postgres
+ * rejects the cast — a database error for what is plainly bad input.
+ */
+export const assetListQuerySchemas = {
+  financial: z.object({
+    ...listWindow,
+    category: z.enum(FINANCIAL_CATEGORIES.map((c) => c.value) as [string, ...string[]]).optional(),
+  }),
+  physical: z.object({
+    ...listWindow,
+    category: z.enum(PHYSICAL_CATEGORIES.map((c) => c.value) as [string, ...string[]]).optional(),
+  }),
+  digital: z.object({
+    ...listWindow,
+    category: z.enum(DIGITAL_CATEGORIES.map((c) => c.value) as [string, ...string[]]).optional(),
+  }),
+} as const;
+
+/** Shape shared by all three, for callers that do not know the class yet. */
+export const assetListQuerySchema = z.object({ ...listWindow, category: z.string().optional() });
+
+export function assetListQuerySchemaFor(slug: AssetTypeSlug): z.ZodType<AssetListQuery> {
+  return assetListQuerySchemas[slug] as unknown as z.ZodType<AssetListQuery>;
+}
 
 /**
  * Server-side value shapes. The browser form parses strings; the API takes the

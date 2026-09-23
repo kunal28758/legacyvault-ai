@@ -19,6 +19,7 @@ import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { WizardNavigation, WizardStep } from "@/components/wizard/wizard-step";
 import { useWizard } from "@/components/wizard/wizard-provider";
+import { usePlanReview } from "@/hooks/use-legacy-plan";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -31,12 +32,20 @@ import { cn } from "@/lib/utils";
 export function ReviewStep() {
   const { completeness, goTo, previous, finalize, plan, unassignedAssetCount, readOnly, busy } =
     useWizard();
+  // The server recomputes completeness from the persisted records; that verdict,
+  // not the local one, is what finalization will act on. The local computation
+  // keeps the list rendered while the request is in flight.
+  const review = usePlanReview(plan.status === "DRAFT" ? plan.id : null);
   const [open, setOpen] = useState(false);
-  const sections = Object.values(completeness.sections);
-  const incomplete = completeness.incompleteSections;
-  const personalMissing = !completeness.sections["personal-details"].complete;
+
+  const sections = Object.values(review.data?.sections ?? completeness.sections);
+  const incomplete = review.data?.incompleteSections ?? completeness.incompleteSections;
+  const personalMissing = !(
+    review.data?.personalDetailsComplete ?? completeness.sections["personal-details"].complete
+  );
   const optionalIncomplete = incomplete.filter((k) => k !== "personal-details");
-  const unassignedInPlan = unassignedAssetCount;
+  const unassignedInPlan = review.data?.unassignedAssetCount ?? unassignedAssetCount;
+  const percent = review.data?.percent ?? completeness.percent;
 
   const handleFinalize = async () => {
     // The wizard flushes pending edits, re-checks completeness server-side and
@@ -100,7 +109,7 @@ export function ReviewStep() {
             <CardContent className="space-y-3 p-5">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium">Completeness</p>
-                <span className="text-2xl font-semibold tabular-nums">{completeness.percent}%</span>
+                <span className="text-2xl font-semibold tabular-nums">{percent}%</span>
               </div>
               <p className="text-xs text-muted-foreground">
                 {sections.length - incomplete.length} of {sections.length} sections complete
@@ -154,7 +163,7 @@ export function ReviewStep() {
           !readOnly && (
             <Button
               className="shadow-glow-blue"
-              disabled={personalMissing || busy}
+              disabled={personalMissing || busy || review.isPending}
               onClick={() => setOpen(true)}
             >
               <FileCheck2 data-icon="inline-start" />
@@ -173,7 +182,7 @@ export function ReviewStep() {
         requiresReverification
         acknowledgement={
           optionalIncomplete.length > 0
-            ? `I acknowledge that ${optionalIncomplete.map((k) => completeness.sections[k].title).join(", ")} ${optionalIncomplete.length > 1 ? "are" : "is"} incomplete.`
+            ? `I acknowledge that ${optionalIncomplete.map((k) => (review.data?.sections ?? completeness.sections)[k].title).join(", ")} ${optionalIncomplete.length > 1 ? "are" : "is"} incomplete.`
             : undefined
         }
         onConfirm={handleFinalize}
@@ -183,7 +192,7 @@ export function ReviewStep() {
             {optionalIncomplete.map((key) => (
               <li key={key} className="flex items-center gap-2 text-muted-foreground">
                 <CircleDashed className="size-3.5 text-warning" aria-hidden />
-                {completeness.sections[key].title}
+                {(review.data?.sections ?? completeness.sections)[key].title}
               </li>
             ))}
           </ul>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Eye, Lock, ShieldCheck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -48,26 +48,37 @@ export function MaskedField({
   const [value, setValue] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  /** Bumped on close and on each reveal, so a late response can be ignored. */
+  const request = useRef(0);
 
   const close = (next: boolean) => {
     setOpen(next);
     if (!next) {
+      // Nothing decrypted outlives the dialog.
+      request.current += 1;
       setValue(null);
       setError(null);
+      setLoading(false);
     }
   };
 
   const reveal = async () => {
     setOpen(true);
     if (!onReveal) return;
+    // A reveal that resolves after the dialog was closed must be discarded
+    // rather than quietly restoring plaintext into a hidden component.
+    const ticket = (request.current += 1);
     setLoading(true);
     setError(null);
     try {
-      setValue(await onReveal());
+      const revealed = await onReveal();
+      if (request.current === ticket) setValue(revealed);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not reveal this value.");
+      if (request.current === ticket) {
+        setError(caught instanceof Error ? caught.message : "Could not reveal this value.");
+      }
     } finally {
-      setLoading(false);
+      if (request.current === ticket) setLoading(false);
     }
   };
 

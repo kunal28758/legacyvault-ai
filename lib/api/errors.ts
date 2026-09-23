@@ -144,6 +144,8 @@ const SQLSTATE_STATE_CONFLICT = "LV409";
 const SQLSTATE_UNIQUE_VIOLATION = "23505";
 const SQLSTATE_CHECK_VIOLATION = "23514";
 const SQLSTATE_FK_VIOLATION = "23503";
+/** A value that is not a valid enum member / number / uuid for its column. */
+const SQLSTATE_INVALID_TEXT = "22P02";
 
 const INVARIANT_MESSAGES: Partial<Record<string, { code: ApiErrorCode; message: string }>> = {
   PLAN_INCOMPLETE: {
@@ -252,7 +254,11 @@ export function mapDatabaseError(error: unknown): ApiError {
     return new ApiError(409, "DUPLICATE", "That record already exists.", { cause: error });
   }
 
-  if (sqlstate === SQLSTATE_CHECK_VIOLATION || sqlstate === SQLSTATE_FK_VIOLATION) {
+  if (
+    sqlstate === SQLSTATE_CHECK_VIOLATION ||
+    sqlstate === SQLSTATE_FK_VIOLATION ||
+    sqlstate === SQLSTATE_INVALID_TEXT
+  ) {
     return new ApiError(422, "VALIDATION_ERROR", "Some of that information is not valid.", {
       cause: error,
     });

@@ -1,13 +1,13 @@
 import "server-only";
 
 import { ApiError } from "@/lib/api/errors";
-import { audit } from "@/lib/audit/audit.service";
 import type { AppUser } from "@/lib/auth/ensure-app-user";
 import { assertAccountActive } from "@/lib/auth/require-user";
 import { createUserClient, type TypedSupabaseClient } from "@/lib/db/server";
 import { computeCompleteness, type CompletenessContext } from "@/lib/legacy-plan/completeness";
 import * as assetRepository from "@/lib/repositories/asset.repository";
 import * as planRepository from "@/lib/repositories/legacy-plan.repository";
+import type { AssetKind } from "@/lib/types/asset";
 import type {
   LegacyPlan,
   LegacyPlanOverview,
@@ -134,11 +134,7 @@ export async function savePlanStep(
   // Completeness is decided server-side against the real records, then handed
   // to save_plan_step() as `isComplete`. A client cannot claim a section is
   // complete when the records it references do not exist.
-  const context = await completenessContext(db, user, {
-    ...plan.stepsData,
-    [step]: body.data,
-  });
-  const complete = computeCompleteness(context).sections[step].complete;
+  const complete = await isSectionComplete(db, user, step, body.data);
 
   const { data, error } = await db.rpc("save_plan_step", {
     p_plan_id: planId,
@@ -199,7 +195,23 @@ export async function finalizePlan(
   const plan = await planRepository.findById(db, user.id, planId);
   if (!plan) throw ApiError.notFound();
 
-  // Sections are re-evaluated and re-saved first, so the snapshot's
+  // Optimistic concurrency, before anything is written: finalization snapshots
+  // the plan permanently, so a caller holding a stale view must not be able to
+  // freeze content it never saw. The refresh below advances `lockVersion`, so
+  // this comparison has to happen first — `finalize_legacy_plan()` would
+  // otherwise only ever see the server's own, always-matching value.
+  if (plan.lockVersion !== body.lockVersion) {
+    throw new ApiError(
+      409,
+      "LOCK_CONFLICT",
+      "This was changed somewhere else. Reload and try again.",
+      {
+        details: { lockVersion: plan.lockVersion },
+      },
+    );
+  }
+
+  // Sections are re-evaluated and re-saved next, so the snapshot's
   // `completion_status` reflects the records as they are right now rather than
   // whatever the browser last sent.
   const lockVersion = await refreshCompletionStatus(db, user, plan, correlationId);
@@ -238,6 +250,60 @@ export async function createNewDraft(
 }
 
 /* ── Helpers ──────────────────────────────────────────────────────────────── */
+
+/** Which records each section's completeness rule actually cross-checks. */
+const SECTION_REQUIREMENTS: Record<
+  PlanSectionKey,
+  { beneficiaries?: true; assetKind?: AssetKind; documents?: true }
+> = {
+  "personal-details": {},
+  "family-information": {},
+  beneficiaries: { beneficiaries: true },
+  "financial-assets": { assetKind: "FINANCIAL_ASSET" },
+  "physical-assets": { assetKind: "PHYSICAL_ASSET" },
+  "digital-assets": { assetKind: "DIGITAL_ASSET" },
+  "witness-details": {},
+  "special-wishes": {},
+  "document-attachments": { documents: true },
+};
+
+/**
+ * Completeness of the one section being saved.
+ *
+ * Auto-save is the hottest write path in the application, so it reads only the
+ * records that section's rule refers to — most sections refer to none, and
+ * loading the whole inventory on every keystroke burst would be five queries
+ * for an answer that cannot depend on them.
+ */
+async function isSectionComplete(
+  db: TypedSupabaseClient,
+  user: AppUser,
+  step: PlanSectionKey,
+  data: Record<string, unknown>,
+): Promise<boolean> {
+  const needs = SECTION_REQUIREMENTS[step];
+
+  const [beneficiaries, assetIds, documents] = await Promise.all([
+    needs.beneficiaries
+      ? db.from("beneficiaries").select("id, status").eq("user_id", user.id).is("deleted_at", null)
+      : null,
+    needs.assetKind ? assetRepository.listIds(db, user.id, needs.assetKind) : null,
+    needs.documents
+      ? db.from("documents").select("id").eq("user_id", user.id).is("deleted_at", null)
+      : null,
+  ]);
+  if (beneficiaries?.error) throw beneficiaries.error;
+  if (documents?.error) throw documents.error;
+
+  // Only this section's entry is supplied, and only this section's verdict is
+  // read: every rule in `computeCompleteness` looks at its own key alone.
+  return computeCompleteness({
+    stepsData: { [step]: data },
+    beneficiaries: beneficiaries?.data ?? [],
+    assets: (assetIds ?? []).map((id) => ({ id, kind: needs.assetKind! })),
+    documents: documents?.data ?? [],
+  }).sections[step].complete;
+}
 
 /**
  * The records the completeness rules cross-check against.
@@ -315,21 +381,4 @@ async function refreshCompletionStatus(
   }
 
   return lockVersion;
-}
-
-/** Audit helper kept beside the lifecycle it records (the guarded functions audit their own). */
-export async function auditPlanView(
-  user: AppUser,
-  planId: string,
-  correlationId: string,
-): Promise<void> {
-  await audit.log({
-    actorId: user.id,
-    actorRole: user.role,
-    action: "plan.reviewed",
-    resourceType: "legacy_plan",
-    resourceId: planId,
-    outcome: "SUCCESS",
-    correlationId,
-  });
 }

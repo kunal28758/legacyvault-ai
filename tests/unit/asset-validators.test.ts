@@ -6,7 +6,7 @@ import {
   assetCreateSchemaFor,
   assetDeleteBodySchema,
   assetIdParamSchema,
-  assetListQuerySchema,
+  assetListQuerySchemaFor,
   assetTypeParamSchema,
   assetUpdateSchemaFor,
 } from "@/lib/validators/asset.validators";
@@ -179,11 +179,26 @@ describe("assignment and deletion", () => {
 
 describe("list query", () => {
   it("defaults the window and caps the page size", () => {
-    expect(assetListQuerySchema.parse({})).toEqual({ page: 1, limit: 100 });
-    expect(assetListQuerySchema.safeParse({ limit: "5000" }).success).toBe(false);
-    expect(assetListQuerySchema.parse({ page: "2", limit: "10" })).toMatchObject({
+    expect(assetListQuerySchemaFor("financial").parse({})).toEqual({ page: 1, limit: 100 });
+    expect(assetListQuerySchemaFor("financial").safeParse({ limit: "5000" }).success).toBe(false);
+    expect(assetListQuerySchemaFor("financial").parse({ page: "2", limit: "10" })).toMatchObject({
       page: 2,
       limit: 10,
     });
+  });
+
+  it("validates the category against its own class, so no bad enum reaches SQL", () => {
+    expect(
+      assetListQuerySchemaFor("financial").safeParse({ category: "BANK_ACCOUNT" }).success,
+    ).toBe(true);
+    // A category from another class, or plain nonsense, is rejected here rather
+    // than failing the enum cast in PostgreSQL.
+    expect(
+      assetListQuerySchemaFor("financial").safeParse({ category: "REAL_ESTATE" }).success,
+    ).toBe(false);
+    expect(assetListQuerySchemaFor("physical").safeParse({ category: "BOGUS" }).success).toBe(
+      false,
+    );
+    expect(assetListQuerySchemaFor("digital").safeParse({ category: "DOMAIN" }).success).toBe(true);
   });
 });

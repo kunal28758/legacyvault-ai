@@ -1,12 +1,11 @@
-import { parseJsonBody } from "@/lib/api/validate";
+import { parseJsonBody, parseQuery } from "@/lib/api/validate";
 import { withApi } from "@/lib/api/with-api";
 import * as assetService from "@/lib/services/asset.service";
 import { ASSET_KIND_BY_SLUG, type AssetTypeSlug } from "@/lib/types/asset";
 import {
   assetCreateSchemaFor,
-  assetListQuerySchema,
+  assetListQuerySchemaFor,
   assetTypeParamSchema,
-  type AssetListQuery,
 } from "@/lib/validators/asset.validators";
 
 type TypeParams = { type: AssetTypeSlug };
@@ -18,16 +17,20 @@ type TypeParams = { type: AssetTypeSlug };
  * body schema is chosen from it — each class has its own allow-list, which
  * `create_asset()` then enforces a second time inside the transaction.
  */
-export const GET = withApi<undefined, AssetListQuery, TypeParams>(
+export const GET = withApi<undefined, undefined, TypeParams>(
   {
     auth: "user",
     rateLimit: "default",
-    schema: { params: assetTypeParamSchema, query: assetListQuerySchema },
+    schema: { params: assetTypeParamSchema },
     auditAction: "asset.listed",
     auditResourceType: "asset",
   },
-  async ({ user, params, query }) =>
-    assetService.listAssets(user, ASSET_KIND_BY_SLUG[params.type], query),
+  async ({ user, params, request }) => {
+    // The query schema depends on the validated class, so it is parsed here
+    // rather than in the pipeline — the same reason the body is.
+    const query = parseQuery(new URL(request.url), assetListQuerySchemaFor(params.type));
+    return assetService.listAssets(user, ASSET_KIND_BY_SLUG[params.type], query);
+  },
 );
 
 export const POST = withApi<undefined, undefined, TypeParams>(

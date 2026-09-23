@@ -74,10 +74,11 @@ export function usePlanReview(id: string | null): UseQueryResult<PlanReview> {
 
 export function usePlanVersions(
   id: string | null,
+  options: { enabled?: boolean } = {},
 ): UseQueryResult<{ items: PlanVersionSummary[] }> {
   return useQuery({
     queryKey: queryKeys.legacyPlan.versions(id ?? "none"),
-    enabled: Boolean(id),
+    enabled: Boolean(id) && (options.enabled ?? true),
     queryFn: async ({ signal }) => {
       const { data } = await apiClient.get<{ items: PlanVersionSummary[] }>(
         `/legacy-plans/${id}/versions`,

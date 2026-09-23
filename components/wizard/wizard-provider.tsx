@@ -72,6 +72,7 @@ class DraftSession {
   private lock = 0;
   private saving: Promise<void> | null = null;
   private claimed = false;
+  private conflict = false;
 
   /** The token `save_plan_step()` compares; each save returns the next one. */
   get lockVersion(): number {
@@ -87,6 +88,20 @@ class DraftSession {
     if (this.claimed) return false;
     this.claimed = true;
     return true;
+  }
+
+  /**
+   * Set when the server refused a save because the draft moved on. Every later
+   * save would carry the same stale token and fail identically, so auto-save
+   * stops until the page is reloaded rather than retrying once per keystroke.
+   */
+  get conflicted(): boolean {
+    return this.conflict;
+  }
+
+  markConflicted() {
+    this.conflict = true;
+    this.cancel();
   }
 
   /** Callers await the running save chain instead of starting a second one. */
@@ -163,7 +178,11 @@ export function WizardProvider({
   const financial = useAssets("FINANCIAL_ASSET");
   const physical = useAssets("PHYSICAL_ASSET");
   const digital = useAssets("DIGITAL_ASSET");
-  const versionsQuery = usePlanVersions(plan?.id ?? null);
+  // Only the confirmation step renders the version history, so it is not
+  // fetched on every wizard load.
+  const versionsQuery = usePlanVersions(plan?.id ?? null, {
+    enabled: currentStep === TOTAL_PLAN_STEPS || (plan != null && plan.status !== "DRAFT"),
+  });
 
   const savePlanStep = useSavePlanStep(plan?.id ?? null);
   const finalizePlan = useFinalizePlan(plan?.id ?? null);
@@ -230,6 +249,7 @@ export function WizardProvider({
    * in-flight promise rather than starting a second chain.
    */
   const flush = useCallback(async (): Promise<void> => {
+    if (session.conflicted) return;
     session.cancel();
     if (session.inFlight) await session.inFlight;
 
@@ -251,6 +271,7 @@ export function WizardProvider({
       } catch (error) {
         setSaveStatus("error");
         if (error instanceof ApiError && error.code === "LOCK_CONFLICT") {
+          session.markConflicted();
           toast.error("This draft changed somewhere else", {
             description: "Reload the page to pick up the newer version before editing again.",
           });
@@ -271,6 +292,10 @@ export function WizardProvider({
   const updateSection = useCallback(
     (key: PlanSectionKey, data: Record<string, unknown>) => {
       setStepsData((previous) => ({ ...previous, [key]: data }));
+      if (session.conflicted) {
+        setSaveStatus("error");
+        return;
+      }
       session.set(key, data);
       setSaveStatus("dirty");
       session.schedule(() => void flush(), 1200);

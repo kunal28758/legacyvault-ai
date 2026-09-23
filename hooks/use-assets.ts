@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback } from "react";
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 
 import { apiClient } from "@/lib/api/client";
@@ -185,18 +186,20 @@ export function useUnassignBeneficiary(kind: AssetKind) {
 /**
  * Fetches the decrypted fields for one asset.
  *
- * A mutation rather than a query so the plaintext is handed to the caller and
- * then forgotten: nothing is cached, nothing refetches, and the request only
- * happens when somebody explicitly asks to reveal.
+ * Deliberately a bare async function rather than a query *or* a mutation: both
+ * retain their last result in a TanStack cache for as long as the component is
+ * mounted, which would leave decrypted account numbers and credentials sitting
+ * in a store that devtools can read. Here the plaintext exists only in the
+ * caller's local variable, for as long as it needs it.
  */
 export function useRevealSensitiveFields(kind: AssetKind) {
-  return useMutation({
-    mutationFn: async (id: string) => {
+  return useCallback(
+    async (id: string): Promise<RevealedSensitiveFields> => {
       const { data } = await apiClient.get<RevealedSensitiveFields>(
         `/assets/${slug(kind)}/${id}/decrypt`,
       );
       return data;
     },
-    gcTime: 0,
-  });
+    [kind],
+  );
 }

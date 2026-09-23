@@ -64,6 +64,17 @@ describe("error mapping", () => {
     expect(plan.code).toBe("PLAN_INCOMPLETE");
   });
 
+  it("treats a malformed value as 422 rather than a server fault", () => {
+    // An unknown enum member / uuid reaching a column is bad input, not a bug.
+    const mapped = mapDatabaseError({
+      code: "22P02",
+      message: 'invalid input value for enum financial_asset_category: "BOGUS"',
+    });
+    expect(mapped.status).toBe(422);
+    expect(mapped.code).toBe("VALIDATION_ERROR");
+    expect(JSON.stringify(mapped.toBody())).not.toContain("financial_asset_category");
+  });
+
   it("falls back to an opaque 500 for unknown database errors", () => {
     const mapped = mapDatabaseError({ code: "XX000", message: "internal engine detail" });
     expect(mapped.status).toBe(500);

@@ -7,12 +7,16 @@
  * the specs are separated rather than the limit being relaxed — the limiter is
  * a security control and the tests exist to run against the real one.
  *
+ * The budget is per user, not per file, so a journey heavy enough to approach
+ * it on its own gets an account of its own.
+ *
  * `+clerk_test` addresses are Clerk's development test identifiers: the
  * email-code strategy accepts them without sending real mail.
  */
 export const E2E_USERS = {
   beneficiaries: "e2e-beneficiaries+clerk_test@example.com",
   legacyPlan: "e2e-plan+clerk_test@example.com",
+  assetAllocation: "e2e-allocation+clerk_test@example.com",
 } as const;
 
 export const E2E_USER_EMAILS = Object.values(E2E_USERS);

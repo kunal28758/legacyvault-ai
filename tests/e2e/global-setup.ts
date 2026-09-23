@@ -49,6 +49,45 @@ async function ensureTestUser(email: string): Promise<void> {
   }
 }
 
+/**
+ * Compiles the routes the authenticated journeys touch.
+ *
+ * `next dev` builds each route the first time it is requested. Without this,
+ * the first run after a source change pays that cost inside the tests, with
+ * several workers queued behind the same compilation — which shows up as
+ * assertion timeouts that have nothing to do with the application. The
+ * responses are expected to be 401s or redirects; only the compile matters.
+ */
+async function warmRoutes(): Promise<void> {
+  const base =
+    process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${process.env.PLAYWRIGHT_PORT ?? 3000}`;
+  const paths = [
+    "/",
+    "/beneficiaries",
+    "/legacy-plan",
+    "/legacy-plan/wizard",
+    "/assets/financial",
+    "/assets/physical",
+    "/api/v1/health",
+    "/api/v1/beneficiaries",
+    "/api/v1/legacy-plans",
+    "/api/v1/legacy-plans/current",
+    "/api/v1/assets/financial",
+    "/api/v1/assets/physical",
+    "/api/v1/assets/digital",
+  ];
+
+  await Promise.all(
+    paths.map(async (path) => {
+      try {
+        await fetch(`${base}${path}`, { signal: AbortSignal.timeout(60_000) });
+      } catch {
+        // A cold route that refuses to answer is the tests' problem to report.
+      }
+    }),
+  );
+}
+
 export default async function globalSetup() {
   loadLocalEnv();
 
@@ -61,4 +100,6 @@ export default async function globalSetup() {
   // Each authenticated spec runs as its own user so they do not share the
   // application's per-user rate-limit bucket.
   for (const email of E2E_USER_EMAILS) await ensureTestUser(email);
+
+  await warmRoutes();
 }

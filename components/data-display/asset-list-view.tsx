@@ -149,8 +149,10 @@ export function AssetListView({ kind }: { kind: AssetKind }) {
     if (searchParams.get("new") === "1") router.replace(meta.href);
   };
 
+  // The decrypted payload stays in this closure: it is never stored in state,
+  // in a cache, or anywhere the rest of the page can read it.
   const revealField = (assetId: string, field: string) => async () => {
-    const values = await reveal.mutateAsync(assetId);
+    const values = await reveal(assetId);
     return (values as Record<string, string | null | undefined>)[field] ?? null;
   };
 
