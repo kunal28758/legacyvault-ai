@@ -71,6 +71,19 @@ export function useUpdatePreferences() {
   });
 }
 
+export function useCompleteOnboarding() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const { data } = await apiClient.post<UserProfile>("/users/me/onboarding/complete", {});
+      return data;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.users.me() });
+    },
+  });
+}
+
 export interface DeletionState {
   deletionRequestedAt: string | null;
   deletesAt: string | null;

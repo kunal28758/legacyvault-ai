@@ -179,7 +179,7 @@ Code that depends on this checklist: `proxy.ts` (T192), `app/layout.tsx`
 | # | Setting (source) | Local stack | Staging | Production |
 |---|---|---|---|---|
 | 1 | Clerk added as third-party auth provider (ADR-004 r2) | ✅ `[auth.third_party.clerk] enabled = true` with the development Frontend API domain in `config.toml` | ⏳ | ⏳ |
-| 2 | Private buckets `quarantine`, `documents`, `videos` (ADR-005) | ⬜ created by migration/T029 | ⏳ | ⏳ |
+| 2 | Private buckets `quarantine`, `documents`, `videos` (ADR-005) | ✅ created by `supabase/migrations/0004_storage_buckets.sql` and verified private | ⏳ apply the migration | ⏳ apply the migration |
 | 3 | Global file-size limit ≥ 500 MB (FR-K002) — **Pro plan or higher** | 🔧 `file_size_limit = "500MiB"` | ⏳ | ⏳ |
 | 4 | Automated backups on; **PITR add-on** for production (NFR-DR-001) | n/a | ⏳ | ⏳ |
 | 5 | `pg_cron` + `pg_net` extensions available for the redundancy trigger (ADR-006, T211) | ⬜ | ⏳ | ⏳ |
@@ -196,23 +196,51 @@ Code that depends on this checklist: `proxy.ts` (T192), `app/layout.tsx`
 | 4 | Supabase PITR for production | ⏳ Pending manual verification | Project settings → Database → Backups |
 | 5 | Clerk plan supports inactivity timeout, session-token customization, reverification | ⏳ Pending manual verification | Clerk dashboard → Sessions / Billing |
 | 6 | ClamAV endpoint reachable from Vercel functions (ADR-015; hosting choice is an owner decision) | ⏳ Pending — host not provisioned | completed with T247 |
-| 7 | Vercel WAF rate-limit rules for `/api/v1/emergency-access/{request,verify}`, `/api/v1/access/*`, `/api/v1/ai/*` (ADR-007) | ⏳ Pending — routes do not exist yet | completed when the routes exist (T211 / Phase 25) |
+| 7 | Vercel WAF rate-limit rules for `/api/v1/emergency-access/{request,verify}`, `/api/v1/access/*` (ADR-007) | ⏳ Pending — the routes now exist and are limited in-application (`publicEmergency` 5/h, `accessExchange` 10/15 min, `tokenAccess` 60/15 min); the WAF rule is the edge layer in front of that | Vercel → Firewall, after the first deploy |
+| 8 | `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` for error tracking (ADR-010) | ⏳ Pending — `instrumentation.ts` and `instrumentation-client.ts` are wired and stay inert until a DSN exists | Sentry project → Client Keys; nothing else to change in the repository |
+| 9 | `RESEND_API_KEY` + a verified sending domain for `EMAIL_FROM` (ADR-009) | ⏳ Pending — every send path is implemented and reports honestly when mail fails | Resend → Domains, then set both variables |
 
 Consequence recorded here per plan § Technical Context: **Phase 2 must not
 assume rows 1–4 hold until they are marked ✅ by the owner.** Local development
 is unaffected (crons are triggered with `curl`, the local stack has the 500 MiB
 limit configured).
 
-## 8. Deployment pipeline (to be completed in Phase 13)
+## 8. Deployment pipeline
 
-Planned (T238/T239): GitHub Actions — install → lint → typecheck → unit →
-integration (local stack) → build → migration dry-run; Vercel preview per PR,
-staging on `main`, production behind manual approval; Sentry alert routing,
-uptime monitor on `/api/v1/health`, DMS scan-freshness alert. Nothing in this
-section exists yet.
+**In the repository** (`.github/workflows/ci.yml`, T016/T246): four jobs on every
+push and pull request — lint + typecheck + format + unit tests; integration
+tests against a real Supabase stack started by the Supabase CLI; a production
+build; and the Playwright journeys, which run only where `CLERK_SECRET_KEY` is
+configured and otherwise print a notice rather than reporting a green run they
+did not perform.
+
+Repository secrets the workflow reads: `CI_ENCRYPTION_KEY`,
+`CI_ACCESS_COOKIE_KEY` (synthetic, CI-only), and `CLERK_PUBLISHABLE_KEY` /
+`CLERK_SECRET_KEY` for a **development** Clerk instance.
+
+**Still to configure outside the repository** (T238/T239): Vercel preview per
+PR, staging on `main`, production behind manual approval; Sentry alert routing;
+an uptime monitor on `/api/v1/health`; and an alert on DMS scan freshness — the
+`dmsScan.lastSuccessAgeSeconds` field of the operator health response is the
+signal to alert on, and it is already served.
+
+### First production deploy — the order that works
+
+1. Create the Supabase project, run `supabase db push` (migrations 0001–0004),
+   and confirm the three buckets exist and are **private**.
+2. Add Clerk as a third-party auth provider in Supabase, and set the Clerk
+   session-token claims per § 3a.
+3. Set every variable in § 2. `pnpm env:check` fails loudly on a missing one;
+   production additionally refuses to start with `MALWARE_SCANNER_PROVIDER=noop`.
+4. Deploy. Confirm Vercel registered the three crons from `vercel.json`.
+5. Sign up the operator account, then run `pnpm seed:admin` with `ADMIN_EMAIL`
+   set — `users.role` is reachable only through the service role, by design.
+6. Check `/api/v1/health` with the `CRON_SECRET` bearer token: `database` and
+   `storage` must be `ok`, and `jobs` becomes `ok` after the first cron tick.
 
 ## 9. Change log
 
 | Date | Change |
 |---|---|
 | 2026-09-19 | Created (T202 initial) with the T195/T196/T210 checklists — all external items ⏳ pending manual verification; local tooling (Supabase CLI, `vercel.json`, env schema) 🔧 in repository. |
+| 2026-09-24 | Storage buckets marked ✅ (migration 0004); CI pipeline documented as implemented; Sentry, Resend and the WAF rule added to the prerequisites; a first-production-deploy order added. Every external item remains ⏳ — no hosted account has been configured or verified from this repository. |

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppShell } from "@/components/layout/app-shell";
 import { Providers } from "@/components/providers";
 
+import { AdminView } from "@/app/(dashboard)/admin/_components/admin-view";
 import { DashboardView } from "@/app/(dashboard)/dashboard/_components/dashboard-view";
 import { DeadManSwitchView } from "@/app/(dashboard)/dead-man-switch/_components/dead-man-switch-view";
 import { EmergencyAccessView } from "@/app/(dashboard)/emergency-access/_components/emergency-access-view";
@@ -99,6 +100,53 @@ function stubPlanApi() {
       if (url.includes("/emergency-access")) return apiResponse({ contacts: [], requests: [] });
       if (url.includes("/users/me/activity"))
         return apiResponse({ items: [], total: 0, page: 1, limit: 25 });
+      if (url.includes("/admin/analytics"))
+        return apiResponse({
+          users: { total: 3, active: 2, pendingDeletion: 0, superAdmins: 1 },
+          registrations: [{ day: "2026-09-24", count: 1 }],
+          storage: { documents: { count: 2, bytes: 2048 }, videos: { count: 0, bytes: 0 } },
+          protection: { switchesActive: 1, switchesReleased: 0, emergencyPending: 0 },
+          jobs: { queued: 0, running: 0, dead: 1, succeededLastDay: 4 },
+        });
+      if (url.includes("/admin/operations"))
+        return apiResponse({
+          deadJobs: [
+            {
+              id: "job-1",
+              type: "access.deliver",
+              attempts: 5,
+              lastError: "provider unavailable",
+              runAt: "2026-09-24T00:00:00.000Z",
+              finishedAt: "2026-09-24T00:05:00.000Z",
+              accessTokenId: null,
+              beneficiaryId: null,
+            },
+          ],
+          undeliveredTokens: [],
+        });
+      if (url.includes("/admin/audit-logs"))
+        return apiResponse({ items: [], total: 0, page: 1, limit: 50 });
+      if (url.includes("/admin/users"))
+        return apiResponse({
+          items: [
+            {
+              id: "99999999-9999-4999-8999-999999999999",
+              email: "member@example.com",
+              name: "A Member",
+              role: "USER",
+              emailVerified: true,
+              mfaEnabled: false,
+              onboardingCompletedAt: null,
+              lastLoginAt: null,
+              deletionRequestedAt: null,
+              deletedAt: null,
+              createdAt: "2026-09-01T00:00:00.000Z",
+            },
+          ],
+          total: 1,
+          page: 1,
+          limit: 25,
+        });
       if (url.includes("/users/me")) return apiResponse(PROFILE);
       return apiResponse({});
     }),
@@ -179,6 +227,17 @@ describe("authenticated views", () => {
     expect(screen.getByRole("button", { name: /^Check in$/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /Enable/i })).toBeInTheDocument();
     expect(screen.getByText(/Trusted contacts/)).toBeInTheDocument();
+  });
+
+  it("renders the operator console with platform counts and the dead-letter queue", async () => {
+    renderInShell(<AdminView />);
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: /Platform administration/i })).toBeInTheDocument(),
+    );
+    expect(screen.getByText("A Member")).toBeInTheDocument();
+    // The operator sees how much exists, never what it is.
+    expect(screen.getByText(/2 documents · 0 videos/)).toBeInTheDocument();
+    expect(screen.getByText(/1 dead ·/)).toBeInTheDocument();
   });
 
   it("renders emergency access with its empty state", async () => {

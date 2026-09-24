@@ -4,12 +4,13 @@ import { connection } from "next/server";
 import { auth, currentUser } from "@clerk/nextjs/server";
 
 import { AppShell, type ShellUser } from "@/components/layout/app-shell";
+import { getOptionalUser } from "@/lib/auth/require-user";
 import { isClerkConfigured } from "@/lib/config/public-env";
 
 /**
- * Protected application shell (task T048): Clerk protection and the shell.
- * `ensureAppUser()` runs inside the API pipeline rather than here, so a page
- * render never depends on it.
+ * Protected application shell (task T048): Clerk protection, the first-run
+ * gate and the shell. `getOptionalUser()` provisions the application row on
+ * first use, which is also what tells us whether onboarding is still pending.
  *
  * Rendered dynamically on every request (`connection()`): this route group must
  * never be statically prerendered or served from a shared cache (ADR-001 cache
@@ -29,6 +30,10 @@ export default async function DashboardLayout({ children }: { children: ReactNod
 
   const { userId } = await auth();
   if (!userId) redirect("/sign-in");
+
+  // First run happens outside this shell: there is nothing to navigate to yet.
+  const appUser = await getOptionalUser();
+  if (appUser && !appUser.onboardingCompletedAt) redirect("/onboarding");
 
   const clerkUser = await currentUser();
   const user: ShellUser = {

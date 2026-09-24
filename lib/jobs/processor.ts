@@ -5,6 +5,7 @@ import { accessDeliverHandler } from "@/lib/jobs/handlers/access-deliver";
 import { dmsScanHandler } from "@/lib/jobs/handlers/dms-scan";
 import { housekeepingHandler } from "@/lib/jobs/handlers/housekeeping";
 import { notificationDeliverHandler } from "@/lib/jobs/handlers/notification-deliver";
+import { securityNewDeviceHandler } from "@/lib/jobs/handlers/security-new-device";
 import { storageRemoveObjectHandler } from "@/lib/jobs/handlers/storage-remove-object";
 import type { JobHandler } from "@/lib/jobs/types";
 import { logger } from "@/lib/observability/logger";
@@ -24,6 +25,7 @@ const HANDLERS: Record<string, JobHandler> = {
   "storage.remove-object": storageRemoveObjectHandler,
   "dms.scan": dmsScanHandler,
   housekeeping: housekeepingHandler,
+  "security.new-device": securityNewDeviceHandler,
 };
 
 export interface JobRunSummary {

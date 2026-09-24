@@ -3,6 +3,7 @@ import { Webhook } from "svix";
 import { withApi } from "@/lib/api/with-api";
 import { ApiError } from "@/lib/api/errors";
 import { audit } from "@/lib/audit/audit.service";
+import * as jobRepository from "@/lib/repositories/job.repository";
 import { ensureAppUser } from "@/lib/auth/ensure-app-user";
 import { getEnvGroup } from "@/lib/config/env";
 import { createServiceClient } from "@/lib/db/server";
@@ -182,8 +183,16 @@ export const POST = withApi(
           metadata: { source: "clerk_webhook", event: event.type },
           correlationId,
         });
-        // New-device detection (FR-A016) is enqueued once the job runner exists
-        // (T197/T182); the audit row above already satisfies FR-A014.
+        if (event.type === "session.created") {
+          // Detection runs in the queue: a slow identity provider must never
+          // delay a sign-in, and a duplicate webhook must not notify twice.
+          await jobRepository.enqueue(
+            db,
+            "security.new-device",
+            { userId: appUser.id, sessionId: event.data.id },
+            `security.new-device:${event.data.id}`,
+          );
+        }
         break;
       }
 

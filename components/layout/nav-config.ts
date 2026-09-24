@@ -1,6 +1,7 @@
 import {
   Bell,
   Bot,
+  Building2,
   Coins,
   FileText,
   Gem,
@@ -83,6 +84,17 @@ export const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
+/**
+ * Operator navigation, shown only to a Super Admin (FR-P012).
+ *
+ * Kept out of `NAV_GROUPS` so the ordinary sidebar cannot render it by
+ * accident; the page and every endpoint behind it re-check the role anyway.
+ */
+export const ADMIN_NAV_GROUP: NavGroup = {
+  label: "Operations",
+  items: [{ label: "Administration", href: "/admin", icon: Building2 }],
+};
+
 export const PAGE_TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/legacy-plan": "Legacy Plan",
@@ -100,6 +112,7 @@ export const PAGE_TITLES: Record<string, string> = {
   "/ai": "AI Assistant",
   "/notifications": "Notifications",
   "/settings": "Settings",
+  "/admin": "Administration",
 };
 
 export function isActivePath(pathname: string, href: string): boolean {

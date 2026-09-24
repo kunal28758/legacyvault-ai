@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import * as Sentry from "@sentry/nextjs";
 
 import { ErrorState } from "@/components/shared/error-state";
 
@@ -13,8 +14,9 @@ export default function DashboardGroupError({
   reset: () => void;
 }) {
   useEffect(() => {
-    // Sentry capture is wired in T188; until then keep the console signal for local debugging.
-    console.error("[dashboard] route error", error.digest ?? error.message);
+    // The digest is what ties this screen to the server log line; the message
+    // itself is never shown to the person.
+    Sentry.captureException(error);
   }, [error]);
 
   return (

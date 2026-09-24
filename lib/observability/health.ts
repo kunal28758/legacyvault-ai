@@ -44,18 +44,43 @@ async function checkStorage(): Promise<ComponentStatus> {
   }
 }
 
-async function lastFinishedJob(type: string): Promise<number | null> {
+/**
+ * How long ago the runner last finished something.
+ *
+ * `type` narrows it to one kind of work; omitted, it is any job at all — the
+ * runner has no job of its own to look for, so the freshest completion is its
+ * heartbeat.
+ */
+async function lastFinishedJob(type?: string): Promise<number | null> {
   const db = createServiceClient();
-  const { data, error } = await db
+  let query = db
     .from("jobs")
     .select("finished_at")
-    .eq("type", type)
     .eq("status", "SUCCEEDED")
     .order("finished_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
+  if (type) query = query.eq("type", type);
+
+  const { data, error } = await query.maybeSingle();
   if (error || !data?.finished_at) return null;
   return Math.max(0, Math.round((Date.now() - Date.parse(data.finished_at)) / 1000));
+}
+
+/**
+ * The probe is public, so the result is cached for a few seconds.
+ *
+ * Uptime monitors poll far more often than the answer can change, and each
+ * uncached call costs four database round trips plus a storage listing — an
+ * amplification an anonymous caller should not be able to buy.
+ */
+const CACHE_MS = 5_000;
+let cached: { at: number; value: HealthDetail } | null = null;
+
+export async function getHealth(): Promise<HealthDetail> {
+  if (cached && Date.now() - cached.at < CACHE_MS) return cached.value;
+  const value = await probe();
+  cached = { at: Date.now(), value };
+  return value;
 }
 
 /**
@@ -63,11 +88,11 @@ async function lastFinishedJob(type: string): Promise<number | null> {
  * most recent SUCCEEDED `dms.scan` job is the only heartbeat, and it must be
  * within 2× its interval.
  */
-export async function getHealth(): Promise<HealthDetail> {
+async function probe(): Promise<HealthDetail> {
   const [database, storage, jobsAge, dmsAge] = await Promise.all([
     checkDatabase(),
     checkStorage(),
-    lastFinishedJob("run-jobs").catch(() => null),
+    lastFinishedJob().catch(() => null),
     lastFinishedJob("dms.scan").catch(() => null),
   ]);
 

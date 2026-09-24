@@ -1,7 +1,7 @@
-import { clerk } from "@clerk/testing/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
 import { loadLocalEnv } from "../helpers/load-env";
+import { signInAndSettle } from "./session";
 import { E2E_USERS } from "./users";
 
 /**
@@ -48,8 +48,7 @@ test.describe("documents and access links", () => {
 
   test("uploads, shares, hands out a link and revokes it", async ({ page, browser }) => {
     test.setTimeout(240_000);
-    await page.goto("/");
-    await clerk.signIn({ page, signInParams: { strategy: "email_code", identifier: email } });
+    await signInAndSettle(page, email);
 
     // ── A beneficiary to share with ─────────────────────────────────────────
     await gotoAndSettle(page, "/beneficiaries", "/api/v1/beneficiaries");

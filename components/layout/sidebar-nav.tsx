@@ -5,7 +5,8 @@ import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { NAV_GROUPS, isActivePath } from "@/components/layout/nav-config";
+import { ADMIN_NAV_GROUP, NAV_GROUPS, isActivePath } from "@/components/layout/nav-config";
+import { useProfile } from "@/hooks/use-profile";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import { cn } from "@/lib/utils";
 
@@ -19,10 +20,15 @@ interface SidebarNavProps {
 export function SidebarNav({ collapsed = false, onNavigate, badges = {} }: SidebarNavProps) {
   const pathname = usePathname();
   const reduced = useReducedMotion();
+  // The operator section appears only for an operator; the route and every
+  // endpoint behind it check the role again on the server.
+  const profile = useProfile();
+  const groups =
+    profile.data?.role === "SUPER_ADMIN" ? [...NAV_GROUPS, ADMIN_NAV_GROUP] : NAV_GROUPS;
 
   return (
     <nav aria-label="Primary" className="flex flex-col gap-5">
-      {NAV_GROUPS.map((group) => (
+      {groups.map((group) => (
         <div key={group.label ?? "root"} className="space-y-1">
           {group.label && !collapsed && (
             <p className="px-3 pb-1 text-[11px] font-semibold tracking-[0.14em] text-muted-foreground/80 uppercase">

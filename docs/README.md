@@ -54,6 +54,7 @@ source wins and the `docs/` file must be corrected.
 | `security/THREAT_MODEL.md` | Assets, actors, trust boundaries, threats → specified controls | 📐 / 📋 |
 | `security/ENCRYPTION.md` | What is encrypted, how, where keys live, rotation | 📐 / 📋 |
 | `database/DATABASE_ARCHITECTURE.md` | Database platform, migrations, clients, write classes, transactions, RLS, storage (pointers into `data-model.md`) | 📐 / 📋 |
+| `database/DATABASE_SCHEMA.md` | The schema as applied: tables, enums, write classes, guarded and system functions, error convention, storage buckets (T242) | ✅ |
 | `integrations/INTEGRATIONS.md` | External services (Clerk, Supabase, Resend, Sentry, OpenAI/Gemini, Vercel, ClamAV): role, adapter, configuration names, failure behaviour | 📐 / 📋 |
 | `monitoring/OBSERVABILITY.md` | Logging, correlation ids, error monitoring, health checks, metrics, alerts | 📐 / 📋 |
 | `ui/DESIGN_SYSTEM.md` | Established UI/UX direction (dark-first, glassmorphism, motion, accessibility) | 📐 / 📋 |
@@ -94,7 +95,7 @@ implemented code, configured environments, or decisions still pending:
 | `docs/SECURITY_REVIEW.md` | T185 | Pre-production review of implemented code |
 | `docs/DISASTER_RECOVERY.md` | T187 | Needs backup tooling (T186) and environments |
 | `docs/SUPPORT_RUNBOOK.md` | T204 | Needs verified Clerk recovery flows |
-| `docs/DATABASE_SCHEMA.md` | T242 | Generated from applied migrations |
+| ~~`docs/DATABASE_SCHEMA.md`~~ → `database/DATABASE_SCHEMA.md` | T242 | ✅ created 2026-09-24 from migrations 0001–0004 |
 | `docs/API_SPECIFICATION.md` | T176 | Derived from implemented handlers |
 | `docs/RBAC.md` | T177 | Documents implemented authorization flow |
 | `docs/BUSINESS_RULES.md` | T243 | Consolidates rules once services exist; the workflow docs here are the pre-implementation reference |

@@ -42,6 +42,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useIdleTimeout } from "@/hooks/use-idle-timeout";
 import { useUnreadCount } from "@/hooks/use-notifications";
 import { useProfile, useUpdatePreferences } from "@/hooks/use-profile";
 import { initials } from "@/lib/format";
@@ -70,6 +71,8 @@ export function AppShell({ user, clerkEnabled, children }: AppShellProps) {
   const profile = useProfile();
   const updatePreferences = useUpdatePreferences();
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Honours the idle sign-out the person chose in Settings (FR-A008).
+  useIdleTimeout();
 
   const compact =
     (profile.data?.preferences as { compactSidebar?: boolean } | undefined)?.compactSidebar ??

@@ -8,6 +8,14 @@ import { enqueueHousekeeping } from "@/lib/jobs/processor";
  * so a retried or duplicated trigger is a no-op, and the work itself runs in
  * the job queue with retries and a lock.
  */
+/**
+ * Only enqueues; the sweep itself runs in the queue.
+ *
+ * The platform default is far shorter than this work can take, and a
+ * truncated run is worse than a slow one.
+ */
+export const maxDuration = 60;
+
 export const POST = withApi(
   { auth: "cron", auditAction: "housekeeping.queued", auditResourceType: "job" },
   async () => {

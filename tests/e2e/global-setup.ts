@@ -65,6 +65,8 @@ async function warmRoutes(): Promise<void> {
   const paths = [
     "/",
     "/dashboard",
+    "/onboarding",
+    "/admin",
     "/beneficiaries",
     "/legacy-plan",
     "/legacy-plan/wizard",

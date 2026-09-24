@@ -23,6 +23,33 @@
 >
 > **Website batch 2026-09-19 (college-evaluation sprint, commit `feat: build LegacyVault AI application experience`).** The user-facing product was built ahead of the remaining Phase 2 infrastructure, deliberately and without weakening it: the `(marketing)`, `(auth)` and `(dashboard)` route groups, the application shell, and every product page (dashboard, 11-step will wizard, beneficiaries, assets, document vault, video legacy, Dead Man’s Switch, emergency access, AI assistant, Security Center, notifications, settings) exist as **UI backed by a clearly-labelled demo workspace** (`lib/demo/*`, sessionStorage, typed with `lib/types/database.ts` enums). Only the pure-UI tasks listed below are marked complete; page tasks whose definition includes API wiring (T051, T056, T064–T070, T075/T076, T083/T086/T088/T089, T095/T096, T099, T101, T112, T118, T124/T129, T136/T137/T140, T144, T158, T184, T189, T200, T221–T224) have their **UI portion done** and remain open until T030/T036 and their services exist. No infrastructure task (T020–T036, T155, T181, T197–T199, T212–T217) is marked complete — demo state is not persistence.
 
+> **Ledger status, 2026-09-24 — read this before trusting a checkbox.** The
+> batch implementations of 2026-09-23/24 delivered whole domains at a time and
+> the per-task boxes below were **not** maintained through them. An unticked box
+> is therefore not evidence that something is missing. The authoritative record
+> of what exists is [`docs/PROJECT_STATUS.md`](../../docs/PROJECT_STATUS.md) § 2,
+> which is written from the source tree and kept current.
+>
+> What is genuinely still open, as of this date:
+>
+> - **AI (ADR-008, ADR-016)** — deliberately deferred. No provider is connected;
+>   the assistant panel answers from real data with local rules and says so.
+>   Tasks: the `/ai/*` endpoints, the will generator, document analysis.
+> - **External configuration** — T195 (Clerk), T196 (Supabase project), T210
+>   (platform plans), T247 (ClamAV host), and the Sentry/Resend accounts. These
+>   cannot be completed from the repository; `docs/DEPLOYMENT.md` records exactly
+>   what a human must configure.
+> - **Post-deployment operations** — T186/T187 (backup tooling and the disaster
+>   recovery runbook), T211 (edge WAF rules), T238/T239 (Vercel environments),
+>   T204 (support runbook), which all need a running deployment.
+> - **Documentation derived from the finished product** — T176 (API
+>   specification), T177 (RBAC), T243 (business rules), T244 (AI module).
+>
+> Everything else described in these tasks — the platform, every non-AI domain,
+> the beneficiary access portal, the job queue, the operator console, and the
+> test suites — exists in the source tree and is exercised by the checks in
+> `.github/workflows/ci.yml`.
+
 **Conventions**: `[P]` = parallelizable (different files, no dependency);
 `[USn]` = user story; paths are relative to the repository root (single app).
 All Route Handlers use `withApi()` (T030); all services receive the

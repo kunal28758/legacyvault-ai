@@ -1,15 +1,21 @@
 import "server-only";
 
 import { sendNotificationEmail } from "@/lib/email/send";
+import {
+  asNotificationPreferences,
+  shouldEmailNotification,
+} from "@/lib/notifications/preferences";
 import { logger } from "@/lib/observability/logger";
 import * as notificationRepository from "@/lib/repositories/notification.repository";
 import { payloadOf, requireString, type JobHandler } from "@/lib/jobs/types";
 
 /**
- * Delivers an in-app notification by email when the channel asks for it.
+ * Delivers an in-app notification by email when the channel asks for it *and*
+ * the person has not asked it not to.
  *
  * The notification row is the record; this only adds the email. A row already
- * marked SENT is left alone, so a retry cannot double-send.
+ * marked SENT is left alone, so a retry cannot double-send, and a preference
+ * that suppresses the email still leaves the notification in the app.
  */
 export const notificationDeliverHandler: JobHandler = async (job, db) => {
   const payload = payloadOf(job);
@@ -35,6 +41,18 @@ export const notificationDeliverHandler: JobHandler = async (job, db) => {
     .maybeSingle();
   if (error) throw error;
   if (!user) throw new Error("user not found for notification delivery");
+
+  const decision = shouldEmailNotification(
+    notification.type,
+    asNotificationPreferences(user.notification_preferences),
+  );
+  if (!decision.send) {
+    // Delivered in the app, which is where the record lives; the email was the
+    // part the person turned off.
+    logger.info({ jobId: job.id, reason: decision.reason }, "notification email suppressed");
+    await notificationRepository.markDelivered(db, notificationId, null, "DELIVERED");
+    return;
+  }
 
   try {
     const sent = await sendNotificationEmail({

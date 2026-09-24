@@ -1,7 +1,7 @@
-import { clerk } from "@clerk/testing/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
 import { loadLocalEnv } from "../helpers/load-env";
+import { signInAndSettle } from "./session";
 import { E2E_USERS } from "./users";
 
 /**
@@ -57,8 +57,7 @@ async function dismissToasts(page: Page): Promise<void> {
 function signInAs(email: string) {
   test.beforeEach(async ({ page }) => {
     test.setTimeout(180_000);
-    await page.goto("/");
-    await clerk.signIn({ page, signInParams: { strategy: "email_code", identifier: email } });
+    await signInAndSettle(page, email);
   });
 }
 
