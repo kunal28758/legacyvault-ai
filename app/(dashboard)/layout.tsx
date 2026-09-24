@@ -35,15 +35,19 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   const appUser = await getOptionalUser();
   if (appUser && !appUser.onboardingCompletedAt) redirect("/onboarding");
 
-  const clerkUser = await currentUser();
+  // Clerk has the avatar and the freshest display name, but it is a network
+  // call: when it fails, the stored profile is enough to render the shell. A
+  // provider blip must not take the whole dashboard down.
+  const clerkUser = await currentUser().catch(() => null);
   const user: ShellUser = {
     name:
       clerkUser?.fullName ||
       clerkUser?.firstName ||
       clerkUser?.username ||
       clerkUser?.primaryEmailAddress?.emailAddress ||
+      appUser?.name ||
       "Account",
-    email: clerkUser?.primaryEmailAddress?.emailAddress ?? null,
+    email: clerkUser?.primaryEmailAddress?.emailAddress ?? appUser?.email ?? null,
     imageUrl: clerkUser?.hasImage ? clerkUser.imageUrl : null,
   };
 

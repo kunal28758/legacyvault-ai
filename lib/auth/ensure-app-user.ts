@@ -1,6 +1,6 @@
 import "server-only";
 
-import { currentUser } from "@clerk/nextjs/server";
+import { auth, currentUser } from "@clerk/nextjs/server";
 import type { User as ClerkUser } from "@clerk/nextjs/server";
 
 import { createServiceClient } from "@/lib/db/server";
@@ -149,8 +149,50 @@ export async function ensureAppUser(identity: ClerkIdentity): Promise<AppUser> {
 }
 
 /** Reads the current Clerk session user and syncs it. Returns null when signed out. */
+/** How long the mirrored Clerk fields may go without being re-read. */
+const MIRROR_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The application user behind the current session.
+ *
+ * The session subject is enough to find an existing row, so Clerk's Backend API
+ * is kept **off the hot path**: it used to be called on every authenticated
+ * request, which meant one provider hiccup answered every in-flight request
+ * with a 500 at the same moment. Clerk is now consulted only when there is no
+ * row yet, or when the mirrored fields are a day old — and if that call fails
+ * while a row already exists, the row wins.
+ *
+ * Convergence is unaffected: the webhook (T198) remains the primary sync path
+ * and this is still its fallback.
+ */
 export async function ensureAppUserFromSession(): Promise<AppUser | null> {
-  const user = await currentUser();
-  if (!user) return null;
+  const { userId } = await auth();
+  if (!userId) return null;
+
+  const db = createServiceClient();
+  const { data: existing, error } = await db
+    .from("users")
+    .select("*")
+    .eq("clerk_user_id", userId)
+    .maybeSingle();
+  if (error) throw error;
+
+  if (existing && Date.now() - Date.parse(existing.updated_at) < MIRROR_MAX_AGE_MS) {
+    return toAppUser(existing);
+  }
+
+  let user: ClerkUser | null = null;
+  try {
+    user = await currentUser();
+  } catch (cause) {
+    if (existing) {
+      // A stale mirror is worth far more than a failed request.
+      logger.warn({ err: cause }, "clerk unavailable; serving the stored profile");
+      return toAppUser(existing);
+    }
+    throw cause;
+  }
+
+  if (!user) return existing ? toAppUser(existing) : null;
   return ensureAppUser(identityFromClerkUser(user));
 }

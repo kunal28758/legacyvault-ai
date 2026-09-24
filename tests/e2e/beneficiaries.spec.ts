@@ -1,3 +1,4 @@
+import { clerk } from "@clerk/testing/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
 import { loadLocalEnv } from "../helpers/load-env";
@@ -38,13 +39,27 @@ async function fillNewBeneficiary(page: Page, name: string, address: string): Pr
   await page.getByRole("button", { name: "Add beneficiary", exact: true }).last().click();
 }
 
+/**
+ * Removal, asserted on what actually happened.
+ *
+ * The acknowledgement is scoped to the dialog — an unscoped `.first()` can tick
+ * a checkbox elsewhere on the page and leave the confirm button disabled — and
+ * the dialog must close before the table is inspected, because an open dialog
+ * takes the background out of the accessibility tree and would make the "row is
+ * gone" assertion pass without anything being removed.
+ */
 async function removeBeneficiary(page: Page, name: string): Promise<void> {
   await page.getByRole("button", { name: `Actions for ${name}` }).click();
   await page.getByRole("menuitem", { name: "Remove" }).click();
-  await page.getByRole("checkbox").first().check();
-  await page.getByRole("button", { name: "Remove beneficiary" }).click();
+
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("checkbox").check();
+  await dialog.getByRole("button", { name: "Remove beneficiary" }).click();
+
+  await expect(dialog).toBeHidden({ timeout: 30_000 });
+  await expect(page.getByRole("table")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole("table").locator("tr", { hasText: name })).toHaveCount(0, {
-    timeout: 20_000,
+    timeout: 30_000,
   });
 }
 
@@ -115,5 +130,18 @@ test.describe("beneficiaries", () => {
     await expect(page.locator("[data-sonner-toast]")).toHaveCount(0, { timeout: 30_000 });
 
     await removeBeneficiary(page, name);
+  });
+
+  test("keeps the session across a reload and ends it on sign-out", async ({ page }) => {
+    // The session is a Clerk cookie, so a full reload — not a client navigation
+    // — is what proves it survives.
+    await page.reload();
+    await expect(page).toHaveURL(/\/dashboard/, { timeout: 60_000 });
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible({ timeout: 60_000 });
+
+    await clerk.signOut({ page });
+    await page.goto("/dashboard");
+    // Signed out, the protected group sends the visitor to sign-in.
+    await expect(page).toHaveURL(/\/sign-in/, { timeout: 60_000 });
   });
 });
