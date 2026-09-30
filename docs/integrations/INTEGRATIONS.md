@@ -99,7 +99,9 @@ Redis/BullMQ, Nodemailer SMTP (may implement `EmailProvider` later).
   sanitized `ai_interactions`, encrypted `ai_drafts`, explicit confirmation
   before persistence.
 - **Configuration (names)**: `OPENAI_API_KEY`, `GEMINI_API_KEY`,
-  `AI_DEFAULT_PROVIDER` — server-only (FR-L009, FR-R002).
+  `AI_DEFAULT_PROVIDER`, optional `OPENAI_MODEL` / `GEMINI_MODEL` — server-only
+  (FR-L009, FR-R002). Either key alone is enough; with both, the other provider
+  is the outage fallback. Implemented in `lib/ai/` (2026-09-30).
 - **Unavailable**: fallback to the secondary provider; if both fail,
   `503 AI_UNAVAILABLE` and all non-AI workflows continue (FR-R010).
 - **Data handling**: prompts contain only what the feature needs; document

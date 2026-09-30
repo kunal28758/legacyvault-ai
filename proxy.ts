@@ -28,6 +28,8 @@ const isPublicRoute = createRouteMatcher([
   "/api/webhooks/(.*)",
   "/api/internal/cron/(.*)",
   "/api/v1/health",
+  // Overall state only for anonymous callers; the breakdown needs a session.
+  "/api/v1/system-status",
   "/api/v1/access/(.*)",
   "/api/v1/emergency-access/(request|verify|requests/[^/]+/status)",
 ]);

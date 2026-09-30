@@ -17,8 +17,10 @@
 import { loadEnvConfig } from "@next/env";
 
 import {
+  crossFieldIssues,
   describeIssues,
   groupSchema,
+  serverEnvGroups,
   validatePublicEnv,
   validateServerEnv,
   type ServerEnvGroupName,
@@ -37,8 +39,18 @@ const REQUIRED_LOCALLY: { group: ServerEnvGroupName; why: string }[] = [
   { group: "accessCookie", why: "the beneficiary access session" },
 ];
 
-/** Everything else: each one gates a feature and is reported, not enforced. */
-const OPTIONAL_LOCALLY: { group: ServerEnvGroupName; feature: string; without: string }[] = [
+/**
+ * Everything else: each one gates a feature and is reported, not enforced.
+ * `configured` tells a group that merely validates (every variable optional)
+ * apart from one that is actually set up — an empty Sentry DSN or the no-op
+ * scanner must not be reported as working.
+ */
+const OPTIONAL_LOCALLY: {
+  group: ServerEnvGroupName;
+  feature: string;
+  without: string;
+  configured?: (values: Record<string, unknown>) => boolean;
+}[] = [
   {
     group: "cron",
     feature: "the job runner and scheduled scans",
@@ -58,40 +70,69 @@ const OPTIONAL_LOCALLY: { group: ServerEnvGroupName; feature: string; without: s
     group: "observability",
     feature: "Sentry",
     without: "errors are logged locally only",
+    configured: (values) => Boolean(values.SENTRY_DSN),
   },
   {
     group: "malwareScanner",
     feature: "malware scanning",
     without: "uploads record `performed: false` (production refuses this)",
+    configured: (values) => values.MALWARE_SCANNER_PROVIDER === "clamav",
   },
   {
     group: "operations",
     feature: "`pnpm seed:admin`",
     without: "no account can be promoted to Super Admin",
   },
-  { group: "ai", feature: "the AI phase", without: "deliberately deferred — nothing reads these" },
+  {
+    group: "ai",
+    feature: "the AI assistant and document intelligence",
+    without: 'no provider key — AI panels report "not configured"; everything else works',
+    configured: (values) => Boolean(values.OPENAI_API_KEY || values.GEMINI_API_KEY),
+  },
 ];
 
-function checkGroup(name: ServerEnvGroupName): string[] {
+function checkGroup(name: ServerEnvGroupName): {
+  missing: string[];
+  values: Record<string, unknown>;
+} {
   const result = groupSchema(name).safeParse(process.env);
-  if (result.success) return [];
-  return result.error.issues.map((issue) => issue.path.map(String).join(".") || "(root)");
+  if (result.success) return { missing: [], values: result.data as Record<string, unknown> };
+  return {
+    missing: result.error.issues.map((issue) => issue.path.map(String).join(".") || "(root)"),
+    values: {},
+  };
 }
 
 let failed = false;
 
 if (strict) {
-  const server = validateServerEnv(process.env);
+  // "Is this deployable?" is a production question, so the production-only
+  // rules (Sentry DSN, an AI key, a real malware scanner) are always applied.
+  const server = validateServerEnv({ ...process.env, NODE_ENV: "production" });
   if (server.ok) {
-    console.log("✔ server environment valid (full schema)");
+    console.log("✔ server environment valid for production (full schema)");
   } else {
     failed = true;
-    console.error("✖ server environment invalid:\n" + describeIssues(server.issues));
+    // Zod skips cross-field rules while any field is missing, so they are
+    // evaluated here on whatever does parse — one run lists every gap.
+    const parsed = Object.assign(
+      {},
+      ...(Object.keys(serverEnvGroups) as ServerEnvGroupName[]).map(
+        (group) => checkGroup(group).values,
+      ),
+      { NODE_ENV: "production" },
+    );
+    const reported = new Set(server.issues.map((issue) => issue.path));
+    const issues = [
+      ...server.issues,
+      ...crossFieldIssues(parsed).filter((issue) => !reported.has(issue.path)),
+    ];
+    console.error("✖ not deployable to production yet:\n" + describeIssues(issues));
   }
 } else {
   console.log("Required to run locally");
   for (const { group, why } of REQUIRED_LOCALLY) {
-    const missing = checkGroup(group);
+    const { missing } = checkGroup(group);
     if (missing.length === 0) {
       console.log(`  ✔ ${group} — ${why}`);
     } else {
@@ -101,9 +142,9 @@ if (strict) {
   }
 
   console.log("\nOptional locally (each one gates a feature)");
-  for (const { group, feature, without } of OPTIONAL_LOCALLY) {
-    const missing = checkGroup(group);
-    if (missing.length === 0) {
+  for (const { group, feature, without, configured } of OPTIONAL_LOCALLY) {
+    const { missing, values } = checkGroup(group);
+    if (missing.length === 0 && (configured?.(values) ?? true)) {
       console.log(`  ✔ ${group} — ${feature}`);
     } else {
       console.log(`  ○ ${group} — not configured: ${without}`);

@@ -108,12 +108,22 @@ export async function statObject(
   };
 }
 
+/** Upper bound for reading an object's leading bytes; the read is a few KB. */
+export const OBJECT_HEAD_TIMEOUT_MS = 15_000;
+
 /**
  * Reads the first bytes of an object without downloading the whole thing.
  *
  * Used for magic-byte sniffing: a 50 MB file must not be pulled into memory to
- * learn what its first four bytes are, so the stream is cancelled as soon as
- * enough has arrived.
+ * learn what its first four bytes are. The `Range` header bounds the response,
+ * so the body is read whole with `arrayBuffer()` and trimmed.
+ *
+ * It deliberately does not stream and cancel. Inside a Route Handler `fetch` is
+ * the Next.js-patched one, which can tee the response body; cancelling one
+ * branch of a tee does not settle while the other branch is open, and that is
+ * how an upload used to sit in "Scanning…" forever. A server that ignores
+ * `Range` and answers 200 is still bounded by the timeout and by the object
+ * size limits enforced before this runs.
  */
 export async function readObjectHead(
   bucket: BucketName,
@@ -121,35 +131,49 @@ export async function readObjectHead(
   byteCount = 4096,
 ): Promise<Uint8Array> {
   const { url } = await createSignedDownloadUrl(bucket, key, { expiresInSeconds: 60 });
-  const response = await fetch(url, { headers: { Range: `bytes=0-${byteCount - 1}` } });
-  if (!response.ok && response.status !== 206) {
+  const response = await fetch(url, {
+    headers: { Range: `bytes=0-${byteCount - 1}` },
+    cache: "no-store",
+    signal: AbortSignal.timeout(OBJECT_HEAD_TIMEOUT_MS),
+  });
+  if (!response.ok) {
     throw ApiError.internal(new Error(`object head read failed (${response.status})`));
   }
 
-  const reader = response.body?.getReader();
-  if (!reader) return new Uint8Array();
+  const buffer = new Uint8Array(await response.arrayBuffer());
+  return buffer.slice(0, byteCount);
+}
 
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  try {
-    while (total < byteCount) {
-      const { done, value } = await reader.read();
-      if (done || !value) break;
-      chunks.push(value);
-      total += value.byteLength;
-    }
-  } finally {
-    await reader.cancel().catch(() => undefined);
+/**
+ * Reads a whole object into memory, for server-side processing of a file the
+ * caller has already authorised (document intelligence). Bounded twice: by
+ * `maxBytes`, checked against the response before the body is read, and by a
+ * timeout. The signed URL lives for one minute and is never returned.
+ */
+export async function readObject(
+  bucket: BucketName,
+  key: string,
+  options: { maxBytes: number; timeoutMs?: number },
+): Promise<Uint8Array> {
+  const { url } = await createSignedDownloadUrl(bucket, key, { expiresInSeconds: 60 });
+  const response = await fetch(url, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(options.timeoutMs ?? 60_000),
+  });
+  if (!response.ok) {
+    throw ApiError.internal(new Error(`object read failed (${response.status})`));
   }
-
-  const head = new Uint8Array(Math.min(total, byteCount));
-  let offset = 0;
-  for (const chunk of chunks) {
-    if (offset >= head.length) break;
-    head.set(chunk.subarray(0, head.length - offset), offset);
-    offset += chunk.byteLength;
+  const declared = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > options.maxBytes) {
+    // Not awaited: cancelling a teed body may never settle (see readObjectHead).
+    void response.body?.cancel().catch(() => undefined);
+    throw ApiError.invariant("FILE_TOO_LARGE", "This file is too large to process.");
   }
-  return head;
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes.byteLength > options.maxBytes) {
+    throw ApiError.invariant("FILE_TOO_LARGE", "This file is too large to process.");
+  }
+  return bytes;
 }
 
 /** Promotes an object out of quarantine into its permanent bucket. */

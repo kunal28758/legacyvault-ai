@@ -16,10 +16,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { AllocationBar } from "@/components/data-display/allocation-bar";
-import { BeneficiaryCard, RoleChips } from "@/components/data-display/beneficiary-card";
-import { AccessLinksPanel } from "@/components/forms/access-links-panel";
-import { BeneficiaryFormSheet } from "@/components/forms/beneficiary-form";
+import { AllocationBar } from "@/components/beneficiaries/allocation-bar";
+import { BeneficiaryCard, RoleChips } from "@/components/beneficiaries/beneficiary-card";
+import { AccessLinksPanel } from "@/components/beneficiaries/access-links-panel";
+import { BeneficiaryFormSheet } from "@/components/beneficiaries/beneficiary-form";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { DataTable, type DataTableColumn } from "@/components/shared/data-table";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -54,7 +54,7 @@ import {
   useUnassignBeneficiary,
 } from "@/hooks/use-beneficiaries";
 import { useNow } from "@/hooks/use-now";
-import { ApiError } from "@/lib/api/client";
+import { ApiError } from "@/lib/client/api-client";
 import type { BeneficiaryWithRoles } from "@/lib/types/beneficiary";
 import { formatRelative, initials } from "@/lib/format";
 

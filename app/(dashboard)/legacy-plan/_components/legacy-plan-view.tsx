@@ -24,7 +24,7 @@ import { useAssets } from "@/hooks/use-assets";
 import { useBeneficiaries } from "@/hooks/use-beneficiaries";
 import { useCreateNewDraft, useLegacyPlanOverview } from "@/hooks/use-legacy-plan";
 import { useNow } from "@/hooks/use-now";
-import { ApiError } from "@/lib/api/client";
+import { ApiError } from "@/lib/client/api-client";
 import { computeCompleteness } from "@/lib/legacy-plan/completeness";
 import { PLAN_STEPS, stepForSection } from "@/lib/legacy-plan/steps";
 import { formatDateTime, formatRelative } from "@/lib/format";

@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { FormField } from "@/components/forms/form-field";
+import { FormField } from "@/components/shared/form-field";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { PageHeader } from "@/components/shared/page-header";
 import { PageSkeleton } from "@/components/shared/loading-skeleton";
@@ -51,7 +51,7 @@ import {
   useUpdateProfile,
 } from "@/hooks/use-profile";
 import { isReverificationCancelled, useReverifiedAction } from "@/hooks/use-reverified-action";
-import { ApiError } from "@/lib/api/client";
+import { ApiError } from "@/lib/client/api-client";
 
 /**
  * Preference defaults.

@@ -42,6 +42,7 @@ source wins and the `docs/` file must be corrected.
 
 | Folder / file | Purpose | Status legend used inside |
 |---|---|---|
+| `ARCHITECTURE.md` | **Code map**: frontend / backend / shared boundaries, where every kind of code lives, how to add code (checked by `tests/security/`) | — |
 | `architecture/SYSTEM_ARCHITECTURE.md` | How the single Next.js application is put together: layers, request pipeline, background processing, platform boundaries | 📐 specified / 📋 planned / ✅ implemented |
 | `ARCHITECTURE_DECISIONS.md` *(kept at `docs/` root — see path note)* | ADR log | — |
 | `development/CODING_STANDARDS.md` | Code conventions derived from the constitution and plan | — |

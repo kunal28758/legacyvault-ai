@@ -17,7 +17,12 @@ import type {
   PlanVersionSummary,
   SavePlanStepResult,
 } from "@/lib/types/legacy-plan";
-import type { FinalizePlanBody, SavePlanStepBody } from "@/lib/validators/legacy-plan.validators";
+import {
+  fieldErrors,
+  sectionDraftSchemas,
+  type FinalizePlanBody,
+  type SavePlanStepBody,
+} from "@/lib/validators/legacy-plan.validators";
 
 /**
  * Legacy-plan service (tasks T057–T070, api-contracts.md § Legacy Plans).
@@ -131,15 +136,30 @@ export async function savePlanStep(
     throw ApiError.conflict("CONFLICT", "This plan is finalized and can no longer be edited.");
   }
 
+  // The draft's shape is validated here (types, lengths, id formats; unknown
+  // keys dropped). Completeness is a separate question, answered below.
+  const parsed = sectionDraftSchemas[step].safeParse(body.data);
+  if (!parsed.success) {
+    const fields: Record<string, string[]> = {};
+    for (const [key, message] of Object.entries(fieldErrors(parsed.error))) {
+      fields[`data.${key}`] = [message];
+    }
+    throw ApiError.validation(
+      fields,
+      "Some of this section could not be saved. Check the highlighted fields.",
+    );
+  }
+  const sectionData = parsed.data as Record<string, unknown>;
+
   // Completeness is decided server-side against the real records, then handed
   // to save_plan_step() as `isComplete`. A client cannot claim a section is
   // complete when the records it references do not exist.
-  const complete = await isSectionComplete(db, user, step, body.data);
+  const complete = await isSectionComplete(db, user, step, sectionData);
 
   const { data, error } = await db.rpc("save_plan_step", {
     p_plan_id: planId,
     p_step: step,
-    p_data: { ...body.data, isComplete: complete } as never,
+    p_data: { ...sectionData, isComplete: complete } as never,
     p_expected_lock_version: body.lockVersion,
     p_corr: correlationId,
   });
@@ -306,11 +326,8 @@ async function isSectionComplete(
 }
 
 /**
- * The records the completeness rules cross-check against.
- *
- * Documents are read as an empty set until the vault is real (Batch 3); the
- * `document-attachments` section is then complete only when explicitly marked
- * "none", which is the truthful answer rather than a fabricated one.
+ * The records the completeness rules cross-check against: a section that
+ * points at a deleted beneficiary, asset or document is incomplete again.
  */
 async function completenessContext(
   db: TypedSupabaseClient,

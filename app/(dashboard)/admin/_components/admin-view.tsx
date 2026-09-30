@@ -46,7 +46,7 @@ import {
 } from "@/hooks/use-admin";
 import { useNow } from "@/hooks/use-now";
 import { isReverificationCancelled, useReverifiedAction } from "@/hooks/use-reverified-action";
-import { ApiError } from "@/lib/api/client";
+import { ApiError } from "@/lib/client/api-client";
 import { formatBytes, formatDateTime, formatRelative } from "@/lib/format";
 import type { AdminUserSummary } from "@/lib/types/admin";
 

@@ -22,7 +22,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useMarkNotificationsRead, useNotifications } from "@/hooks/use-notifications";
 import { useNow } from "@/hooks/use-now";
-import { ApiError } from "@/lib/api/client";
+import { ApiError } from "@/lib/client/api-client";
 import type { NotificationItem } from "@/lib/types/notification";
 import { formatDateTime, formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";

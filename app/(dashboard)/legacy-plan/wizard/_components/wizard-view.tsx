@@ -7,8 +7,8 @@ import { ArrowLeft, Lock } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { PageSkeleton } from "@/components/shared/loading-skeleton";
 import { StatusBadge } from "@/components/shared/status-badge";
-import { Stepper } from "@/components/wizard/stepper";
-import { WizardProvider, useWizard } from "@/components/wizard/wizard-provider";
+import { Stepper } from "@/components/will/stepper";
+import { WizardProvider, useWizard } from "@/components/will/wizard-provider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PLAN_STEPS } from "@/lib/legacy-plan/steps";
@@ -59,6 +59,10 @@ function WizardBody() {
         : step.key === "confirmation"
           ? plan.status === "FINALIZED"
           : completeness.sections[step.key].complete,
+    skipped:
+      step.key !== "review" && step.key !== "confirmation"
+        ? completeness.sections[step.key].skipped === true
+        : false,
   }));
 
   return (

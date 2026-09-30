@@ -1,3 +1,5 @@
+import "server-only";
+
 /**
  * What an operator may read from somebody else's audit rows (FR-P005, FR-P012).
  *

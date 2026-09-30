@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowUpRight, type LucideIcon } from "lucide-react";
 
+import { CountUp } from "@/components/shared/count-up";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -43,7 +44,9 @@ export function StatCard({
     <CardContent className="flex h-full items-start justify-between gap-4 p-5">
       <div className="min-w-0 space-y-2">
         <p className="text-sm font-medium text-muted-foreground">{label}</p>
-        <p className="text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl">{value}</p>
+        <p className="text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl">
+          {typeof value === "number" ? <CountUp value={value} /> : value}
+        </p>
         {hint && <p className="text-xs leading-5 text-muted-foreground">{hint}</p>}
       </div>
       <div className="flex shrink-0 flex-col items-end gap-2">

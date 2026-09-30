@@ -10,6 +10,7 @@ import {
   ScrollText,
   ShieldCheck,
   Siren,
+  Sparkles,
   TimerReset,
   Upload,
   UserPlus,
@@ -30,6 +31,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress, ProgressIndicator, ProgressTrack } from "@/components/ui/progress";
 import { useActivity } from "@/hooks/use-activity";
+import { useAIAvailability, useAIInteractions } from "@/hooks/use-ai";
 import { useAssets } from "@/hooks/use-assets";
 import { useBeneficiaries } from "@/hooks/use-beneficiaries";
 import { useCheckIn, useDeadManSwitch } from "@/hooks/use-dead-man-switch";
@@ -40,12 +42,12 @@ import { useNotifications } from "@/hooks/use-notifications";
 import { useNow } from "@/hooks/use-now";
 import { useProfile } from "@/hooks/use-profile";
 import { useVideos } from "@/hooks/use-videos";
-import { ApiError } from "@/lib/api/client";
+import { ApiError } from "@/lib/client/api-client";
 import { assetTotal } from "@/lib/assets/meta";
-import { readiness } from "@/lib/dashboard/readiness";
-import { dmsView, eaRequestView } from "@/lib/dms/presentation";
+import { readiness } from "@/lib/client/readiness";
+import { dmsView, eaRequestView } from "@/lib/client/dms-presentation";
 import { computeCompleteness } from "@/lib/legacy-plan/completeness";
-import { securityChecks, securityScore } from "@/lib/security/checks";
+import { securityChecks, securityScore } from "@/lib/client/security-checks";
 import { formatCompactCurrency, formatRelative, pluralize } from "@/lib/format";
 
 function greeting(now: number): string {
@@ -359,8 +361,15 @@ export function DashboardView({ firstName }: { firstName: string | null }) {
               </div>
               <ul className="space-y-2 text-sm">
                 <li className="flex items-center gap-2">
-                  <CheckCircle2 className="size-4 text-success" aria-hidden /> Email verified ·
-                  sessions encrypted
+                  {(profile.data?.emailVerified ?? false) ? (
+                    <CheckCircle2 className="size-4 text-success" aria-hidden />
+                  ) : (
+                    <span
+                      aria-hidden
+                      className="flex size-4 items-center justify-center rounded-full border-2 border-warning"
+                    />
+                  )}
+                  Email {(profile.data?.emailVerified ?? false) ? "verified" : "not verified"}
                 </li>
                 <li className="flex items-center gap-2">
                   {(profile.data?.mfaEnabled ?? false) ? (
@@ -682,6 +691,69 @@ export function DashboardView({ firstName }: { firstName: string | null }) {
           </CardContent>
         </Card>
       </div>
+
+      <AIActivityCard now={now} />
     </div>
+  );
+}
+
+const SESSION_LABEL: Record<string, string> = {
+  ASSISTANT: "Assistant conversation",
+  DOCUMENT_ANALYSIS: "Document analysis",
+  WILL_GENERATOR: "Will draft",
+};
+
+/**
+ * AI activity, from the sanitized usage records (ADR-016): when AI was used and
+ * for what kind of task — never what was asked or answered, which is not stored.
+ */
+function AIActivityCard({ now }: { now: number }) {
+  const availability = useAIAvailability();
+  const interactions = useAIInteractions(5);
+  const items = interactions.data?.items ?? [];
+  return (
+    <Card className="glass">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Sparkles className="size-4 text-brand-purple" aria-hidden />
+            AI activity
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Only when AI was used is recorded — never what you asked.
+          </p>
+        </div>
+        {availability.data &&
+          (availability.data.configured ? (
+            <StatusBadge tone="success">AI ready</StatusBadge>
+          ) : (
+            <StatusBadge tone="warning">AI not configured</StatusBadge>
+          ))}
+      </CardHeader>
+      <CardContent>
+        {interactions.isPending ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : interactions.isError ? (
+          <p className="text-sm text-destructive">AI activity could not be loaded.</p>
+        ) : items.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+            No AI activity yet. Ask the assistant a question or summarize a document.
+          </p>
+        ) : (
+          <ul className="divide-y divide-border/60">
+            {items.map((item) => (
+              <li key={item.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                <span className="truncate">
+                  {SESSION_LABEL[item.sessionType] ?? item.sessionType}
+                </span>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {formatRelative(item.createdAt, now)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
   );
 }

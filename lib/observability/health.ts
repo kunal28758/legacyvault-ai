@@ -22,7 +22,7 @@ export interface HealthDetail {
 
 const DMS_SCAN_INTERVAL_SECONDS = 3600;
 
-async function checkDatabase(): Promise<ComponentStatus> {
+export async function checkDatabase(): Promise<ComponentStatus> {
   try {
     const db = createServiceClient();
     const { error } = await db.from("users").select("id", { head: true, count: "exact" }).limit(1);
@@ -33,7 +33,7 @@ async function checkDatabase(): Promise<ComponentStatus> {
   }
 }
 
-async function checkStorage(): Promise<ComponentStatus> {
+export async function checkStorage(): Promise<ComponentStatus> {
   try {
     const db = createServiceClient();
     const { error } = await db.storage.listBuckets();
@@ -51,7 +51,7 @@ async function checkStorage(): Promise<ComponentStatus> {
  * runner has no job of its own to look for, so the freshest completion is its
  * heartbeat.
  */
-async function lastFinishedJob(type?: string): Promise<number | null> {
+export async function lastFinishedJob(type?: string): Promise<number | null> {
   const db = createServiceClient();
   let query = db
     .from("jobs")

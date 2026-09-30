@@ -38,8 +38,15 @@ jobs:
           ACCESS_COOKIE_KEY: ${{ secrets.CI_ACCESS_COOKIE_KEY || 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' }}
 
   database:
-    name: Integration tests (local Supabase)
+    name: Integration tests (local Supabase + ClamAV)
     runs-on: ubuntu-latest
+    # A real ClamAV daemon, so the upload pipeline's scan path (clean, infected,
+    # scanner-down retry) is exercised on every push, not only on a laptop.
+    services:
+      clamav:
+        image: clamav/clamav:stable
+        ports:
+          - 3310:3310
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -65,12 +72,28 @@ jobs:
           echo "SUPABASE_SECRET_KEY=$(supabase status --output json | jq -r '.SECRET_KEY // .SERVICE_ROLE_KEY')" >> "$GITHUB_ENV"
           echo "SUPABASE_JWT_SECRET=$(supabase status --output json | jq -r '.JWT_SECRET')" >> "$GITHUB_ENV"
 
+      # clamd downloads and loads its signatures on first start; the suite's
+      # scanner assertions need it answering PING first.
+      - name: Wait for ClamAV
+        run: |
+          for attempt in $(seq 1 60); do
+            if [ "$(printf 'zPING\0' | nc -w 3 localhost 3310 | tr -d '\0')" = "PONG" ]; then
+              echo "ClamAV is ready"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::ClamAV did not become ready within 5 minutes"
+          exit 1
+
       - name: Integration tests
         run: pnpm test:integration
         env:
           ENCRYPTION_KEY: k1:${{ secrets.CI_ENCRYPTION_KEY || 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' }}
           ACCESS_COOKIE_KEY: ${{ secrets.CI_ACCESS_COOKIE_KEY || 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' }}
-          MALWARE_SCANNER_PROVIDER: noop
+          MALWARE_SCANNER_PROVIDER: clamav
+          CLAMAV_HOST: localhost
+          CLAMAV_PORT: "3310"
 
       - name: Stop Supabase
         if: always()

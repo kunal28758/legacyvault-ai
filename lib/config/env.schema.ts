@@ -43,6 +43,20 @@ const booleanString = z
   .transform((value) => value === "true" || value === "1");
 
 /**
+ * An optional credential. Empty strings and the `.env.example` placeholders
+ * (`…REPLACE_ME`) mean "not configured" rather than a key that will fail on
+ * first use.
+ */
+const optionalSecret = z
+  .string()
+  .optional()
+  .transform((value) => {
+    const trimmed = value?.trim();
+    if (!trimmed || /REPLACE_ME/i.test(trimmed)) return undefined;
+    return trimmed;
+  });
+
+/**
  * Field definitions, grouped by the feature that consumes them.
  *
  * The full schema below is composed from these groups and is unchanged: every
@@ -81,11 +95,15 @@ export const serverEnvGroups = {
   accessCookie: {
     ACCESS_COOKIE_KEY: rawKey32,
   },
-  // AI providers (ADR-008)
+  // AI providers (ADR-008). Either provider may be configured on its own; the
+  // other then acts as no fallback. Production requires at least one (below).
+  // Placeholder values from .env.example are treated as "not configured".
   ai: {
-    OPENAI_API_KEY: z.string().min(1),
-    GEMINI_API_KEY: z.string().min(1),
+    OPENAI_API_KEY: optionalSecret,
+    GEMINI_API_KEY: optionalSecret,
     AI_DEFAULT_PROVIDER: z.enum(["openai", "gemini"]).default("openai"),
+    OPENAI_MODEL: z.string().min(1).default("gpt-5.4-mini"),
+    GEMINI_MODEL: z.string().min(1).default("gemini-2.5-flash"),
   },
   // Email (ADR-009)
   email: {
@@ -136,38 +154,67 @@ export const serverEnvShape = {
   ...serverEnvGroups.operations,
 } as const;
 
-export const serverEnvSchema = z.object(serverEnvShape).superRefine((env, ctx) => {
-  if (env.NODE_ENV === "production" && env.MALWARE_SCANNER_PROVIDER === "noop") {
-    ctx.addIssue({
-      code: "custom",
-      path: ["MALWARE_SCANNER_PROVIDER"],
+/** The cross-field inputs, loose enough to evaluate on a partially valid environment. */
+export interface CrossFieldInput {
+  NODE_ENV?: string;
+  MALWARE_SCANNER_PROVIDER?: string;
+  CLAMAV_HOST?: string;
+  OPENAI_API_KEY?: string;
+  GEMINI_API_KEY?: string;
+  SENTRY_DSN?: string;
+  ENCRYPTION_KEY?: { keyId: string };
+  ENCRYPTION_KEY_PREVIOUS?: { keyId: string };
+}
+
+/**
+ * Rules that span variables, including the production-only requirements. One
+ * definition, used by the schema below and by `pnpm env:check --all`, which
+ * evaluates them even while other variables are still missing.
+ */
+export function crossFieldIssues(env: CrossFieldInput): { path: string; message: string }[] {
+  const issues: { path: string; message: string }[] = [];
+  const production = env.NODE_ENV === "production";
+  if (production && env.MALWARE_SCANNER_PROVIDER === "noop") {
+    issues.push({
+      path: "MALWARE_SCANNER_PROVIDER",
       message:
         "MALWARE_SCANNER_PROVIDER=noop is refused in production (ADR-015): configure clamav.",
     });
   }
   if (env.MALWARE_SCANNER_PROVIDER === "clamav" && !env.CLAMAV_HOST) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["CLAMAV_HOST"],
+    issues.push({
+      path: "CLAMAV_HOST",
       message: "CLAMAV_HOST is required when MALWARE_SCANNER_PROVIDER=clamav.",
     });
   }
-  if (env.NODE_ENV === "production" && !env.SENTRY_DSN) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["SENTRY_DSN"],
+  if (production && !env.OPENAI_API_KEY && !env.GEMINI_API_KEY) {
+    issues.push({
+      path: "OPENAI_API_KEY",
+      message: "Configure OPENAI_API_KEY or GEMINI_API_KEY in production (ADR-008).",
+    });
+  }
+  if (production && !env.SENTRY_DSN) {
+    issues.push({
+      path: "SENTRY_DSN",
       message: "SENTRY_DSN is required in production (constitution XXI, ADR-010).",
     });
   }
   if (
     env.ENCRYPTION_KEY_PREVIOUS &&
+    env.ENCRYPTION_KEY &&
     env.ENCRYPTION_KEY_PREVIOUS.keyId === env.ENCRYPTION_KEY.keyId
   ) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["ENCRYPTION_KEY_PREVIOUS"],
+    issues.push({
+      path: "ENCRYPTION_KEY_PREVIOUS",
       message: "ENCRYPTION_KEY_PREVIOUS must use a different keyId than ENCRYPTION_KEY.",
     });
+  }
+  return issues;
+}
+
+export const serverEnvSchema = z.object(serverEnvShape).superRefine((env, ctx) => {
+  for (const issue of crossFieldIssues(env)) {
+    ctx.addIssue({ code: "custom", path: [issue.path], message: issue.message });
   }
 });
 

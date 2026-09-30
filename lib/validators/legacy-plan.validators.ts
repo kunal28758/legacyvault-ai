@@ -9,22 +9,29 @@ import { PLAN_SECTION_KEYS } from "@/lib/types/legacy-plan";
  * guarded functions enforce the invariants of record).
  */
 const trimmed = (max: number) => z.string().trim().max(max);
+/**
+ * A required text field whose message is the same whether the value is empty,
+ * too short or missing altogether — an untouched step must say "Enter a city",
+ * not Zod's generic "expected string, received undefined".
+ */
+const requiredText = (max: number, min: number, message: string) =>
+  z.string({ error: message }).trim().max(max).min(min, message);
 const optionalText = (max: number) => trimmed(max).optional().or(z.literal(""));
 const isoDate = z
-  .string()
+  .string({ error: "Enter a date" })
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Use the date picker (YYYY-MM-DD)")
   .refine((value) => !Number.isNaN(Date.parse(value)), "Enter a valid date");
 
 export const personalDetailsSchema = z.object({
-  legalName: trimmed(120).min(2, "Enter the full legal name used in the plan"),
+  legalName: requiredText(120, 2, "Enter the full legal name used in the plan"),
   dateOfBirth: isoDate.refine(
     (value) => Date.parse(value) < Date.now(),
     "Date of birth must be in the past",
   ),
   nationality: optionalText(60),
-  addressLine: trimmed(200).min(3, "Enter a street address"),
-  city: trimmed(80).min(2, "Enter a city"),
-  country: trimmed(80).min(2, "Enter a country"),
+  addressLine: requiredText(200, 3, "Enter a street address"),
+  city: requiredText(80, 2, "Enter a city"),
+  country: requiredText(80, 2, "Enter a country"),
   idType: z.enum(["PAN", "AADHAAR", "PASSPORT", "NATIONAL_ID", "OTHER"]).optional(),
 });
 
@@ -40,19 +47,21 @@ export const familyInformationSchema = z.object({
         dateOfBirth: isoDate.optional().or(z.literal("")),
       }),
     )
-    .max(20),
+    .max(20)
+    .default([]),
   dependents: optionalText(600),
 });
 
 export const beneficiariesStepSchema = z.object({
   beneficiaryIds: z
     .array(z.string().min(1))
-    .min(1, "Select at least one beneficiary or add one first"),
+    .default([])
+    .pipe(z.array(z.string()).min(1, "Select at least one beneficiary or add one first")),
 });
 
 export const assetsStepSchema = z
   .object({
-    assetIds: z.array(z.string().min(1)),
+    assetIds: z.array(z.string().min(1)).default([]),
     none: z.boolean().optional(),
   })
   .refine((value) => value.none || value.assetIds.length > 0, {
@@ -70,7 +79,8 @@ export const witnessDetailsSchema = z
           email: z.email("Enter a valid email").optional().or(z.literal("")),
         }),
       )
-      .max(6),
+      .max(6)
+      .default([]),
     none: z.boolean().optional(),
   })
   .refine((value) => value.none || value.witnesses.length > 0, {
@@ -94,7 +104,7 @@ export const specialWishesSchema = z
 
 export const documentAttachmentsStepSchema = z
   .object({
-    documentIds: z.array(z.string().min(1)),
+    documentIds: z.array(z.string().min(1)).default([]),
     none: z.boolean().optional(),
   })
   .refine((value) => value.none || value.documentIds.length > 0, {
@@ -109,6 +119,85 @@ export const finalizeSchema = z.object({
 });
 
 export const planSectionKeySchema = z.enum(PLAN_SECTION_KEYS);
+
+/* ── Draft shapes (server-side auto-save validation) ─────────────────────── */
+
+/**
+ * What an auto-save may contain, per section.
+ *
+ * Deliberately lenient about *completeness* — a half-typed draft must save —
+ * but strict about *shape*: every field has its type and length bound, ids
+ * must be UUIDs, lists are capped, and unknown keys are dropped, so nothing
+ * but the wizard's own fields can ever be written into a plan. `skipped`
+ * records "Skip for now" and is cleared by the next real edit.
+ */
+const draftText = (max: number) => z.string().max(max);
+const draftDate = z.string().max(10);
+const skipped = { skipped: z.boolean().optional() };
+const idList = (max: number) => z.array(z.uuid()).max(max);
+
+export const sectionDraftSchemas = {
+  "personal-details": z
+    .object({
+      legalName: draftText(120),
+      dateOfBirth: draftDate,
+      nationality: draftText(60),
+      addressLine: draftText(200),
+      city: draftText(80),
+      country: draftText(80),
+      idType: z.union([
+        z.enum(["PAN", "AADHAAR", "PASSPORT", "NATIONAL_ID", "OTHER"]),
+        z.literal(""),
+      ]),
+    })
+    .partial(),
+  "family-information": z
+    .object({
+      maritalStatus: z.union([
+        z.enum(["single", "married", "widowed", "divorced", "partnered"]),
+        z.literal(""),
+      ]),
+      spouseName: draftText(120),
+      children: z
+        .array(z.object({ name: draftText(120), dateOfBirth: draftDate }).partial())
+        .max(20),
+      dependents: draftText(600),
+      ...skipped,
+    })
+    .partial(),
+  beneficiaries: z.object({ beneficiaryIds: idList(200), ...skipped }).partial(),
+  "financial-assets": z.object({ assetIds: idList(500), none: z.boolean(), ...skipped }).partial(),
+  "physical-assets": z.object({ assetIds: idList(500), none: z.boolean(), ...skipped }).partial(),
+  "digital-assets": z.object({ assetIds: idList(500), none: z.boolean(), ...skipped }).partial(),
+  "witness-details": z
+    .object({
+      witnesses: z
+        .array(
+          z
+            .object({ name: draftText(120), relationship: draftText(80), email: draftText(254) })
+            .partial(),
+        )
+        .max(6),
+      none: z.boolean(),
+      ...skipped,
+    })
+    .partial(),
+  "special-wishes": z
+    .object({
+      instructions: draftText(4000),
+      funeralWishes: draftText(2000),
+      messages: draftText(4000),
+      ...skipped,
+    })
+    .partial(),
+  "document-attachments": z
+    .object({ documentIds: idList(200), none: z.boolean(), ...skipped })
+    .partial(),
+} as const;
+
+/** Personal details can never be skipped: finalization requires them. */
+export const SKIPPABLE_SECTIONS: readonly (typeof PLAN_SECTION_KEYS)[number][] =
+  PLAN_SECTION_KEYS.filter((key) => key !== "personal-details");
 
 export const sectionSchemas = {
   "personal-details": personalDetailsSchema,

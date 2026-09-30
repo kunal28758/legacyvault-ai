@@ -15,16 +15,35 @@ import { logger } from "@/lib/observability/logger";
  * without touching callers, exactly as ADR-007's revisit trigger describes.
  */
 export type RateLimitPolicyName =
-  "default" | "sensitive" | "ai" | "publicEmergency" | "accessExchange" | "tokenAccess";
+  | "default"
+  | "read"
+  | "autosave"
+  | "sensitive"
+  | "ai"
+  | "publicEmergency"
+  | "accessExchange"
+  | "tokenAccess";
 
 interface PolicyDefinition {
   limit: number;
   windowSeconds: number;
 }
 
-/** Policies are fixed by the API contract; callers pick a name, never a number. */
+/**
+ * Policies are fixed by the API contract; callers pick a name, never a number.
+ *
+ * `read` and `autosave` were added (2026-09-30) because reads and the wizard's
+ * auto-save shared `default`'s 100 requests per 15 minutes with every write:
+ * one dashboard load issues ~13 reads, so ordinary browsing exhausted the
+ * budget and auto-save started failing with 429. Reads of one's own data and
+ * debounced section saves now have their own, larger, still-bounded budgets;
+ * every other write keeps `default`. `withApi()` applies `read` to GET/HEAD
+ * requests on `default` routes.
+ */
 export const RATE_LIMIT_POLICIES: Record<RateLimitPolicyName, PolicyDefinition> = {
   default: { limit: 100, windowSeconds: 15 * 60 },
+  read: { limit: 600, windowSeconds: 15 * 60 },
+  autosave: { limit: 600, windowSeconds: 15 * 60 },
   sensitive: { limit: 5, windowSeconds: 15 * 60 },
   ai: { limit: 20, windowSeconds: 60 * 60 },
   publicEmergency: { limit: 5, windowSeconds: 60 * 60 },

@@ -2,8 +2,8 @@
 
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 
-import { apiClient } from "@/lib/api/client";
-import { queryKeys } from "@/lib/api/query-keys";
+import { apiClient } from "@/lib/client/api-client";
+import { queryKeys } from "@/lib/client/query-keys";
 import type { AccessTokenSummary } from "@/lib/types/access";
 import type { AccessScopeInput } from "@/lib/validators/dms.validators";
 

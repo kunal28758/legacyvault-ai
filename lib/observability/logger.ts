@@ -45,6 +45,18 @@ const REDACT_PATHS = [
   "*.ciphertext",
   "content",
   "*.content",
+  // AI (ADR-008/016): prompts, questions, answers and document text are
+  // personal content and never belong in a log line.
+  "prompt",
+  "*.prompt",
+  "question",
+  "*.question",
+  "answer",
+  "*.answer",
+  "history",
+  "*.history",
+  "documentText",
+  "*.documentText",
 ];
 
 /** `/access?t=…` and `/emergency-access/...` must never appear verbatim in a log. */

@@ -110,3 +110,30 @@ describe("public environment schema (T007)", () => {
     expect(result.ok).toBe(true);
   });
 });
+
+describe("cross-field production rules", () => {
+  it("lists every production-only requirement even on a partial environment", async () => {
+    const { crossFieldIssues } = await import("@/lib/config/env.schema");
+    const paths = crossFieldIssues({
+      NODE_ENV: "production",
+      MALWARE_SCANNER_PROVIDER: "noop",
+    }).map((issue) => issue.path);
+    expect(paths).toEqual(["MALWARE_SCANNER_PROVIDER", "OPENAI_API_KEY", "SENTRY_DSN"]);
+  });
+
+  it("accepts either AI provider in production and ignores production rules in development", async () => {
+    const { crossFieldIssues } = await import("@/lib/config/env.schema");
+    expect(
+      crossFieldIssues({
+        NODE_ENV: "production",
+        MALWARE_SCANNER_PROVIDER: "clamav",
+        CLAMAV_HOST: "clamav.internal",
+        GEMINI_API_KEY: "key",
+        SENTRY_DSN: "https://example.ingest.sentry.io/1",
+      }),
+    ).toEqual([]);
+    expect(crossFieldIssues({ NODE_ENV: "development", MALWARE_SCANNER_PROVIDER: "noop" })).toEqual(
+      [],
+    );
+  });
+});

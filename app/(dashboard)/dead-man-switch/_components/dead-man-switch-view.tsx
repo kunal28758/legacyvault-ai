@@ -17,18 +17,20 @@ import {
   Settings2,
   ShieldCheck,
   TimerReset,
+  Upload,
   Users,
   Video,
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { FormField } from "@/components/forms/form-field";
+import { UploadDialog } from "@/components/documents/upload-dialog";
+import { FormField } from "@/components/shared/form-field";
 import {
   ScopePicker,
   describeScope,
   scopeSize,
   useScopeCatalog,
-} from "@/components/forms/scope-picker";
+} from "@/components/security/scope-picker";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { PageHeader, SectionHeading } from "@/components/shared/page-header";
 import { PageSkeleton } from "@/components/shared/loading-skeleton";
@@ -59,9 +61,9 @@ import {
 import { useBeneficiaries } from "@/hooks/use-beneficiaries";
 import { useNow } from "@/hooks/use-now";
 import { isReverificationCancelled, useReverifiedAction } from "@/hooks/use-reverified-action";
-import { ApiError } from "@/lib/api/client";
+import { ApiError } from "@/lib/client/api-client";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
-import { DMS_STAGES, dmsView } from "@/lib/dms/presentation";
+import { DMS_STAGES, dmsView } from "@/lib/client/dms-presentation";
 import type { DeadManSwitch, DmsEventType } from "@/lib/types/dms";
 import type { AccessScopeInput } from "@/lib/validators/dms.validators";
 import { formatDateTime, formatRelative } from "@/lib/format";
@@ -541,6 +543,7 @@ function DmsConfigForm({ onClose }: { onClose: () => void }) {
   // A release must name something, so the scope is chosen here rather than
   // being carried over empty — `lv_validate_scope()` refuses an empty one.
   const [scope, setScope] = useState<AccessScopeInput>(dms?.releaseScope ?? EMPTY_SCOPE);
+  const [uploadOpen, setUploadOpen] = useState(false);
   const catalog = useScopeCatalog(true);
   return (
     <>
@@ -627,7 +630,33 @@ function DmsConfigForm({ onClose }: { onClose: () => void }) {
               ))}
           </ul>
         </fieldset>
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed border-border px-3 py-2.5">
+          <p className="text-xs text-muted-foreground">
+            Need to add a document for release? It is validated and malware-scanned before it can be
+            selected.
+          </p>
+          <Button size="sm" variant="outline" onClick={() => setUploadOpen(true)}>
+            <Upload data-icon="inline-start" />
+            Upload document
+          </Button>
+        </div>
         <ScopePicker grant="DMS_RELEASE" value={scope} onChange={setScope} catalog={catalog} />
+        <UploadDialog
+          kind="document"
+          open={uploadOpen}
+          onOpenChange={setUploadOpen}
+          title="Upload a document for release"
+          description="Stored in your private vault through the same checks as every upload, then added to this release scope. Save the switch to confirm."
+          onUploaded={(outcome) => {
+            const documentId = outcome.documentId;
+            if (!documentId) return;
+            setScope((current) =>
+              current.documents.includes(documentId)
+                ? current
+                : { ...current, documents: [...current.documents, documentId] },
+            );
+          }}
+        />
       </div>
       <SheetFooter className="flex-col items-stretch gap-2 border-t border-border sm:flex-row sm:items-center sm:justify-end">
         {form.contactIds.length === 0 || scopeSize(scope) === 0 ? (

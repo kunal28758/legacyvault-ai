@@ -13,8 +13,14 @@ type UploadParams = { uploadId: string };
  *
  * Measures the object that actually arrived, checks its leading bytes against
  * the declared type, runs the malware-scan boundary, and only then moves it out
- * of quarantine and calls `promote_upload()`. A rejected object is deleted.
+ * of quarantine and calls `promote_upload()`. A rejected object is deleted; a
+ * file whose scan could not run stays in quarantine and may be completed again.
+ *
+ * A 500 MB video has to be streamed through the scanner inside this request,
+ * and the scan is bounded below this limit (`scanTimeoutFor`).
  */
+export const maxDuration = 300;
+
 export const POST = withApi<UploadCompleteBody, undefined, UploadParams>(
   {
     auth: "user",

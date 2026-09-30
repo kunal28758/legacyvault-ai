@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ApiError, apiClient } from "@/lib/api/client";
+import { ApiError, apiClient } from "@/lib/client/api-client";
 
 /**
  * Code entry, and then the wait (FR-J003–J005).

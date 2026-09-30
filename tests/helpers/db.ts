@@ -52,6 +52,30 @@ export function createServiceScopedClient(): SupabaseClient {
 }
 
 /**
+ * Returns the id of a test user, creating it on first use.
+ *
+ * Test users are reused rather than deleted and re-created: the audit log is
+ * append-only and references its actors, so a user that has done anything
+ * auditable cannot (and must not) be deleted.
+ */
+export async function ensureTestUser(
+  service: SupabaseClient,
+  clerkUserId: string,
+  name = clerkUserId,
+): Promise<string> {
+  const { data, error } = await service
+    .from("users")
+    .upsert(
+      { clerk_user_id: clerkUserId, email: `${clerkUserId}@example.com`, name },
+      { onConflict: "clerk_user_id" },
+    )
+    .select("id")
+    .single();
+  if (error) throw error;
+  return (data as { id: string }).id;
+}
+
+/**
  * Per-test data reset. The LegacyVault schema does not exist yet (T018/T218/T019);
  * once it does, this truncates the domain tables through the service client.
  */

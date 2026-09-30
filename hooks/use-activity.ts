@@ -2,7 +2,7 @@
 
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 
-import { apiClient } from "@/lib/api/client";
+import { apiClient } from "@/lib/client/api-client";
 import type { ActivityListResult } from "@/lib/types/activity";
 
 /** The caller's own audit rows, for the Security Center. */

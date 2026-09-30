@@ -59,6 +59,8 @@ export interface SectionCompleteness {
   title: string;
   required: boolean;
   complete: boolean;
+  /** The owner chose "Skip for now" and has not completed it since. */
+  skipped?: boolean;
   summary: string;
 }
 

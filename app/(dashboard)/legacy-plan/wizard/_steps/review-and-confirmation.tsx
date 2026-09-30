@@ -11,15 +11,20 @@ import {
   FileCheck2,
   Pencil,
   Share2,
+  ShieldCheck,
+  SkipForward,
   Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { StatusBadge } from "@/components/shared/status-badge";
-import { WizardNavigation, WizardStep } from "@/components/wizard/wizard-step";
-import { useWizard } from "@/components/wizard/wizard-provider";
+import { WizardNavigation, WizardStep } from "@/components/will/wizard-step";
+import { useWizard } from "@/components/will/wizard-provider";
+import { useDeadManSwitch } from "@/hooks/use-dead-man-switch";
+import { useEmergencyAccess } from "@/hooks/use-emergency-access";
 import { usePlanReview } from "@/hooks/use-legacy-plan";
+import { dmsView } from "@/lib/client/dms-presentation";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -27,6 +32,77 @@ import { PLAN_STEPS } from "@/lib/legacy-plan/steps";
 import { stepForSection } from "@/lib/legacy-plan/steps";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+
+/**
+ * How the plan reaches people: the Dead Man's Switch release and emergency
+ * access, read from their own APIs. Configured on their own pages; shown here
+ * so the review covers everything that decides who sees what.
+ */
+function ReleaseSummary() {
+  const dms = useDeadManSwitch();
+  const emergency = useEmergencyAccess();
+  const scope = dms.data?.releaseScope;
+  const scopeCount = scope
+    ? scope.documents.length + scope.assets.length + scope.videos.length + scope.planSections.length
+    : 0;
+  const view = dms.data ? dmsView(dms.data.status) : null;
+  const contacts = emergency.data?.contacts.length ?? 0;
+
+  return (
+    <Card className="glass">
+      <CardContent className="space-y-3 p-5">
+        <p className="flex items-center gap-2 text-sm font-medium">
+          <ShieldCheck className="size-4 text-brand-cyan" aria-hidden />
+          Release &amp; security
+        </p>
+        {dms.isPending || emergency.isPending ? (
+          <p className="text-xs text-muted-foreground">Loading…</p>
+        ) : dms.isError || emergency.isError ? (
+          <p className="text-xs text-destructive">Could not load the release settings.</p>
+        ) : (
+          <dl className="space-y-2 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-muted-foreground">Dead Man’s Switch</dt>
+              <dd className="flex items-center gap-2">
+                {view ? (
+                  <StatusBadge tone={view.tone} icon={null} className="h-5 text-[11px]">
+                    {view.label}
+                  </StatusBadge>
+                ) : (
+                  <span className="text-xs text-muted-foreground">Not set up</span>
+                )}
+                <Link
+                  href="/dead-man-switch"
+                  className="text-xs text-primary underline-offset-4 hover:underline"
+                >
+                  Edit
+                </Link>
+              </dd>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-muted-foreground">Released on trigger</dt>
+              <dd className="text-xs">
+                {dms.data ? `${scopeCount} item${scopeCount === 1 ? "" : "s"}` : "—"}
+              </dd>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-muted-foreground">Emergency contacts</dt>
+              <dd className="flex items-center gap-2 text-xs">
+                {contacts}
+                <Link
+                  href="/emergency-access"
+                  className="text-primary underline-offset-4 hover:underline"
+                >
+                  Edit
+                </Link>
+              </dd>
+            </div>
+          </dl>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 /* Step 10 — review (T069 / T103) */
 export function ReviewStep() {
@@ -73,6 +149,8 @@ export function ReviewStep() {
             >
               {section.complete ? (
                 <CheckCircle2 className="size-5 shrink-0 text-success" aria-hidden />
+              ) : section.skipped ? (
+                <SkipForward className="size-5 shrink-0 text-muted-foreground" aria-hidden />
               ) : (
                 <CircleDashed
                   className={cn(
@@ -93,7 +171,9 @@ export function ReviewStep() {
                 </p>
                 <p className="truncate text-xs text-muted-foreground">{section.summary}</p>
               </div>
-              <span className="sr-only">{section.complete ? "complete" : "incomplete"}</span>
+              <span className="sr-only">
+                {section.complete ? "complete" : section.skipped ? "skipped" : "incomplete"}
+              </span>
               {!readOnly && (
                 <Button variant="ghost" size="sm" onClick={() => goTo(stepForSection(section.key))}>
                   <Pencil data-icon="inline-start" />
@@ -123,6 +203,8 @@ export function ReviewStep() {
               )}
             </CardContent>
           </Card>
+
+          <ReleaseSummary />
 
           {personalMissing ? (
             <Alert variant="destructive">

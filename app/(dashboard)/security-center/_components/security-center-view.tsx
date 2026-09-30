@@ -20,7 +20,7 @@ import { ActivityFeed } from "@/components/shared/activity-feed";
 import { PageHeader, SectionHeading } from "@/components/shared/page-header";
 import { PageSkeleton } from "@/components/shared/loading-skeleton";
 import { ProgressRing } from "@/components/shared/progress-card";
-import { SecurityCard } from "@/components/shared/security-card";
+import { SecurityCard } from "@/components/security/security-card";
 import { StaggerGrid, StaggerItem } from "@/components/shared/page-transition";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
@@ -35,7 +35,7 @@ import { useEmergencyAccess } from "@/hooks/use-emergency-access";
 import { useLegacyPlanOverview } from "@/hooks/use-legacy-plan";
 import { useNow } from "@/hooks/use-now";
 import { useProfile } from "@/hooks/use-profile";
-import { securityChecks, securityScore } from "@/lib/security/checks";
+import { securityChecks, securityScore } from "@/lib/client/security-checks";
 import { formatRelative } from "@/lib/format";
 
 const icons = {

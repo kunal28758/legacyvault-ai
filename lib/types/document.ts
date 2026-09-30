@@ -95,6 +95,14 @@ export interface UploadOutcome {
   status: UploadStatus;
   rejectionReason: string | null;
   scan: ScanInfo;
+  /**
+   * True when the file is still safely held in quarantine and completing the
+   * upload again may succeed — the scanner was unavailable, or a step timed
+   * out. Never true for a rejected or infected file.
+   */
+  retryable: boolean;
+  /** True while another request is still validating or scanning this upload. */
+  inProgress: boolean;
   documentId?: string;
   videoId?: string;
 }

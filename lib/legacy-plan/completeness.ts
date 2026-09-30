@@ -32,6 +32,8 @@ export const PLAN_SECTION_TITLES: Record<PlanSectionKey, string> = {
   "document-attachments": "Document Attachments",
 };
 
+export const SKIPPED_SUMMARY = "Skipped — you can complete this later.";
+
 export interface CompletenessContext {
   stepsData: PlanStepsData;
   beneficiaries: { id: string; status: string }[];
@@ -162,6 +164,14 @@ export function computeCompleteness(context: CompletenessContext): PlanCompleten
           ? `${documentIds.length} attached`
           : "No documents attached",
   };
+
+  // "Skip for now" is recorded on the section and shown as such, but it never
+  // counts as complete: a skipped section is still incomplete at finalization.
+  for (const key of PLAN_SECTION_KEYS) {
+    const skipped = asRecord(data[key]).skipped === true && !sections[key].complete;
+    sections[key].skipped = skipped;
+    if (skipped) sections[key].summary = SKIPPED_SUMMARY;
+  }
 
   const incompleteSections = PLAN_SECTION_KEYS.filter((key) => !sections[key].complete);
   const percent = Math.round(

@@ -3,14 +3,14 @@
 import { Coins, FileText, Gem, Globe, Users } from "lucide-react";
 
 import { StatusBadge, toneForBeneficiaryStatus } from "@/components/shared/status-badge";
-import { ResourcePicker } from "@/components/wizard/resource-picker";
-import { WizardStep } from "@/components/wizard/wizard-step";
-import { useSectionForm } from "@/components/wizard/use-section-form";
-import { useWizard } from "@/components/wizard/wizard-provider";
+import { ResourcePicker } from "@/components/will/resource-picker";
+import { WizardStep } from "@/components/will/wizard-step";
+import { useSectionForm } from "@/components/will/use-section-form";
+import { useWizard } from "@/components/will/wizard-provider";
 import { ASSET_KIND_META } from "@/lib/assets/meta";
 import type { AssetKind } from "@/lib/types/asset";
 import type { PlanSectionKey } from "@/lib/types/legacy-plan";
-import { formatCompactCurrency, titleCase } from "@/lib/format";
+import { formatBytes, formatCompactCurrency, formatDate, titleCase } from "@/lib/format";
 
 /* Step 3 — beneficiaries (embeds the beneficiary module; stores ids — T221) */
 export function BeneficiariesStep() {
@@ -143,14 +143,24 @@ export function AssetsStep({ kind }: { kind: AssetKind }) {
 
 /* Step 9 — document attachments (T223) */
 export function DocumentAttachmentsStep() {
+  const { documents } = useWizard();
   const { values, setField, errors, readOnly } = useSectionForm("document-attachments", {
     documentIds: [] as string[],
     none: false,
   });
-  // The vault becomes real in its own batch; until then there is nothing to
-  // attach, and the step is completed by marking it "none" rather than by
-  // offering documents that were never uploaded.
-  const items: never[] = [];
+  // Only documents that passed the security scan are in the vault at all, so
+  // everything listed here is safe to attach.
+  const items = documents.map((document) => ({
+    id: document.id,
+    title: document.name,
+    subtitle: `${formatBytes(document.sizeBytes)} · added ${formatDate(document.createdAt)}`,
+    icon: FileText,
+    meta: document.scan.performed ? (
+      <StatusBadge tone="success" icon={null} className="h-5 text-[11px]">
+        Scanned
+      </StatusBadge>
+    ) : null,
+  }));
   return (
     <WizardStep
       eyebrow="Step 9"

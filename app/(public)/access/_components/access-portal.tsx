@@ -7,7 +7,7 @@ import { Download, FileText, Gem, Play, ScrollText, ShieldCheck, Video } from "l
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ApiError, apiClient } from "@/lib/api/client";
+import { ApiError, apiClient } from "@/lib/client/api-client";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { PLAN_SECTION_TITLES } from "@/lib/legacy-plan/completeness";
 import type { PlanSectionKey } from "@/lib/types/legacy-plan";

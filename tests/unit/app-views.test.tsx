@@ -148,6 +148,15 @@ function stubPlanApi() {
           limit: 25,
         });
       if (url.includes("/users/me")) return apiResponse(PROFILE);
+      if (url.includes("/system-status"))
+        return apiResponse({
+          overall: "degraded",
+          checkedAt: "2026-09-30T00:00:00.000Z",
+          services: [
+            { id: "database", label: "Database", state: "operational", message: "ok" },
+            { id: "ai", label: "AI services", state: "not_configured", message: "No provider" },
+          ],
+        });
       return apiResponse({});
     }),
   );
@@ -214,7 +223,17 @@ describe("authenticated views", () => {
     );
     expect(screen.getByText(/Step 6 of 11/)).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 2, name: /Digital assets/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Next/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Save & continue/i })).toBeInTheDocument();
+    // An optional step can be skipped; nothing has been saved yet, so nothing claims to be.
+    expect(screen.getByRole("button", { name: /Skip for now/i })).toBeInTheDocument();
+    expect(screen.queryByText(/^Saved/)).not.toBeInTheDocument();
+  });
+
+  it("shows the real system status in the shell, never a default green", async () => {
+    renderInShell(<DashboardView firstName="Aarav" />);
+    const trigger = await screen.findByRole("button", { name: /Partially available/i });
+    expect(trigger).toBeInTheDocument();
+    expect(screen.queryByText(/System online/i)).not.toBeInTheDocument();
   });
 
   it("renders the Dead Man's Switch state machine and controls", async () => {

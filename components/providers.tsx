@@ -7,8 +7,8 @@ import { toast } from "sonner";
 
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { ApiError, ReverificationRequiredError } from "@/lib/api/client";
-import { makeQueryClient } from "@/lib/api/query-client";
+import { ApiError, ReverificationRequiredError } from "@/lib/client/api-client";
+import { makeQueryClient } from "@/lib/client/query-client";
 
 /**
  * Client-side providers (tasks T014/T017): TanStack Query, theme attribute handling

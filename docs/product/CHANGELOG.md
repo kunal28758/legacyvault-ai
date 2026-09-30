@@ -19,6 +19,39 @@ Format: newest first. Categories: *Governance*, *Specification*,
 
 ## [Unreleased]
 
+### Production-readiness pass — 2026-09-30
+- **Upload / malware scanning (fixed)**: uploads no longer hang at "Malware
+  scan". `readObjectHead()` reads the ranged response with `arrayBuffer()`
+  instead of cancelling a (teed) stream; every step is bounded (head read,
+  clamd connect/idle, per-size scan budget); the ClamAV client honours
+  back-pressure and `CLAMAV_TLS`; completion claims the session atomically;
+  a scanner outage leaves the file in quarantine as retryable instead of
+  rejecting or passing it; stale mid-pipeline sessions are reclaimable.
+  Accepted types are defined once (`lib/uploads/file-types.ts`), CSV/PPTX
+  added (migration `0005_document_types.sql`), HEIC and text are now
+  byte-checked. Upload UI: multi-file queue, honest stages, cancel, retry.
+- **Create Will**: "Saved" only after server confirmation; failed saves keep
+  their edits and retry; unsaved-changes guard; Save & continue; Skip for now
+  on optional steps (persisted, shown in stepper/review); server-side draft
+  shape validation; step 9 attaches real vault documents; review shows
+  release & security settings. Fixed: the old "Save draft" toast claimed
+  success before the save.
+- **Rate limits**: reads and wizard auto-save have their own budgets (`read`,
+  `autosave`); previously ordinary browsing exhausted the shared 100/15 min
+  budget and auto-save failed with 429.
+- **AI (ADR-008/016 implemented)**: OpenAI + Gemini providers with fallback;
+  streaming assistant; document intelligence (summary, extraction, Q&A,
+  explanation, text/OCR, translation, comparison) with grounding checks and
+  encrypted stored results; usage records without content.
+- **System status**: live probes of database, storage, Clerk, ClamAV and AI
+  behind a "System online" indicator (breakdown for signed-in users only).
+- **Landing**: new procedural 3D vault-shield hero; removed the hero's
+  hard-coded "Vault status: protected / Dead Man's Switch · Active" card.
+- **Structure**: components grouped by feature; browser API client moved to
+  `lib/client/`; every server module marked `server-only`; boundary checks in
+  `tests/security/`; debug route and local-rules assistant removed;
+  `docs/ARCHITECTURE.md` added.
+
 ### Implementation — 2026-09-19 (website batch, college-evaluation sprint)
 - Public site: `app/(marketing)` layout + landing (navbar, hero with procedural
   three.js vault and GSAP headline, trust strip, capabilities, how it works,

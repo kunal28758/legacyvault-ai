@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, ReverificationRequiredError, apiClient } from "@/lib/api/client";
-import { shouldRetry } from "@/lib/api/query-client";
+import { ApiError, ReverificationRequiredError, apiClient } from "@/lib/client/api-client";
+import { shouldRetry } from "@/lib/client/query-client";
 
 function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {

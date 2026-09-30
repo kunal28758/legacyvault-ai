@@ -1,3 +1,5 @@
+import "server-only";
+
 /**
  * Whether a notification may be emailed (FR-L004, FR-B005).
  *

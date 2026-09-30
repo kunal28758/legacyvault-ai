@@ -18,6 +18,7 @@ import {
 
 import { PAGE_TITLES, breadcrumbsFor } from "@/components/layout/nav-config";
 import { SidebarNav } from "@/components/layout/sidebar-nav";
+import { SystemStatusIndicator } from "@/components/layout/system-status-indicator";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { BrandLogo } from "@/components/shared/brand-logo";
 import { PageTransition } from "@/components/shared/page-transition";
@@ -206,6 +207,7 @@ export function AppShell({ user, clerkEnabled, children }: AppShellProps) {
             <p className="truncate text-sm font-semibold sm:hidden">{title}</p>
           </div>
 
+          <SystemStatusIndicator compact />
           <ThemeToggle />
           <Tooltip>
             <TooltipTrigger

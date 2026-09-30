@@ -71,7 +71,7 @@ in `.env.example` (T008). Server variables are readable only in server code;
 | Identity (Clerk) | `CLERK_SECRET_KEY`, `CLERK_WEBHOOK_SIGNING_SECRET` · public `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | server · public |
 | Database / storage (Supabase) | `SUPABASE_URL`, `SUPABASE_SECRET_KEY` · public `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | server · public |
 | Application encryption | `ENCRYPTION_KEY` (active), `ENCRYPTION_KEY_PREVIOUS` (rotation window), `ACCESS_COOKIE_KEY` | server |
-| AI providers | `OPENAI_API_KEY`, `GEMINI_API_KEY`, `AI_DEFAULT_PROVIDER` | server |
+| AI providers | `OPENAI_API_KEY`, `GEMINI_API_KEY`, `AI_DEFAULT_PROVIDER`, `OPENAI_MODEL`, `GEMINI_MODEL` | server |
 | Email | `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_WEBHOOK_SECRET` | server |
 | Monitoring | `SENTRY_DSN` · public `NEXT_PUBLIC_SENTRY_DSN` | server · public |
 | Background jobs | `CRON_SECRET` | server (also configured in Vercel Cron and, for production, in Supabase Vault for `pg_cron`) |

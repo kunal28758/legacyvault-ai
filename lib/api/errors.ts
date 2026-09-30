@@ -1,3 +1,5 @@
+import "server-only";
+
 import type { ApiErrorBody, ApiFailure, ApiMeta } from "@/lib/types/api";
 
 /**

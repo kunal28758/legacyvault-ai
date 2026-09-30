@@ -3,7 +3,7 @@
 import { useCallback } from "react";
 import { useClerk } from "@clerk/nextjs";
 
-import { ReverificationRequiredError } from "@/lib/api/client";
+import { ReverificationRequiredError } from "@/lib/client/api-client";
 
 /**
  * The step-up re-authentication gate (FR-A018).

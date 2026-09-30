@@ -5,13 +5,13 @@ import { useRouter } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 
-import { FormField } from "@/components/forms/form-field";
+import { FormField } from "@/components/shared/form-field";
 import { BrandLogo } from "@/components/shared/brand-logo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useCompleteOnboarding, useUpdateProfile } from "@/hooks/use-profile";
-import { ApiError } from "@/lib/api/client";
+import { ApiError } from "@/lib/client/api-client";
 
 /**
  * The three things the rest of the product actually reads (FR-B002).

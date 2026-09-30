@@ -15,13 +15,13 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { FormField } from "@/components/forms/form-field";
+import { FormField } from "@/components/shared/form-field";
 import {
   ScopePicker,
   describeScope,
   scopeSize,
   useScopeCatalog,
-} from "@/components/forms/scope-picker";
+} from "@/components/security/scope-picker";
 import { ActivityFeed } from "@/components/shared/activity-feed";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -62,8 +62,8 @@ import {
 } from "@/hooks/use-emergency-access";
 import { useNow } from "@/hooks/use-now";
 import { isReverificationCancelled, useReverifiedAction } from "@/hooks/use-reverified-action";
-import { ApiError } from "@/lib/api/client";
-import { eaRequestView } from "@/lib/dms/presentation";
+import { ApiError } from "@/lib/client/api-client";
+import { eaRequestView } from "@/lib/client/dms-presentation";
 import type { AccessScope } from "@/lib/types/dms";
 import type { EaOnTimeout, EmergencyContact, EmergencyRequest } from "@/lib/types/emergency-access";
 import { formatDateTime, formatRelative } from "@/lib/format";

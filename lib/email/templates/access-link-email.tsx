@@ -1,3 +1,5 @@
+import "server-only";
+
 import { Button, Text } from "@react-email/components";
 
 import { EmailLayout, button, paragraph } from "./layout";

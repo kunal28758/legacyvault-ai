@@ -10,6 +10,7 @@ const rootDir = path.dirname(fileURLToPath(import.meta.url));
  * Vitest configuration (task T015).
  *
  * - `unit`: jsdom + React Testing Library (`pnpm test`)
+ * - `security`: static boundary checks over the source (part of `pnpm test`)
  * - `integration`: Node environment against the local Supabase stack
  *   (`pnpm test:integration`; suites that need the database skip themselves
  *   when the stack is not running — see tests/helpers/db.ts)
@@ -46,6 +47,17 @@ export default defineConfig({
           name: "unit",
           environment: "jsdom",
           include: ["tests/unit/**/*.test.{ts,tsx}"],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          ...shared,
+          // Static checks over the source tree: server/browser boundaries,
+          // secrets in client code, debug leftovers (tests/security).
+          name: "security",
+          environment: "node",
+          include: ["tests/security/**/*.test.ts"],
         },
       },
       {

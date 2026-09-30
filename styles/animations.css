@@ -56,6 +56,53 @@
   animation: lv-shimmer 1.6s linear infinite;
 }
 
+/* A slow, soft halo for live status dots — noticeable, never distracting. */
+@keyframes lv-status-halo {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  70%,
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+@utility animate-status-halo {
+  animation: lv-status-halo 2.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+/* Scanning sweep across a progress track (upload security scan). */
+@keyframes lv-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+
+@utility animate-sweep {
+  animation: lv-sweep 1.4s ease-in-out infinite;
+}
+
+/* Subtle drifting gradient for hero accents. */
+@keyframes lv-gradient-drift {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+@utility animate-gradient-drift {
+  background-size: 200% 200%;
+  animation: lv-gradient-drift 12s ease-in-out infinite;
+}
+
 /* Staggered entrance helpers */
 .stagger > * {
   animation: lv-fade-up 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -93,7 +140,10 @@
     scroll-behavior: auto !important;
   }
   .animate-float,
-  .animate-shimmer {
+  .animate-shimmer,
+  .animate-status-halo,
+  .animate-sweep,
+  .animate-gradient-drift {
     animation: none !important;
   }
 }

@@ -4,6 +4,7 @@ import { withApi } from "@/lib/api/with-api";
 import { getOptionalUser } from "@/lib/auth/require-user";
 import { getEnvGroup } from "@/lib/config/env";
 import { getHealth } from "@/lib/observability/health";
+import { safeEqual } from "@/lib/security/encryption";
 
 /**
  * Health check (task T030, ADR-010).
@@ -18,7 +19,8 @@ async function isOperator(request: Request): Promise<boolean> {
   const provided = request.headers.get("authorization");
   if (provided) {
     try {
-      if (provided === `Bearer ${getEnvGroup("cron").CRON_SECRET}`) return true;
+      // Constant-time, like the cron routes: timing must not leak the secret.
+      if (safeEqual(provided, `Bearer ${getEnvGroup("cron").CRON_SECRET}`)) return true;
     } catch {
       // CRON_SECRET not configured locally — fall through to the session check.
     }

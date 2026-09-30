@@ -3,8 +3,8 @@
 import { useCallback } from "react";
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 
-import { apiClient } from "@/lib/api/client";
-import { queryKeys } from "@/lib/api/query-keys";
+import { apiClient } from "@/lib/client/api-client";
+import { queryKeys } from "@/lib/client/query-keys";
 import type { SignedAccess } from "@/lib/types/document";
 import type { DeliveryCondition, VideoListResult, VideoMessage } from "@/lib/types/video";
 

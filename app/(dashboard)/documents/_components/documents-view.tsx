@@ -7,6 +7,7 @@ import {
   Eye,
   FileText,
   Folder,
+  FolderInput,
   FolderOpen,
   FolderPlus,
   HardDrive,
@@ -19,15 +20,17 @@ import {
   Search,
   Share2,
   ShieldCheck,
+  Sparkles,
   Trash2,
   Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { DocumentIcon, VaultCard, documentKind } from "@/components/data-display/vault-card";
-import { ShareDocumentDialog } from "@/components/forms/share-document-dialog";
-import { FormField } from "@/components/forms/form-field";
-import { UploadDialog } from "@/components/forms/upload-dialog";
+import { DocumentAIViewer } from "@/components/ai/document-ai-viewer";
+import { DocumentIcon, VaultCard, documentKind } from "@/components/documents/vault-card";
+import { ShareDocumentDialog } from "@/components/documents/share-document-dialog";
+import { FormField } from "@/components/shared/form-field";
+import { UploadDialog } from "@/components/documents/upload-dialog";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { DataTable, type DataTableColumn } from "@/components/shared/data-table";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -54,6 +57,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Sheet,
   SheetContent,
   SheetDescription,
@@ -72,7 +82,7 @@ import {
   useUnshareDocument,
 } from "@/hooks/use-documents";
 import { useNow } from "@/hooks/use-now";
-import { ApiError } from "@/lib/api/client";
+import { ApiError } from "@/lib/client/api-client";
 import type { DocumentSummary } from "@/lib/types/document";
 import { formatBytes, formatDateTime, formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -101,6 +111,9 @@ export function DocumentsView() {
   const [renameTarget, setRenameTarget] = useState<DocumentSummary | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [removeTarget, setRemoveTarget] = useState<DocumentSummary | null>(null);
+  const [aiFor, setAiFor] = useState<DocumentSummary | null>(null);
+  const [moveTarget, setMoveTarget] = useState<DocumentSummary | null>(null);
+  const [moveFolder, setMoveFolder] = useState<string>("root");
 
   const listQuery = useDocuments({
     ...(folderId === "all" || folderId === "root" ? {} : { folderId }),
@@ -156,8 +169,19 @@ export function DocumentsView() {
         <MoreHorizontal />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-52">
+        <DropdownMenuItem onClick={() => setAiFor(doc)}>
+          <Sparkles /> Open in AI viewer
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setDetailId(doc.id)}>
           <Eye /> Details & versions
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => {
+            setMoveTarget(doc);
+            setMoveFolder(doc.folderId ?? "root");
+          }}
+        >
+          <FolderInput /> Move to folder
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setShareFor(doc.id)}>
           <Share2 /> Share with beneficiary
@@ -553,6 +577,7 @@ export function DocumentsView() {
             await deleteDoc.mutateAsync(removeTarget.id);
             toast.success("Document deleted");
             if (detailId === removeTarget.id) setDetailId(null);
+            if (aiFor?.id === removeTarget.id) setAiFor(null);
           } catch (error) {
             toast.error(
               error instanceof ApiError ? error.message : "Could not delete this document.",
@@ -586,6 +611,17 @@ export function DocumentsView() {
                   {!detail.scan.performed && <StatusBadge tone="warning">Not scanned</StatusBadge>}
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    className="shadow-glow-blue"
+                    onClick={() => {
+                      setAiFor(detail);
+                      setDetailId(null);
+                    }}
+                  >
+                    <Sparkles data-icon="inline-start" />
+                    AI insights
+                  </Button>
                   <Tooltip>
                     <TooltipTrigger
                       render={
@@ -651,29 +687,24 @@ export function DocumentsView() {
                     <History className="size-4 text-muted-foreground" aria-hidden /> Version history
                   </p>
                   <ol className="space-y-1.5">
-                    {Array.from({ length: detail.versionCount }).map((_, i) => {
-                      const version = detail.versionCount - i;
-                      return (
-                        <li
-                          key={version}
-                          className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm"
-                        >
-                          <span>
-                            Version {version}
-                            {version === detail.versionCount && (
-                              <span className="ml-2 rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-medium text-success">
-                                Current
-                              </span>
-                            )}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            {formatDateTime(
-                              version === detail.versionCount ? detail.updatedAt : detail.createdAt,
-                            )}
-                          </span>
-                        </li>
-                      );
-                    })}
+                    {detail.versions.map((version) => (
+                      <li
+                        key={version.id}
+                        className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm"
+                      >
+                        <span>
+                          Version {version.versionNumber}
+                          {version.isCurrent && (
+                            <span className="ml-2 rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-medium text-success">
+                              Current
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {formatBytes(version.sizeBytes)} · {formatDateTime(version.createdAt)}
+                        </span>
+                      </li>
+                    ))}
                   </ol>
                 </div>
 
@@ -723,6 +754,78 @@ export function DocumentsView() {
           )}
         </SheetContent>
       </Sheet>
+
+      <DocumentAIViewer
+        document={aiFor}
+        allDocuments={allDocuments}
+        onOpenChange={(open) => !open && setAiFor(null)}
+        onDownload={(id) => void download(id)}
+        onMove={(doc) => {
+          setMoveTarget(doc);
+          setMoveFolder(doc.folderId ?? "root");
+        }}
+        onDelete={(doc) => setRemoveTarget(doc)}
+      />
+
+      <Dialog open={Boolean(moveTarget)} onOpenChange={(open) => !open && setMoveTarget(null)}>
+        <DialogContent className="glass-strong sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Move document</DialogTitle>
+            <DialogDescription className="break-all">
+              Choose where {moveTarget?.name} should live. Sharing and access are unchanged.
+            </DialogDescription>
+          </DialogHeader>
+          <FormField label="Folder">
+            {(props) => (
+              <Select
+                value={moveFolder}
+                onValueChange={(value) => setMoveFolder(String(value))}
+                items={[
+                  { value: "root", label: "Root" },
+                  ...folders.map((folder) => ({ value: folder.id, label: folder.name })),
+                ]}
+              >
+                <SelectTrigger id={props.id} className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="root">Root</SelectItem>
+                  {folders.map((folder) => (
+                    <SelectItem key={folder.id} value={folder.id}>
+                      {folder.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </FormField>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMoveTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={renameDoc.isPending}
+              onClick={async () => {
+                if (!moveTarget) return;
+                try {
+                  await renameDoc.mutateAsync({
+                    id: moveTarget.id,
+                    folderId: moveFolder === "root" ? null : moveFolder,
+                  });
+                  toast.success("Document moved");
+                  setMoveTarget(null);
+                } catch (error) {
+                  toast.error(
+                    error instanceof ApiError ? error.message : "Could not move this document.",
+                  );
+                }
+              }}
+            >
+              Move
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

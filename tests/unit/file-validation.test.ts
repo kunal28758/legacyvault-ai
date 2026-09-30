@@ -8,6 +8,7 @@ import {
   sanitizeFilename,
   validateDeclaredFile,
 } from "@/lib/security/file-validation";
+import { declaredMimeType, precheckUpload } from "@/lib/uploads/file-types";
 
 /**
  * Upload validation (FR-H002/H003, ADR-015).
@@ -146,7 +147,74 @@ describe("magic bytes", () => {
     expect(magicBytesMatch("DOCUMENT", "application/x-msdownload", bytes(0x4d, 0x5a))).toBe(false);
   });
 
-  it("accepts formats that genuinely have no signature", () => {
+  it("accepts plain text and CSV that look like text", () => {
     expect(magicBytesMatch("DOCUMENT", "text/plain", bytes(0x68, 0x69))).toBe(true);
+    expect(magicBytesMatch("DOCUMENT", "text/csv", bytes(0x61, 0x2c, 0x62, 0x0a))).toBe(true);
+    // UTF-16 text carries NUL bytes but announces itself with a byte-order mark.
+    expect(magicBytesMatch("DOCUMENT", "text/plain", bytes(0xff, 0xfe, 0x68, 0x00))).toBe(true);
+  });
+
+  it("rejects binaries disguised as text", () => {
+    expect(magicBytesMatch("DOCUMENT", "text/plain", bytes(0x4d, 0x5a, 0x90, 0x00))).toBe(false);
+    expect(magicBytesMatch("DOCUMENT", "text/csv", bytes(0x7f, 0x45, 0x4c, 0x46))).toBe(false);
+    expect(magicBytesMatch("DOCUMENT", "text/plain", bytes(0x68, 0x00, 0x69))).toBe(false);
+  });
+
+  it("checks HEIC as ISO base media instead of accepting any bytes", () => {
+    const heic = bytes(0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63);
+    expect(magicBytesMatch("DOCUMENT", "image/heic", heic)).toBe(true);
+    expect(magicBytesMatch("DOCUMENT", "image/heic", bytes(0x4d, 0x5a, 0x90, 0x00))).toBe(false);
+  });
+
+  it("accepts Office Open XML containers, including PowerPoint", () => {
+    const zip = bytes(0x50, 0x4b, 0x03, 0x04, 0x14, 0x00);
+    expect(
+      magicBytesMatch(
+        "DOCUMENT",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        zip,
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("browser pre-check (shared rules)", () => {
+  const file = (name: string, type: string, size = 1024) => ({ name, type, size });
+
+  it("agrees with the server on what is accepted", () => {
+    expect(precheckUpload("DOCUMENT", file("deed.pdf", "application/pdf"))).toEqual({
+      ok: true,
+      mimeType: "application/pdf",
+    });
+    // GIF used to pass the browser check and then fail on the server.
+    expect(precheckUpload("DOCUMENT", file("photo.gif", "image/gif"))).toMatchObject({ ok: false });
+  });
+
+  it("infers the type from the extension when the browser leaves it empty", () => {
+    expect(precheckUpload("DOCUMENT", file("ledger.csv", ""))).toEqual({
+      ok: true,
+      mimeType: "text/csv",
+    });
+    expect(declaredMimeType("DOCUMENT", { name: "photo.heic", type: "" })).toBe("image/heic");
+  });
+
+  it("maps Windows' Excel type for a .csv back to text/csv", () => {
+    expect(precheckUpload("DOCUMENT", file("ledger.csv", "application/vnd.ms-excel"))).toEqual({
+      ok: true,
+      mimeType: "text/csv",
+    });
+  });
+
+  it("refuses mismatched extensions, empty files and oversized files", () => {
+    expect(precheckUpload("DOCUMENT", file("deed.pdf", "image/png"))).toMatchObject({ ok: false });
+    expect(precheckUpload("DOCUMENT", file("deed.pdf", "application/pdf", 0))).toMatchObject({
+      ok: false,
+    });
+    expect(
+      precheckUpload("DOCUMENT", file("deed.pdf", "application/pdf", MAX_DOCUMENT_BYTES + 1)),
+    ).toMatchObject({ ok: false });
+    expect(
+      precheckUpload("VIDEO", file("message.mp4", "video/mp4", MAX_DOCUMENT_BYTES + 1)),
+    ).toMatchObject({ ok: true });
   });
 });

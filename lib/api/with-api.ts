@@ -13,6 +13,7 @@ import type { AppUser } from "@/lib/auth/ensure-app-user";
 import type { AccessGrant } from "@/lib/services/access-portal.service";
 import { getEnvGroup } from "@/lib/config/env";
 import { requestLogger, redactPath } from "@/lib/observability/logger";
+import { safeEqual } from "@/lib/security/encryption";
 import {
   clientIpFrom,
   enforceRateLimit,
@@ -104,7 +105,8 @@ function assertSameOrigin(request: Request): void {
 function assertCronSecret(request: Request): void {
   const expected = getEnvGroup("cron").CRON_SECRET;
   const provided = request.headers.get("authorization");
-  if (!provided || provided !== `Bearer ${expected}`) throw ApiError.unauthenticated();
+  // Constant-time: a byte-by-byte `!==` would let response timing leak the secret.
+  if (!provided || !safeEqual(provided, `Bearer ${expected}`)) throw ApiError.unauthenticated();
 }
 
 /**
@@ -194,9 +196,11 @@ export function withApi<
       if (options.reverification) await assertReverification(options.reverification);
 
       // 4. Rate limit — keyed by user where we have one, else by client IP.
+      //    Reads on a `default` route count against the separate `read` budget.
       if (options.rateLimit) {
+        const isRead = request.method === "GET" || request.method === "HEAD";
         await enforceRateLimit({
-          policy: options.rateLimit,
+          policy: options.rateLimit === "default" && isRead ? "read" : options.rateLimit,
           subject: user?.id ?? grant?.tokenId ?? ip,
         });
       }

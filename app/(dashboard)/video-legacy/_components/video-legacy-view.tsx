@@ -17,8 +17,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { AssignVideoDialog } from "@/components/forms/assign-video-dialog";
-import { UploadDialog } from "@/components/forms/upload-dialog";
+import { AssignVideoDialog } from "@/components/video-legacy/assign-video-dialog";
+import { UploadDialog } from "@/components/documents/upload-dialog";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { GridSkeleton } from "@/components/shared/loading-skeleton";
@@ -57,7 +57,7 @@ import {
   useVideoAccess,
   useVideos,
 } from "@/hooks/use-videos";
-import { ApiError } from "@/lib/api/client";
+import { ApiError } from "@/lib/client/api-client";
 import type { DeliveryCondition, VideoMessage } from "@/lib/types/video";
 import { formatBytes, formatDate } from "@/lib/format";
 

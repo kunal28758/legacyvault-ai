@@ -1,5 +1,12 @@
 import "server-only";
 
+import {
+  extensionOf,
+  maxBytesFor,
+  ruleForMimeType,
+  type UploadKind,
+} from "@/lib/uploads/file-types";
+
 /**
  * Upload validation (FR-H002, FR-H003, ADR-015).
  *
@@ -7,68 +14,19 @@ import "server-only";
  * are checked here before an upload is allowed, and the *actual* size and
  * leading bytes are checked again after the object lands in quarantine — a file
  * that claims to be a PDF and starts with `MZ` is rejected at that point.
+ *
+ * The accepted types themselves live in `lib/uploads/file-types.ts`, shared
+ * with the browser's pre-check so the two can never disagree.
  */
-export const MAX_DOCUMENT_BYTES = 52_428_800; // 50 MB (FR-H002)
-export const MAX_VIDEO_BYTES = 524_288_000; // 500 MB (FR-K002)
-
-interface TypeRule {
-  mimeTypes: readonly string[];
-  extensions: readonly string[];
-  /** Leading byte signatures; an empty list means the format has no reliable one. */
-  signatures: readonly (readonly number[])[];
-}
-
-const DOCUMENT_TYPES: readonly TypeRule[] = [
-  { mimeTypes: ["application/pdf"], extensions: [".pdf"], signatures: [[0x25, 0x50, 0x44, 0x46]] },
-  {
-    mimeTypes: ["image/jpeg"],
-    extensions: [".jpg", ".jpeg"],
-    signatures: [[0xff, 0xd8, 0xff]],
-  },
-  {
-    mimeTypes: ["image/png"],
-    extensions: [".png"],
-    signatures: [[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]],
-  },
-  { mimeTypes: ["image/webp"], extensions: [".webp"], signatures: [[0x52, 0x49, 0x46, 0x46]] },
-  { mimeTypes: ["image/heic"], extensions: [".heic"], signatures: [] },
-  { mimeTypes: ["text/plain"], extensions: [".txt"], signatures: [] },
-  // Office formats: .docx/.xlsx are ZIP containers, .doc/.xls are OLE2.
-  {
-    mimeTypes: [
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    ],
-    extensions: [".docx", ".xlsx"],
-    signatures: [[0x50, 0x4b, 0x03, 0x04]],
-  },
-  {
-    mimeTypes: ["application/msword", "application/vnd.ms-excel"],
-    extensions: [".doc", ".xls"],
-    signatures: [[0xd0, 0xcf, 0x11, 0xe0]],
-  },
-];
-
-const VIDEO_TYPES: readonly TypeRule[] = [
-  // ISO base media: bytes 4–7 are "ftyp"; checked separately below.
-  { mimeTypes: ["video/mp4"], extensions: [".mp4", ".m4v"], signatures: [] },
-  { mimeTypes: ["video/quicktime"], extensions: [".mov"], signatures: [] },
-  { mimeTypes: ["video/webm"], extensions: [".webm"], signatures: [[0x1a, 0x45, 0xdf, 0xa3]] },
-];
-
-export type UploadKind = "DOCUMENT" | "DOCUMENT_VERSION" | "VIDEO";
-
-export function rulesFor(kind: UploadKind): readonly TypeRule[] {
-  return kind === "VIDEO" ? VIDEO_TYPES : DOCUMENT_TYPES;
-}
-
-export function maxBytesFor(kind: UploadKind): number {
-  return kind === "VIDEO" ? MAX_VIDEO_BYTES : MAX_DOCUMENT_BYTES;
-}
-
-export function allowedMimeTypes(kind: UploadKind): string[] {
-  return rulesFor(kind).flatMap((rule) => [...rule.mimeTypes]);
-}
+export {
+  MAX_DOCUMENT_BYTES,
+  MAX_VIDEO_BYTES,
+  allowedMimeTypes,
+  extensionOf,
+  maxBytesFor,
+  rulesFor,
+  type UploadKind,
+} from "@/lib/uploads/file-types";
 
 /**
  * Strips a user-supplied filename down to something safe to store and display.
@@ -86,11 +44,6 @@ export function sanitizeFilename(input: string): string {
     .replace(/^\.+/, "")
     .trim();
   return cleaned.slice(0, 200) || "file";
-}
-
-export function extensionOf(filename: string): string {
-  const dot = filename.lastIndexOf(".");
-  return dot === -1 ? "" : filename.slice(dot).toLowerCase();
 }
 
 export interface DeclaredFile {
@@ -128,7 +81,7 @@ export function validateDeclaredFile(
     };
   }
 
-  const rule = rulesFor(kind).find((entry) => entry.mimeTypes.includes(file.mimeType));
+  const rule = ruleForMimeType(kind, file.mimeType);
   if (!rule) {
     return { ok: false, failure: { field: "mimeType", reason: "That file type is not accepted." } };
   }
@@ -147,6 +100,37 @@ export function validateDeclaredFile(
   return { ok: true, name };
 }
 
+/** Executable and archive prefixes that are never plain text. */
+const BINARY_PREFIXES: readonly (readonly number[])[] = [
+  [0x4d, 0x5a], // MZ — Windows executable
+  [0x7f, 0x45, 0x4c, 0x46], // ELF
+  [0x50, 0x4b, 0x03, 0x04], // ZIP
+  [0xcf, 0xfa, 0xed, 0xfe], // Mach-O
+  [0x25, 0x50, 0x44, 0x46], // PDF
+];
+
+function startsWith(head: Uint8Array, signature: readonly number[]): boolean {
+  return head.length >= signature.length && signature.every((byte, index) => head[index] === byte);
+}
+
+/**
+ * Text has no signature, so it is checked for what it must not contain: a
+ * binary prefix, or NUL bytes (UTF-16 text, which legitimately has them, is
+ * recognised by its byte-order mark).
+ */
+export function looksLikeText(head: Uint8Array): boolean {
+  if (BINARY_PREFIXES.some((prefix) => startsWith(head, prefix))) return false;
+  const utf16 = startsWith(head, [0xff, 0xfe]) || startsWith(head, [0xfe, 0xff]);
+  if (utf16) return true;
+  return !head.includes(0x00);
+}
+
+/** ISO base media (MP4, MOV, HEIC): the `ftyp` box at offset 4. */
+function isIsoBmff(head: Uint8Array): boolean {
+  if (head.length < 12) return false;
+  return head[4] === 0x66 && head[5] === 0x74 && head[6] === 0x79 && head[7] === 0x70;
+}
+
 /**
  * Checks the bytes that actually arrived.
  *
@@ -154,21 +138,12 @@ export function validateDeclaredFile(
  * does not start with it — the "rename an executable to .pdf" case.
  */
 export function magicBytesMatch(kind: UploadKind, mimeType: string, head: Uint8Array): boolean {
-  const rule = rulesFor(kind).find((entry) => entry.mimeTypes.includes(mimeType));
+  const rule = ruleForMimeType(kind, mimeType);
   if (!rule) return false;
 
-  // ISO base media (mp4 / mov): "ftyp" at offset 4.
-  if (mimeType === "video/mp4" || mimeType === "video/quicktime") {
-    if (head.length < 12) return false;
-    return (
-      head[4] === 0x66 && head[5] === 0x74 && head[6] === 0x79 && head[7] === 0x70 // "ftyp"
-    );
-  }
-
+  if (rule.check === "iso-bmff") return isIsoBmff(head);
+  if (rule.check === "text") return looksLikeText(head);
   if (rule.signatures.length === 0) return true;
 
-  return rule.signatures.some((signature) => {
-    if (head.length < signature.length) return false;
-    return signature.every((byte, index) => head[index] === byte);
-  });
+  return rule.signatures.some((signature) => startsWith(head, signature));
 }

@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 
-import { apiClient } from "@/lib/api/client";
+import { apiClient } from "@/lib/client/api-client";
 import type { ActivityListResult } from "@/lib/types/activity";
 import type {
   AdminAnalytics,

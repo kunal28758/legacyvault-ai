@@ -144,10 +144,11 @@ Observability = **Sentry + pino structured logs + health checks**. Deployed on
 ```
 legacyvault-ai/
 ├── app/                      # routes: (marketing) (auth) (dashboard) (admin) (public) + api/v1, api/webhooks, api/internal/cron
-├── components/               # ui, layout, forms, data-display, feedback, wizard, shared
-├── hooks/ · stores/ · styles/ · emails/
+├── components/               # by feature: ai, assets, beneficiaries, documents, landing, layout, security, shared, ui, video-legacy, will
+├── hooks/ · styles/          # (see docs/ARCHITECTURE.md for the code map)
 ├── lib/
-│   ├── api/                  # with-api.ts pipeline, errors, validate, client, query-client
+│   ├── api/                  # server request pipeline: with-api.ts, errors, validate, NDJSON streaming
+│   ├── client/               # browser runtime: API client, query client + keys, view helpers
 │   ├── auth/                 # requireUser, requireRole, reverification, ensureAppUser (Clerk)
 │   ├── db/                   # Supabase server clients (user-scoped + service), generated types
 │   ├── repositories/ · services/ · services/ai/

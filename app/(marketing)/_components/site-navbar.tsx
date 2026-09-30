@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useAuth } from "@clerk/nextjs";
 import { ArrowRight, Menu } from "lucide-react";
 
+import { SystemStatusIndicator } from "@/components/layout/system-status-indicator";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { BrandLogo } from "@/components/shared/brand-logo";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -93,10 +94,12 @@ export function SiteNavbar({ clerkEnabled }: { clerkEnabled: boolean }) {
           ))}
         </nav>
         <div className="hidden items-center gap-2 md:flex">
+          <SystemStatusIndicator className="mr-1" />
           <ThemeToggle />
           {accountActions}
         </div>
         <div className="flex items-center gap-1 md:hidden">
+          <SystemStatusIndicator compact />
           <ThemeToggle />
           <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger render={<Button variant="ghost" size="icon" aria-label="Open menu" />}>

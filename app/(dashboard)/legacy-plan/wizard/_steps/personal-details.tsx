@@ -1,8 +1,8 @@
 "use client";
 
-import { FormField } from "@/components/forms/form-field";
-import { WizardStep } from "@/components/wizard/wizard-step";
-import { useSectionForm } from "@/components/wizard/use-section-form";
+import { FormField } from "@/components/shared/form-field";
+import { WizardStep } from "@/components/will/wizard-step";
+import { useSectionForm } from "@/components/will/use-section-form";
 import { Input } from "@/components/ui/input";
 import {
   Select,
