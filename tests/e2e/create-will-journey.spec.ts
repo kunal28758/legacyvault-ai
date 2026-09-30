@@ -119,7 +119,12 @@ test.describe("create will, upload and AI journey", () => {
 
     // The review step shows the skipped section as skipped, not as done.
     await openWizardStep(page, 10, /Review your plan/i);
-    const family = page.getByRole("listitem").filter({ hasText: "Family Information" });
+    // The review row, not the stepper entry of the same name: only the review
+    // row has an Edit button.
+    const family = page
+      .getByRole("listitem")
+      .filter({ hasText: "Family Information" })
+      .filter({ has: page.getByRole("button", { name: "Edit" }) });
     await expect(family).toContainText("Skipped — you can complete this later.");
     await expect(family.getByText("skipped", { exact: true })).toBeAttached();
     await expect(page.getByText("Release & security")).toBeVisible();
@@ -141,7 +146,13 @@ test.describe("create will, upload and AI journey", () => {
     if (scannerIsClamav) {
       await expect(card).toContainText("Scanned by ClamAV and stored privately.");
     }
-    await page.getByRole("button", { name: "Close" }).first().click();
+    // Scoped and exact: a toast's "Close toast" button also matches "Close".
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Close", exact: true })
+      .last()
+      .click();
+    await expect(page.getByRole("dialog")).toBeHidden({ timeout: 30_000 });
     await expect(page.getByText(documentName).first()).toBeVisible({ timeout: 30_000 });
 
     // ── AI viewer: honest about the provider state ──────────────────────────
@@ -151,7 +162,13 @@ test.describe("create will, upload and AI journey", () => {
     await expect(viewer.getByRole("toolbar", { name: "Document actions" })).toBeVisible();
     if (!aiConfigured) {
       await expect(viewer.getByText("AI not configured")).toBeVisible({ timeout: 30_000 });
-      await expect(viewer.getByRole("button", { name: /^Summarize$/ }).last()).toBeDisabled();
+      // Once the saved results have loaded, the empty summary panel offers a
+      // Summarize button that cannot run without a provider.
+      const summaryPanel = viewer
+        .getByText("No summary yet for this version of the document.")
+        .locator("..");
+      await expect(summaryPanel).toBeVisible({ timeout: 60_000 });
+      await expect(summaryPanel.getByRole("button", { name: /^Summarize$/ })).toBeDisabled();
     }
     if (scannerIsClamav) await expect(viewer.getByText(/Scanned by ClamAV/)).toBeVisible();
     await page.keyboard.press("Escape");

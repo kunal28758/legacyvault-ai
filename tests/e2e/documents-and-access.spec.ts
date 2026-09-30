@@ -77,12 +77,21 @@ test.describe("documents and access links", () => {
       buffer: PDF,
     });
     await page.getByRole("button", { name: "Upload", exact: true }).last().click();
-    // The row only appears once `promote_upload()` has moved it out of quarantine.
-    await expect(page.getByText(documentName).first()).toBeVisible({ timeout: 60_000 });
+    // "Securely stored" appears only once the server has scanned the file and
+    // `promote_upload()` has moved it out of quarantine. (The file's name alone
+    // proves nothing: the upload queue shows it as soon as it is selected, and
+    // the dialog refuses to close while an upload is still in flight.)
+    const uploaded = page
+      .getByRole("dialog")
+      .getByRole("listitem")
+      .filter({ hasText: documentName });
+    await expect(uploaded.getByRole("status")).toHaveText("Securely stored", { timeout: 120_000 });
     await page
-      .getByRole("button", { name: /^(Close|Upload another)$/ })
-      .first()
+      .getByRole("dialog")
+      .getByRole("button", { name: "Close", exact: true })
+      .last()
       .click();
+    await expect(page.getByRole("dialog")).toBeHidden({ timeout: 30_000 });
 
     // ── Share it, which is what makes it eligible for a link ────────────────
     await page.getByRole("button", { name: `Actions for ${documentName}` }).click();

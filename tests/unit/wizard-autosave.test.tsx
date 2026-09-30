@@ -193,4 +193,31 @@ describe("create will — saving", () => {
     expect(document.body.textContent).not.toMatch(/expected (string|array), received undefined/);
     expect(saves).toHaveLength(0);
   });
+
+  it("continues from a completed step 1 without an identity document type (it is optional)", async () => {
+    search.step = "1";
+    render(
+      <Providers>
+        <WizardView />
+      </Providers>,
+    );
+    await screen.findByRole("heading", { level: 2, name: /Personal details/i });
+    const fill = (label: RegExp, value: string) =>
+      fireEvent.change(screen.getByLabelText(label), { target: { value } });
+    fill(/Full legal name/i, "Priya Sharma");
+    fill(/Date of birth/i, "1980-04-02");
+    fill(/Street address/i, "12 Marine Drive");
+    fill(/^City/i, "Mumbai");
+    fill(/^Country/i, "India");
+
+    fireEvent.click(screen.getByRole("button", { name: /Save & continue/ }));
+    await screen.findByRole(
+      "heading",
+      { level: 2, name: /Family information/i },
+      { timeout: 5_000 },
+    );
+    expect(saves.at(-1)!.url.endsWith("/steps/personal-details")).toBe(true);
+    expect(saves.at(-1)!.body.data).toMatchObject({ legalName: "Priya Sharma", idType: "" });
+    expect(document.body.textContent).not.toMatch(/Invalid option/);
+  });
 });

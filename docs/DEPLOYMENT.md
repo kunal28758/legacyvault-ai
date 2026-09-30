@@ -169,7 +169,7 @@ Attack protection, Integrations, Webhooks, Customization.
 | 9 | Webhook endpoint `/api/webhooks/clerk` (Svix) with `user.created\|updated\|deleted`, `session.created\|ended\|removed\|revoked`; signing secret stored as `CLERK_WEBHOOK_SIGNING_SECRET` (T198) | ⏳ | ⏳ |
 | 10 | Branded emails (verification, reset, MFA) | ⏳ | ⏳ |
 | 11 | Event coverage for failed sign-in attempts (FR-A014) — outcome of **T203** recorded here | ⏳ | ⏳ |
-| 12 | **Organizations: off, or "Membership required" off.** LegacyVault has no organizations; with membership required, Clerk sends every new session to a `choose-organization` task (`/sign-in/tasks/choose-organization`) before the app. Observed on the development instance on 2026-09-30 — it blocks every authenticated E2E journey and would block real users. | ❌ currently required | ⏳ |
+| 12 | **Organizations: off, or "Membership required" off.** LegacyVault has no organizations; with membership required, Clerk sends every new session to a `choose-organization` task (`/sign-in/tasks/choose-organization`) before the app. Observed on the development instance on 2026-09-30 — it blocks every authenticated E2E journey and would block real users. | ✅ 2026-09-30: `force_organization_selection` turned off on the development instance (`needed-turkey-5633`); verified in its public environment and by the E2E sign-in | ⏳ keep it off when the production instance is created |
 
 Code that depends on this checklist: `proxy.ts` (T192), `app/layout.tsx`
 (T017), Phase 3 sign-in/sign-up pages (T040/T041), webhook handler (T198).
@@ -248,7 +248,7 @@ every gap in one run, names only.
 | Class | Items |
 |---|---|
 | **A. Code complete** (verified by the test gate) | Every product domain, the upload + ClamAV pipeline, Create Will, AI (assistant + document intelligence), system status, migrations `0001`–`0005`, crons, webhooks with signature verification, CI with Supabase and a ClamAV service |
-| **B. External configuration required** | Clerk: Organizations / "Membership required" off (§ 5 row 12); `CLERK_WEBHOOK_SIGNING_SECRET` + webhook endpoint; `OPENAI_API_KEY` or `GEMINI_API_KEY`; `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_WEBHOOK_SECRET`; `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN`; `ADMIN_EMAIL`; hosted Supabase project with the five migrations applied; a hosted ClamAV with `StreamMaxLength 500M`; Vercel project (plan with 5-minute crons) and WAF rules (§ 7) |
+| **B. External configuration required** | Clerk production instance with "Membership required" off (§ 5 row 12; done on development); `CLERK_WEBHOOK_SIGNING_SECRET` + webhook endpoint; `OPENAI_API_KEY` or `GEMINI_API_KEY`; `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_WEBHOOK_SECRET`; `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN`; `ADMIN_EMAIL`; hosted Supabase project with the five migrations applied; a hosted ClamAV with `StreamMaxLength 500M`; Vercel project (plan with 5-minute crons) and WAF rules (§ 7) |
 | **C. Manually verified only** | Clerk session/MFA/lockout settings (§ 5), Supabase plan limits and PITR (§ 6), Vercel cron cadence and `maxDuration` limits (§ 7) |
 | **D. Genuinely missing in code** | None known |
 
@@ -256,6 +256,7 @@ every gap in one run, names only.
 
 | Date | Change |
 |---|---|
+| 2026-09-30 | Clerk development instance: forced organization selection turned off; the full E2E suite (10 journeys) passes. Local E2E notes: this machine's clock runs ~7 s ahead of Clerk (Clerk tolerates 5 s — sync the system clock), and under memory pressure run `pnpm test:e2e --workers=1` (as CI does). |
 | 2026-09-30 | Readiness classification (§ 8a); Clerk Organizations requirement recorded as a blocker (§ 5 row 12); ClamAV `StreamMaxLength` and AI keys added to § 7; `env:check --all` now evaluates the production rules. |
 | 2026-09-19 | Created (T202 initial) with the T195/T196/T210 checklists — all external items ⏳ pending manual verification; local tooling (Supabase CLI, `vercel.json`, env schema) 🔧 in repository. |
 | 2026-09-24 | Storage buckets marked ✅ (migration 0004); CI pipeline documented as implemented; Sentry, Resend and the WAF rule added to the prerequisites; a first-production-deploy order added. Every external item remains ⏳ — no hosted account has been configured or verified from this repository. |

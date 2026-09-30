@@ -32,7 +32,11 @@ export const personalDetailsSchema = z.object({
   addressLine: requiredText(200, 3, "Enter a street address"),
   city: requiredText(80, 2, "Enter a city"),
   country: requiredText(80, 2, "Enter a country"),
-  idType: z.enum(["PAN", "AADHAAR", "PASSPORT", "NATIONAL_ID", "OTHER"]).optional(),
+  // Optional: the form's "nothing chosen" value is "", which must pass exactly
+  // like an absent value (the draft schema below accepts it too).
+  idType: z
+    .union([z.enum(["PAN", "AADHAAR", "PASSPORT", "NATIONAL_ID", "OTHER"]), z.literal("")])
+    .optional(),
 });
 
 export const familyInformationSchema = z.object({

@@ -660,6 +660,8 @@ function ViewerBody({
     result: DocumentAnalysisRecord | undefined,
     render: (record: DocumentAnalysisRecord) => ReactNode,
     label: string,
+    /** What the result is called, for the empty state ("summary", "translation"). */
+    noun: string,
   ) => {
     if (pending === slot) return <Generating label={`${label}…`} />;
     return (
@@ -690,7 +692,7 @@ function ViewerBody({
         ) : (
           <div className="flex flex-col items-start gap-3 rounded-xl border border-dashed border-border p-5">
             <p className="text-sm text-muted-foreground">
-              No {label.toLowerCase()} yet for this version of the document.
+              No {noun} yet for this version of the document.
             </p>
             <Button
               disabled={!configured || pending !== null}
@@ -784,6 +786,7 @@ function ViewerBody({
                 />
               ),
               "Summarize",
+              "summary",
             )}
           </TabsContent>
 
@@ -814,6 +817,7 @@ function ViewerBody({
                 />
               ),
               "Extract information",
+              "extracted information",
             )}
           </TabsContent>
 
@@ -826,6 +830,7 @@ function ViewerBody({
                 <TextResult record={record} name={document.name} suffix="text" />
               ),
               "Extract text",
+              "extracted text",
             )}
           </TabsContent>
 
@@ -861,6 +866,7 @@ function ViewerBody({
                 />
               ),
               `Translate to ${language}`,
+              `${language} translation`,
             )}
           </TabsContent>
 
