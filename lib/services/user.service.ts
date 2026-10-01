@@ -2,7 +2,7 @@ import "server-only";
 
 import { ApiError } from "@/lib/api/errors";
 import { audit } from "@/lib/audit/audit.service";
-import type { AppUser } from "@/lib/auth/ensure-app-user";
+import { ensureAppUserFromSession, type AppUser } from "@/lib/auth/ensure-app-user";
 import { assertAccountActive } from "@/lib/auth/require-user";
 import { createUserClient } from "@/lib/db/server";
 import * as userRepository from "@/lib/repositories/user.repository";
@@ -41,6 +41,23 @@ export async function getMe(user: AppUser): Promise<UserProfile> {
   // RLS scopes the row to the caller, so a miss means the account is gone.
   if (!profile) throw ApiError.notFound();
   return profile;
+}
+
+/**
+ * Re-reads the authoritative Clerk fields (MFA, email verification, name) into
+ * the mirror and returns the fresh profile.
+ *
+ * Clerk owns two-factor enrolment; the application only mirrors
+ * `two_factor_enabled` into `users.mfa_enabled` so the dashboard and security
+ * scores can read it without a Clerk round trip. The webhook keeps that mirror
+ * current in production, but a user who has just enabled MFA in Clerk's own UI
+ * should not wait for the webhook (or, in development, a day) to see it reflect
+ * everywhere — so this forces the sync on demand. No security factor is created
+ * or verified here; that is entirely Clerk's.
+ */
+export async function refreshFromProvider(user: AppUser): Promise<UserProfile> {
+  await ensureAppUserFromSession({ force: true });
+  return getMe(user);
 }
 
 export async function updateProfile(

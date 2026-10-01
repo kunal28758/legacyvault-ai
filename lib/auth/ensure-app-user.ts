@@ -164,8 +164,15 @@ const MIRROR_MAX_AGE_MS = 24 * 60 * 60 * 1000;
  *
  * Convergence is unaffected: the webhook (T198) remains the primary sync path
  * and this is still its fallback.
+ *
+ * `force` skips the freshness short-circuit and always re-reads Clerk — used
+ * right after the user changes a security factor (MFA, password) in Clerk's own
+ * UI, so the mirror the dashboard and security scores read reflects it at once
+ * rather than on the next webhook or 24-hour refresh.
  */
-export async function ensureAppUserFromSession(): Promise<AppUser | null> {
+export async function ensureAppUserFromSession(
+  options: { force?: boolean } = {},
+): Promise<AppUser | null> {
   const { userId } = await auth();
   if (!userId) return null;
 
@@ -177,7 +184,11 @@ export async function ensureAppUserFromSession(): Promise<AppUser | null> {
     .maybeSingle();
   if (error) throw error;
 
-  if (existing && Date.now() - Date.parse(existing.updated_at) < MIRROR_MAX_AGE_MS) {
+  if (
+    !options.force &&
+    existing &&
+    Date.now() - Date.parse(existing.updated_at) < MIRROR_MAX_AGE_MS
+  ) {
     return toAppUser(existing);
   }
 

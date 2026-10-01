@@ -39,6 +39,26 @@ export function useProfile(): UseQueryResult<UserProfile> {
   });
 }
 
+/**
+ * Forces the server to re-read the authoritative Clerk fields (MFA, email
+ * verification, name) into the mirror, then updates the cached profile. Used
+ * after the user changes a security factor in Clerk's own UI so every surface
+ * that reads the mirror — the dashboard, the Security Center — agrees with
+ * Clerk's live state without waiting for the webhook.
+ */
+export function useRefreshProfile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const { data } = await apiClient.post<UserProfile>("/users/me/refresh", {});
+      return data;
+    },
+    onSuccess: (profile) => {
+      queryClient.setQueryData(queryKeys.users.me(), profile);
+    },
+  });
+}
+
 export function useUpdateProfile() {
   const queryClient = useQueryClient();
   return useMutation({

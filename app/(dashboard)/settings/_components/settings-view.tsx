@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useClerk, useUser } from "@clerk/nextjs";
 import { useTheme } from "next-themes";
 import {
   AlertTriangle,
@@ -46,6 +47,7 @@ import {
   useCancelAccountDeletion,
   useExportMyData,
   useProfile,
+  useRefreshProfile,
   useRequestAccountDeletion,
   useUpdatePreferences,
   useUpdateProfile,
@@ -89,7 +91,12 @@ export interface SettingsUser {
 const TABS = ["profile", "preferences", "notifications", "security", "account"] as const;
 type Tab = (typeof TABS)[number];
 
-/** Settings (tasks T056/T184/T189 — UI; Clerk `<UserProfile/>` embed and API wiring pending). */
+/**
+ * Settings (tasks T056/T184/T189). Profile, preferences, notifications, data
+ * export/deletion and session controls are API-backed; password and two-factor
+ * authentication open Clerk's own account portal, which owns enrolment and
+ * verification, and the MFA state shown is Clerk's live value.
+ */
 export function SettingsView({
   user,
   clerkEnabled,
@@ -112,6 +119,27 @@ export function SettingsView({
   const cancelDeletion = useCancelAccountDeletion();
   const reverified = useReverifiedAction();
   const [exporting, setExporting] = useState(false);
+
+  // Clerk owns two-factor enrolment; this reads its live, authoritative state
+  // and opens its own UI for changes. The mirror the dashboard/security score
+  // read is re-synced below when Clerk's state moves ahead of it.
+  const { user: clerkUser } = useUser();
+  const clerk = useClerk();
+  const { mutate: syncMirror } = useRefreshProfile();
+  const liveMfaEnabled = clerkUser?.twoFactorEnabled ?? profile.data?.mfaEnabled ?? false;
+  const syncedMfaRef = useRef<boolean | null>(null);
+
+  const mirroredMfa = profile.data?.mfaEnabled;
+  const clerkMfa = clerkUser?.twoFactorEnabled;
+  useEffect(() => {
+    if (clerkMfa === undefined || mirroredMfa === undefined) return;
+    if (clerkMfa === mirroredMfa) return;
+    // One sync attempt per target value, so a transient Clerk failure cannot
+    // spin the effect.
+    if (syncedMfaRef.current === clerkMfa) return;
+    syncedMfaRef.current = clerkMfa;
+    syncMirror();
+  }, [clerkMfa, mirroredMfa, syncMirror]);
 
   if (profile.isPending) return <PageSkeleton stats={0} />;
 
@@ -223,11 +251,7 @@ export function SettingsView({
               <Button
                 variant="outline"
                 disabled={!clerkEnabled}
-                onClick={() =>
-                  toast.info("Opens Clerk's account profile", {
-                    description: "Name, email and password changes require re-verification.",
-                  })
-                }
+                onClick={() => void clerk.openUserProfile()}
               >
                 <ExternalLink data-icon="inline-start" />
                 Manage with Clerk
@@ -448,16 +472,16 @@ export function SettingsView({
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <StatusBadge tone={profile.data?.mfaEnabled ? "success" : "warning"}>
-                    {profile.data?.mfaEnabled ? "Enabled" : "Off"}
+                  <StatusBadge tone={liveMfaEnabled ? "success" : "warning"}>
+                    {liveMfaEnabled ? "Enabled" : "Off"}
                   </StatusBadge>
                   <Button
                     size="sm"
                     variant="outline"
                     disabled={!clerkEnabled}
-                    onClick={() => toast.info("Opens Clerk's security settings")}
+                    onClick={() => void clerk.openUserProfile()}
                   >
-                    {profile.data?.mfaEnabled ? "Manage" : "Enable"}
+                    {liveMfaEnabled ? "Manage" : "Enable"}
                   </Button>
                 </div>
               </div>
@@ -472,7 +496,7 @@ export function SettingsView({
                   size="sm"
                   variant="outline"
                   disabled={!clerkEnabled}
-                  onClick={() => toast.info("Opens Clerk's password settings")}
+                  onClick={() => void clerk.openUserProfile()}
                 >
                   Change
                 </Button>

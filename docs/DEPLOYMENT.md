@@ -161,7 +161,7 @@ Attack protection, Integrations, Webhooks, Customization.
 | 1 | Email + password enabled (FR-A001) | ⏳ | ⏳ |
 | 2 | Password policy: min 12, upper/lower/number/special (FR-A002) | ⏳ | ⏳ |
 | 3 | Email verification required before sign-in (FR-A003/A004) | ⏳ | ⏳ |
-| 4 | MFA: TOTP authenticator + backup codes (FR-A006, A017) | ⏳ | ⏳ |
+| 4 | MFA: TOTP authenticator + backup codes (FR-A006, A017) — **Configure → User & authentication → Multi-factor: enable _Authenticator application_ and _Backup codes_.** Unlike organization settings, this has no Backend API, so it is a manual Dashboard toggle. The app opens Clerk's account portal for enrolment, but the portal offers no two-step verification until this is on. | ❌ 2026-10-01: both disabled on the development instance (`needed-turkey-5633`: `authenticator_app.enabled=false`, `backup_code.enabled=false`) — enrolment is impossible until enabled here | ⏳ enable on the production instance |
 | 5 | Session lifetime 24 h inactivity (FR-A008) — **verify the plan supports inactivity timeout and session-token customization** | ⏳ | ⏳ |
 | 6 | Attack protection: lockout after 5 failed attempts for 30 min; bot protection on (FR-A012/A013) | ⏳ | ⏳ |
 | 7 | Reverification enabled (`strict`, `multi_factor`) (FR-A018) | ⏳ | ⏳ |
@@ -248,7 +248,7 @@ every gap in one run, names only.
 | Class | Items |
 |---|---|
 | **A. Code complete** (verified by the test gate) | Every product domain, the upload + ClamAV pipeline, Create Will, AI (assistant + document intelligence), system status, migrations `0001`–`0005`, crons, webhooks with signature verification, CI with Supabase and a ClamAV service |
-| **B. External configuration required** | Clerk production instance with "Membership required" off (§ 5 row 12; done on development); `CLERK_WEBHOOK_SIGNING_SECRET` + webhook endpoint; `OPENAI_API_KEY` or `GEMINI_API_KEY`; `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_WEBHOOK_SECRET`; `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN`; `ADMIN_EMAIL`; hosted Supabase project with the five migrations applied; a hosted ClamAV with `StreamMaxLength 500M`; Vercel project (plan with 5-minute crons) and WAF rules (§ 7) |
+| **B. External configuration required** | Clerk: enable Multi-factor (_Authenticator application_ + _Backup codes_) on each instance (§ 5 row 4 — currently off on development, so 2FA cannot be enrolled yet); production instance with "Membership required" off (§ 5 row 12; done on development); `CLERK_WEBHOOK_SIGNING_SECRET` + webhook endpoint; `OPENAI_API_KEY` or `GEMINI_API_KEY`; `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_WEBHOOK_SECRET`; `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN`; `ADMIN_EMAIL`; hosted Supabase project with the five migrations applied; a hosted ClamAV with `StreamMaxLength 500M`; Vercel project (plan with 5-minute crons) and WAF rules (§ 7) |
 | **C. Manually verified only** | Clerk session/MFA/lockout settings (§ 5), Supabase plan limits and PITR (§ 6), Vercel cron cadence and `maxDuration` limits (§ 7) |
 | **D. Genuinely missing in code** | None known |
 

@@ -19,6 +19,7 @@ export const E2E_USERS = {
   assetAllocation: "e2e-allocation+clerk_test@example.com",
   access: "e2e-access+clerk_test@example.com",
   journey: "e2e-journey+clerk_test@example.com",
+  settings: "e2e-settings+clerk_test@example.com",
 } as const;
 
 export const E2E_USER_EMAILS = Object.values(E2E_USERS);
