@@ -11,6 +11,15 @@
 >
 > **Last Updated**: 2026-09-18 (r2, post-analysis remediation)
 >
+> ⚠️ **This document is a 2026-09-18 context snapshot.** The status markers
+> below predate the real-platform implementation and no longer describe the
+> current state — the demo workspace (`lib/demo/*`) has been deleted, every
+> domain is backed by the real API/database/storage, AI is implemented behind
+> the provider interface, and CI exists. For what is true **right now**, read
+> [`PROJECT_STATUS.md`](./PROJECT_STATUS.md) (the authoritative current-state
+> doc) and [`ARCHITECTURE.md`](./ARCHITECTURE.md) (the code map). The identity,
+> scope and architecture-decision context below remains valid.
+>
 > **Status Legend**:
 > ✅ Completed | 🔧 In Progress | 📋 Planned | ⬜ Not Started | 🔍 Needs Review | ⏸️ Deferred
 
