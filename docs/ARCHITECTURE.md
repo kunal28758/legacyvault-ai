@@ -118,6 +118,30 @@ grounded (every quoted value is looked up in the document text). Analyses are
 stored as encrypted AI versions; chat turns are never stored; usage records
 carry no content.
 
+Files attached in the assistant are not a second upload path: the composer
+(`components/ai/chat-attachments.tsx`) runs the vault's own two-step upload,
+so each file is quarantined, type-checked, ClamAV-scanned and promoted to a
+private vault document before it can be sent. A message carries only document
+ids; `loadAssistantAttachments()` re-checks each through RLS (owner, not
+deleted, `CLEAN`, AI-readable type) and then reads it server-side — text
+through the same extraction/OCR path as document intelligence, images inline
+to the model. Extra attachments are charged to the `ai` rate limit.
+
+Transient provider failures (Gemini 503 "high demand", 5xx, 408) are retried
+with bounded backoff before the first token; quota (429) and request errors
+are not. A failure is logged as `kind` plus `upstream` (`status`, `reason`,
+`quota`) — never the vendor's free-text message.
+
+Fallback (`lib/ai/index.ts`): the chain is Gemini/OpenAI by default and is
+otherwise exactly `AI_PROVIDER_ORDER`; OpenRouter, Groq, Cerebras and Hugging
+Face share one OpenAI-compatible adapter (`providers/openai-compatible.ts`)
+with per-model capabilities verified from vendor documentation. Each request
+skips providers that cannot read it (file types, image count/size, structured
+output) or are not approved for vault documents (`AI_DOCUMENT_PROVIDERS`), and
+moves on only after an outage, a timeout or a spent quota — reading each
+vendor's 429 to tell a per-minute limit from a daily one. A stream that fails
+after its first token is reported as `INTERRUPTED`, never retried or replayed.
+
 ### System status
 `GET /api/v1/system-status` probes the database, storage, Clerk, ClamAV (PING)
 and the AI provider for real, caches for 30 s, and returns only the overall

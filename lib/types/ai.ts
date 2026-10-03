@@ -10,12 +10,24 @@ import type {
  *
  * Nothing here ever carries a storage key, a signed URL or a provider key.
  */
-export type AIProviderName = "openai" | "gemini";
+export type AIProviderName =
+  "openai" | "gemini" | "openrouter" | "groq" | "cerebras" | "huggingface";
+
+export const AI_PROVIDER_LABELS: Record<AIProviderName, string> = {
+  openai: "OpenAI",
+  gemini: "Google Gemini",
+  openrouter: "OpenRouter",
+  groq: "Groq",
+  cerebras: "Cerebras",
+  huggingface: "Hugging Face",
+};
 
 export interface AIAvailability {
   configured: boolean;
   provider: AIProviderName | null;
   fallback: AIProviderName | null;
+  /** Every fallback, in the order they are tried. */
+  fallbacks: AIProviderName[];
 }
 
 /** Values the model reported that could not be found in the document text. */

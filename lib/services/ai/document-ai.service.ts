@@ -23,7 +23,7 @@ import {
   SUMMARY_INSTRUCTIONS,
   translateInstructions,
 } from "@/lib/ai/prompts";
-import type { AIMessage, AIStream, AIUsage } from "@/lib/ai/provider";
+import type { AIContentPart, AIMessage, AIStream, AIUsage } from "@/lib/ai/provider";
 import { ApiError } from "@/lib/api/errors";
 import { audit } from "@/lib/audit/audit.service";
 import type { AppUser } from "@/lib/auth/ensure-app-user";
@@ -45,6 +45,8 @@ import type {
 import type { Json } from "@/lib/types/database";
 import { MAX_DOCUMENT_BYTES } from "@/lib/uploads/file-types";
 import {
+  AI_READABLE_MIME_TYPES,
+  MAX_AI_INLINE_BYTES,
   documentComparisonSchema,
   documentExtractionSchema,
   documentSummarySchema,
@@ -71,7 +73,7 @@ import { toAIApiError } from "./errors";
 /** Characters of document text sent to the model (~40k tokens). */
 const MAX_DOCUMENT_CHARS = 150_000;
 /** Inline file limit for OCR requests to the provider. */
-const MAX_OCR_BYTES = 20 * 1_048_576;
+const MAX_OCR_BYTES = MAX_AI_INLINE_BYTES;
 
 interface LoadedDocument {
   id: string;
@@ -165,6 +167,7 @@ async function ocr(
   const provider = getAIProvider();
   const result = await provider.generateText({
     system: DOCUMENT_SYSTEM,
+    containsDocuments: true,
     messages: [
       {
         role: "user",
@@ -332,6 +335,7 @@ export function getAvailability() {
     configured: configuration.configured,
     provider: configuration.primary,
     fallback: configuration.fallback,
+    fallbacks: configuration.fallbacks,
   };
 }
 
@@ -399,6 +403,7 @@ export async function analyzeDocument(
       case "summary": {
         const result = await provider.generateStructured({
           system: DOCUMENT_SYSTEM,
+          containsDocuments: true,
           messages: messages(SUMMARY_INSTRUCTIONS),
           schema: documentSummarySchema,
           schemaName: "document_summary",
@@ -416,6 +421,7 @@ export async function analyzeDocument(
       case "extract": {
         const result = await provider.generateStructured({
           system: DOCUMENT_SYSTEM,
+          containsDocuments: true,
           messages: messages(EXTRACT_INSTRUCTIONS),
           schema: documentExtractionSchema,
           schemaName: "document_extraction",
@@ -449,6 +455,7 @@ export async function analyzeDocument(
         const isTranslation = body.action === "translate";
         const result = await provider.generateText({
           system: DOCUMENT_SYSTEM,
+          containsDocuments: true,
           messages: messages(
             isTranslation
               ? translateInstructions(body.language ?? "English")
@@ -546,6 +553,7 @@ export async function askDocument(
     const provider = getAIProvider();
     const stream = await provider.stream({
       system: DOCUMENT_SYSTEM,
+      containsDocuments: true,
       messages: [
         ...body.history.map((turn) => ({ role: turn.role, content: turn.content })),
         {
@@ -575,6 +583,94 @@ export async function askDocument(
   }
 }
 
+/* ── Assistant attachments ────────────────────────────────────────────────── */
+
+export interface AssistantAttachments {
+  /** Content for the user's message: document blocks as text, images inline. */
+  parts: AIContentPart[];
+  /** Per attachment, how it was read ("pdf-text", "ocr", "image"…) — no names. */
+  methods: string[];
+  documentIds: string[];
+  truncated: boolean;
+}
+
+/**
+ * Files the user attached to an assistant message (ADR-008 § 5).
+ *
+ * Every id is treated as untrusted: each one is looked up through RLS as the
+ * caller, so another user's document, a deleted one, or one that has not
+ * passed the malware scan is refused before a single byte is read — exactly as
+ * for document intelligence. Text-bearing files are read through the same
+ * extraction (and OCR) path, cache included; an image is sent to the model as
+ * the image itself, so a photo without text can still be described.
+ *
+ * Only what the question needs leaves the server: the attachments' text or
+ * pixels and their file names. Nothing here is stored or logged.
+ */
+export async function loadAssistantAttachments(
+  user: AppUser,
+  documentIds: string[],
+  signal?: AbortSignal,
+): Promise<AssistantAttachments> {
+  if (documentIds.length === 0)
+    return { parts: [], methods: [], documentIds: [], truncated: false };
+
+  const db = await createUserClient();
+  const rows = [];
+  for (const id of documentIds) {
+    const row = await findOwnedDocument(db, user, id);
+    if (!AI_READABLE_MIME_TYPES.has(row.mime_type)) {
+      throw ApiError.invariant(
+        "FILE_TYPE_MISMATCH",
+        `The AI can't read “${row.name}”. Attach a PDF, Word, Excel, PowerPoint, text, CSV or image file.`,
+      );
+    }
+    rows.push(row);
+  }
+
+  const images = rows.filter((row) => row.mime_type.startsWith("image/"));
+  const imageBytes = images.reduce((sum, row) => sum + row.size_bytes, 0);
+  if (imageBytes > MAX_AI_INLINE_BYTES) {
+    throw ApiError.invariant(
+      "FILE_TOO_LARGE",
+      "The attached images are too large for the AI together (20 MB in total). Attach fewer or smaller images.",
+    );
+  }
+
+  const textual = rows.length - images.length;
+  const budget = textual > 0 ? Math.floor(MAX_DOCUMENT_CHARS / textual) : 0;
+  const parts: AIContentPart[] = [];
+  const methods: string[] = [];
+  let truncated = false;
+
+  for (const [index, row] of rows.entries()) {
+    const number = index + 1;
+    if (row.mime_type.startsWith("image/")) {
+      const bytes = await readObject(row.storage_bucket as BucketName, row.storage_key, {
+        maxBytes: MAX_AI_INLINE_BYTES,
+      });
+      parts.push(
+        { kind: "text", text: `Attachment ${number}: “${row.name}” (image, shown below).` },
+        { kind: "file", mimeType: row.mime_type, data: bytes, filename: row.name },
+      );
+      methods.push("image");
+      continue;
+    }
+
+    const document = await loadDocument(user, row.id, signal);
+    const block = documentBlock(document.sections, budget, String(number));
+    truncated ||= block.truncated;
+    const units = `${document.info.unitCount} ${document.info.unitCount === 1 ? "section" : "sections"}`;
+    parts.push({
+      kind: "text",
+      text: `Attachment ${number}: “${document.name}” (${units}${block.truncated ? ", shortened to fit" : ""}).\n${block.block}`,
+    });
+    methods.push(document.info.method);
+  }
+
+  return { parts, methods, documentIds: rows.map((row) => row.id), truncated };
+}
+
 export async function compareDocuments(
   user: AppUser,
   documentIds: [string, string],
@@ -593,6 +689,7 @@ export async function compareDocuments(
     const provider = getAIProvider();
     const result = await provider.generateStructured({
       system: DOCUMENT_SYSTEM,
+      containsDocuments: true,
       messages: [
         {
           role: "user",

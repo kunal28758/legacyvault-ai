@@ -1,8 +1,9 @@
 import "server-only";
 
 import { getAIProvider } from "@/lib/ai";
-import { ASSISTANT_SYSTEM, PROMPT_VERSIONS } from "@/lib/ai/prompts";
-import type { AIStream, AIUsage } from "@/lib/ai/provider";
+import { ASSISTANT_ATTACHMENT_RULES, ASSISTANT_SYSTEM, PROMPT_VERSIONS } from "@/lib/ai/prompts";
+import type { AIContentPart, AIStream, AIUsage } from "@/lib/ai/provider";
+import { audit } from "@/lib/audit/audit.service";
 import type { AppUser } from "@/lib/auth/ensure-app-user";
 import { assertAccountActive } from "@/lib/auth/require-user";
 import { createServiceClient, createUserClient, type TypedSupabaseClient } from "@/lib/db/server";
@@ -12,9 +13,11 @@ import * as aiRepository from "@/lib/repositories/ai.repository";
 import * as assetRepository from "@/lib/repositories/asset.repository";
 import * as dmsRepository from "@/lib/repositories/dms.repository";
 import * as planRepository from "@/lib/repositories/legacy-plan.repository";
+import { enforceRateLimit } from "@/lib/security/rate-limit";
 import type { AIInteractionSummary } from "@/lib/types/ai";
 import type { AssistantMessageBody } from "@/lib/validators/ai.validators";
 
+import { loadAssistantAttachments } from "./document-ai.service";
 import { toAIApiError } from "./errors";
 
 /**
@@ -115,13 +118,27 @@ export async function buildAccountOverview(
   return lines.join("\n");
 }
 
+/**
+ * The route's rate-limit hit pays for the message and its first attachment;
+ * each further attachment is one more document operation on the same `ai`
+ * budget, so attaching files can never multiply the work a single hit buys.
+ */
+async function chargeExtraAttachments(user: AppUser, count: number): Promise<void> {
+  for (let extra = 1; extra < count; extra++) {
+    await enforceRateLimit({ policy: "ai", subject: user.id });
+  }
+}
+
 export async function streamAssistantReply(
   user: AppUser,
   body: AssistantMessageBody,
+  correlationId: string,
   signal?: AbortSignal,
 ): Promise<{ stream: AIStream; onComplete: (usage: AIUsage) => Promise<void> }> {
   assertAccountActive(user);
   try {
+    await chargeExtraAttachments(user, body.attachmentIds.length);
+
     const db = await createUserClient();
     const overview = await buildAccountOverview(db, user).catch((cause: unknown) => {
       // Answers are still useful without personalisation.
@@ -129,16 +146,47 @@ export async function streamAssistantReply(
       return "Account overview: unavailable right now.";
     });
 
+    // Ownership, scan status and type are checked again here for every id.
+    const attachments = await loadAssistantAttachments(user, body.attachmentIds, signal);
+    const hasAttachments = attachments.documentIds.length > 0;
+    const question: string | AIContentPart[] = hasAttachments
+      ? [
+          ...attachments.parts,
+          {
+            kind: "text",
+            text: `The user's message about the attachments above:\n${body.message}`,
+          },
+        ]
+      : body.message;
+
     const provider = getAIProvider();
     const stream = await provider.stream({
-      system: `${ASSISTANT_SYSTEM}\n\n${overview}`,
+      system: hasAttachments
+        ? `${ASSISTANT_SYSTEM}\n${ASSISTANT_ATTACHMENT_RULES}\n\n${overview}`
+        : `${ASSISTANT_SYSTEM}\n\n${overview}`,
       messages: [
         ...body.history.map((turn) => ({ role: turn.role, content: turn.content })),
-        { role: "user", content: body.message },
+        { role: "user", content: question },
       ],
-      maxOutputTokens: 1_500,
+      // Summaries of a whole document need more room than a chat answer.
+      maxOutputTokens: hasAttachments ? 3_000 : 1_500,
+      // Vault content may only go to providers approved for it.
+      containsDocuments: hasAttachments,
       signal,
     });
+
+    for (const documentId of attachments.documentIds) {
+      await audit.log({
+        actorId: user.id,
+        actorRole: user.role,
+        action: "ai.assistant_attachment_read",
+        resourceType: "document",
+        resourceId: documentId,
+        outcome: "SUCCESS",
+        metadata: { provider: stream.provider },
+        correlationId,
+      });
+    }
 
     return {
       stream,
@@ -149,8 +197,15 @@ export async function streamAssistantReply(
             sessionType: "ASSISTANT",
             provider: stream.provider,
             model: stream.model,
-            promptVersion: PROMPT_VERSIONS.assistant,
-            inputSummary: `message · ${body.history.length} prior turns`,
+            promptVersion: hasAttachments
+              ? PROMPT_VERSIONS.assistantAttachments
+              : PROMPT_VERSIONS.assistant,
+            // How each file was read, never its name or content.
+            inputSummary:
+              `message · ${body.history.length} prior turns` +
+              (hasAttachments
+                ? ` · ${attachments.documentIds.length} attachments (${attachments.methods.join(", ")})${attachments.truncated ? " · truncated" : ""}`
+                : ""),
             outputSummary: "reply streamed",
             tokenCount:
               usage.inputTokens === null && usage.outputTokens === null

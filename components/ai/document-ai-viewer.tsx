@@ -52,10 +52,11 @@ import {
 } from "@/hooks/use-ai";
 import { ApiError } from "@/lib/client/api-client";
 import { formatBytes, formatDateTime } from "@/lib/format";
-import type {
-  DocumentAnalysisRecord,
-  DocumentComparisonResult,
-  GroundingReport,
+import {
+  AI_PROVIDER_LABELS,
+  type DocumentAnalysisRecord,
+  type DocumentComparisonResult,
+  type GroundingReport,
 } from "@/lib/types/ai";
 import type { DocumentSummary } from "@/lib/types/document";
 import {
@@ -68,7 +69,7 @@ import { cn } from "@/lib/utils";
 
 type Tab = "summary" | "ask" | "extract" | "ocr" | "translate" | "compare";
 
-const PROVIDER_LABEL: Record<string, string> = { openai: "OpenAI", gemini: "Google Gemini" };
+const PROVIDER_LABEL: Record<string, string> = AI_PROVIDER_LABELS;
 
 const ASK_SUGGESTIONS = [
   "Summarize this document",

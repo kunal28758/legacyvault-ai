@@ -15,6 +15,7 @@ import { useDocumentAccess, useDocuments } from "@/hooks/use-documents";
 import { useNow } from "@/hooks/use-now";
 import { ApiError } from "@/lib/client/api-client";
 import { formatRelative } from "@/lib/format";
+import { AI_PROVIDER_LABELS } from "@/lib/types/ai";
 import type { DocumentSummary } from "@/lib/types/document";
 import { toast } from "sonner";
 
@@ -27,7 +28,7 @@ const SUGGESTIONS = [
   "Explain beneficiaries vs emergency contacts",
 ];
 
-const PROVIDER_LABEL: Record<string, string> = { openai: "OpenAI", gemini: "Google Gemini" };
+const PROVIDER_LABEL: Record<string, string> = AI_PROVIDER_LABELS;
 const SESSION_LABEL: Record<string, string> = {
   ASSISTANT: "Assistant",
   DOCUMENT_ANALYSIS: "Document AI",
@@ -77,8 +78,8 @@ export function AssistantView() {
           availability.isPending ? null : configured ? (
             <StatusBadge tone="success" icon={Bot}>
               {PROVIDER_LABEL[availability.data?.provider ?? ""] ?? "AI"} connected
-              {availability.data?.fallback
-                ? ` · ${PROVIDER_LABEL[availability.data.fallback]} fallback`
+              {availability.data?.fallbacks?.length
+                ? ` · fallback: ${availability.data.fallbacks.map((name) => PROVIDER_LABEL[name]).join(", ")}`
                 : ""}
             </StatusBadge>
           ) : (
@@ -95,11 +96,16 @@ export function AssistantView() {
             <AIChat
               className="min-h-0 flex-1"
               endpoint="/ai/assistant/message"
-              buildBody={(message, history) => ({ message, history })}
+              buildBody={(message, history, attachmentIds) => ({
+                message,
+                history,
+                attachmentIds,
+              })}
+              allowAttachments
               suggestions={SUGGESTIONS}
               placeholder="Ask anything about your legacy, LegacyVault or digital estates…"
               emptyTitle="How can I help?"
-              emptyDescription="Answers are tailored with an overview of your account (counts and gaps only). Legal and financial questions get careful, jurisdiction-aware answers — never a guarantee."
+              emptyDescription="Answers are tailored with an overview of your account (counts and gaps only). Attach a document or photo to summarize it or ask about it. Legal and financial questions get careful, jurisdiction-aware answers — never a guarantee."
               unavailableReason={unavailableReason}
             />
           </CardContent>
@@ -181,8 +187,9 @@ export function AssistantView() {
               </p>
               <p className="flex items-start gap-2">
                 <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-brand-cyan" aria-hidden />
-                The assistant never sees passwords, account numbers or documents unless you open a
-                document and ask about it.
+                The assistant never sees passwords, account numbers or documents unless you attach a
+                file or open a document and ask about it. Attached files are malware-scanned and
+                kept in your private vault.
               </p>
             </CardContent>
           </Card>

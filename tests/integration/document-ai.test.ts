@@ -56,6 +56,13 @@ const prompts: AIRequest[] = [];
 const scripted: AIProvider = {
   name: "openai",
   model: "scripted-model",
+  capabilities: {
+    imageTypes: ["image/png", "image/jpeg"],
+    maxImages: 16,
+    maxInlineBytes: 20 * 1_048_576,
+    pdf: true,
+    structured: true,
+  },
   async generateText(request) {
     prompts.push(request);
     return {
@@ -291,8 +298,18 @@ describe.skipIf(!available)("document AI", () => {
 
   it("reports an unconfigured provider as AI_UNAVAILABLE", async () => {
     setAIProviderForTesting(null);
-    vi.stubEnv("OPENAI_API_KEY", "");
-    vi.stubEnv("GEMINI_API_KEY", "");
+    // Every provider key, not just the default pair: a fallback key in the
+    // developer's environment would otherwise still form a chain.
+    for (const key of [
+      "OPENAI_API_KEY",
+      "GEMINI_API_KEY",
+      "OPENROUTER_API_KEY",
+      "GROQ_API_KEY",
+      "CEREBRAS_API_KEY",
+      "HF_TOKEN",
+    ]) {
+      vi.stubEnv(key, "");
+    }
     resetEnvGroupCache();
     try {
       await expect(

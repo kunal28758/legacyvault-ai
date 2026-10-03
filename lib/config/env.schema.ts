@@ -56,6 +56,27 @@ const optionalSecret = z
     return trimmed;
   });
 
+/** A variable that is present but blank (common in hosting dashboards) counts as unset. */
+const blankAsUnset = <T extends z.ZodType>(schema: T) =>
+  z.preprocess((value) => (typeof value === "string" && !value.trim() ? undefined : value), schema);
+
+const AI_PROVIDERS = ["gemini", "openai", "openrouter", "groq", "cerebras", "huggingface"] as const;
+
+/** `gemini,openrouter,groq` → `["gemini", "openrouter", "groq"]`; unknown names are refused. */
+const aiProviderList = z
+  .string()
+  .transform((value) =>
+    value
+      .split(",")
+      .map((name) => name.trim().toLowerCase())
+      .filter(Boolean),
+  )
+  .pipe(
+    z
+      .array(z.enum(AI_PROVIDERS))
+      .refine((names) => new Set(names).size === names.length, "list each provider once"),
+  );
+
 /**
  * Field definitions, grouped by the feature that consumes them.
  *
@@ -95,15 +116,33 @@ export const serverEnvGroups = {
   accessCookie: {
     ACCESS_COOKIE_KEY: rawKey32,
   },
-  // AI providers (ADR-008). Either provider may be configured on its own; the
-  // other then acts as no fallback. Production requires at least one (below).
+  // AI providers (ADR-008). Production requires at least one key (below).
   // Placeholder values from .env.example are treated as "not configured".
+  //
+  // Without AI_PROVIDER_ORDER only OpenAI and Gemini are used, primary first
+  // (AI_DEFAULT_PROVIDER). OpenRouter, Groq, Cerebras and Hugging Face are
+  // never called unless named in AI_PROVIDER_ORDER — a key alone does not
+  // authorise a provider. AI_DOCUMENT_PROVIDERS lists who may receive the
+  // content of vault documents (attachments, document analysis); by default
+  // only OpenAI and Gemini.
   ai: {
     OPENAI_API_KEY: optionalSecret,
     GEMINI_API_KEY: optionalSecret,
+    OPENROUTER_API_KEY: optionalSecret,
+    GROQ_API_KEY: optionalSecret,
+    CEREBRAS_API_KEY: optionalSecret,
+    HF_TOKEN: optionalSecret,
     AI_DEFAULT_PROVIDER: z.enum(["openai", "gemini"]).default("openai"),
+    AI_PROVIDER_ORDER: blankAsUnset(aiProviderList.optional()),
+    AI_DOCUMENT_PROVIDERS: blankAsUnset(aiProviderList.optional()),
     OPENAI_MODEL: z.string().min(1).default("gpt-5.4-mini"),
     GEMINI_MODEL: z.string().min(1).default("gemini-2.5-flash"),
+    OPENROUTER_MODEL: blankAsUnset(z.string().min(1).default("qwen/qwen3.8-27b:free")),
+    // A non-`:free` OpenRouter model is refused unless this is set (no silent paid usage).
+    OPENROUTER_ALLOW_PAID_MODELS: blankAsUnset(booleanString),
+    GROQ_MODEL: blankAsUnset(z.string().min(1).default("openai/gpt-oss-120b")),
+    CEREBRAS_MODEL: blankAsUnset(z.string().min(1).default("gpt-oss-120b")),
+    HF_MODEL: blankAsUnset(z.string().min(1).optional()),
   },
   // Email (ADR-009)
   email: {
@@ -161,6 +200,10 @@ export interface CrossFieldInput {
   CLAMAV_HOST?: string;
   OPENAI_API_KEY?: string;
   GEMINI_API_KEY?: string;
+  OPENROUTER_API_KEY?: string;
+  GROQ_API_KEY?: string;
+  CEREBRAS_API_KEY?: string;
+  HF_TOKEN?: string;
   SENTRY_DSN?: string;
   ENCRYPTION_KEY?: { keyId: string };
   ENCRYPTION_KEY_PREVIOUS?: { keyId: string };
@@ -187,10 +230,18 @@ export function crossFieldIssues(env: CrossFieldInput): { path: string; message:
       message: "CLAMAV_HOST is required when MALWARE_SCANNER_PROVIDER=clamav.",
     });
   }
-  if (production && !env.OPENAI_API_KEY && !env.GEMINI_API_KEY) {
+  const anyAIKey =
+    env.OPENAI_API_KEY ||
+    env.GEMINI_API_KEY ||
+    env.OPENROUTER_API_KEY ||
+    env.GROQ_API_KEY ||
+    env.CEREBRAS_API_KEY ||
+    env.HF_TOKEN;
+  if (production && !anyAIKey) {
     issues.push({
       path: "OPENAI_API_KEY",
-      message: "Configure OPENAI_API_KEY or GEMINI_API_KEY in production (ADR-008).",
+      message:
+        "Configure an AI provider key in production (OPENAI_API_KEY or GEMINI_API_KEY; ADR-008).",
     });
   }
   if (production && !env.SENTRY_DSN) {

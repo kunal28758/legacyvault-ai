@@ -14,12 +14,16 @@ import { mintLocalJwt } from "./jwt";
  */
 export const LOCAL_SUPABASE_URL = process.env.SUPABASE_URL ?? "http://127.0.0.1:54321";
 
-const publishableKey =
+// Read on use, not at import: Playwright's global setup imports this module
+// before it loads `.env.local`, and an empty key made it skip its work silently.
+const publishableKey = () =>
   process.env.SUPABASE_PUBLISHABLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "";
-const secretKey = process.env.SUPABASE_SECRET_KEY ?? "";
+const secretKey = () => process.env.SUPABASE_SECRET_KEY ?? "";
 
 export function hasLocalStackConfig(): boolean {
-  return Boolean(publishableKey && secretKey) && /127\.0\.0\.1|localhost/.test(LOCAL_SUPABASE_URL);
+  return (
+    Boolean(publishableKey() && secretKey()) && /127\.0\.0\.1|localhost/.test(LOCAL_SUPABASE_URL)
+  );
 }
 
 /** Resolves true when the local Supabase API answers (used to skip DB suites gracefully). */
@@ -27,7 +31,7 @@ export async function isLocalStackAvailable(): Promise<boolean> {
   if (!hasLocalStackConfig()) return false;
   try {
     const response = await fetch(`${LOCAL_SUPABASE_URL}/rest/v1/`, {
-      headers: { apikey: publishableKey },
+      headers: { apikey: publishableKey() },
       signal: AbortSignal.timeout(2000),
     });
     return response.status < 500;
@@ -38,15 +42,15 @@ export async function isLocalStackAvailable(): Promise<boolean> {
 
 export async function createUserScopedClient(clerkUserId: string): Promise<SupabaseClient> {
   const token = await mintLocalJwt({ sub: clerkUserId });
-  return createClient(LOCAL_SUPABASE_URL, publishableKey, {
+  return createClient(LOCAL_SUPABASE_URL, publishableKey(), {
     accessToken: async () => token,
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }
 
 export function createServiceScopedClient(): SupabaseClient {
-  if (!secretKey) throw new Error("SUPABASE_SECRET_KEY is required for the service client");
-  return createClient(LOCAL_SUPABASE_URL, secretKey, {
+  if (!secretKey()) throw new Error("SUPABASE_SECRET_KEY is required for the service client");
+  return createClient(LOCAL_SUPABASE_URL, secretKey(), {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }

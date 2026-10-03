@@ -1,6 +1,6 @@
 import "server-only";
 
-import { AIProviderError } from "@/lib/ai/provider";
+import { AIProviderError, isDailyQuota } from "@/lib/ai/provider";
 import { ApiError } from "@/lib/api/errors";
 
 /**
@@ -18,10 +18,19 @@ export function toAIApiError(error: unknown): ApiError {
       return new ApiError(
         503,
         "AI_UNAVAILABLE",
-        "AI features are not configured in this environment. An administrator needs to add an AI provider key.",
+        "AI features are not configured correctly in this environment. An administrator needs to check the AI provider key and model.",
         { cause: error, details: { reason: "not_configured" } },
       );
     case "RATE_LIMITED":
+      // A spent daily quota will not clear "in a minute"; say so honestly.
+      if (isDailyQuota(error.upstream)) {
+        return new ApiError(
+          503,
+          "AI_UNAVAILABLE",
+          "The AI service has reached its usage limit for today. Everything else in LegacyVault still works — try again later.",
+          { cause: error, details: { reason: "quota" } },
+        );
+      }
       return new ApiError(
         503,
         "AI_UNAVAILABLE",
@@ -48,6 +57,18 @@ export function toAIApiError(error: unknown): ApiError {
         "The AI returned an answer that failed validation, so it was not used. Try again.",
         { cause: error, details: { reason: "invalid_output" } },
       );
+    case "INTERRUPTED":
+      return new ApiError(
+        503,
+        "AI_UNAVAILABLE",
+        "The AI service stopped partway through this answer, so it may be incomplete. Try again.",
+        { cause: error, details: { reason: "interrupted" } },
+      );
+    case "UNSUPPORTED":
+      return new ApiError(422, "AI_UNAVAILABLE", error.message, {
+        cause: error,
+        details: { reason: "unsupported" },
+      });
     case "CANCELLED":
       return new ApiError(503, "AI_UNAVAILABLE", "The request was cancelled.", {
         cause: error,

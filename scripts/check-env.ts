@@ -87,7 +87,15 @@ const OPTIONAL_LOCALLY: {
     group: "ai",
     feature: "the AI assistant and document intelligence",
     without: 'no provider key — AI panels report "not configured"; everything else works',
-    configured: (values) => Boolean(values.OPENAI_API_KEY || values.GEMINI_API_KEY),
+    configured: (values) =>
+      Boolean(
+        values.OPENAI_API_KEY ||
+        values.GEMINI_API_KEY ||
+        values.OPENROUTER_API_KEY ||
+        values.GROQ_API_KEY ||
+        values.CEREBRAS_API_KEY ||
+        values.HF_TOKEN,
+      ),
   },
 ];
 

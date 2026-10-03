@@ -19,8 +19,14 @@ export async function signInAndSettle(page: Page, email: string): Promise<void> 
 
   await page.goto("/dashboard", { waitUntil: "domcontentloaded" });
   if (new URL(page.url()).pathname === "/onboarding") {
-    await page.getByRole("button", { name: "Skip for now" }).click();
-    await page.waitForURL("**/dashboard", { timeout: 60_000 });
+    // A click that lands before the form hydrates does nothing, so retry it
+    // until the navigation happens (completing onboarding is idempotent).
+    await expect(async () => {
+      if (new URL(page.url()).pathname === "/onboarding") {
+        await page.getByRole("button", { name: "Skip for now" }).click();
+      }
+      await page.waitForURL("**/dashboard", { timeout: 15_000 });
+    }).toPass({ timeout: 90_000 });
   }
   await expect(page).toHaveURL(/\/dashboard/, { timeout: 60_000 });
 }

@@ -20,6 +20,7 @@ export const E2E_USERS = {
   access: "e2e-access+clerk_test@example.com",
   journey: "e2e-journey+clerk_test@example.com",
   settings: "e2e-settings+clerk_test@example.com",
+  ai: "e2e-ai+clerk_test@example.com",
 } as const;
 
 export const E2E_USER_EMAILS = Object.values(E2E_USERS);

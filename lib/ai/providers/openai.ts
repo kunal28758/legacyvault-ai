@@ -11,10 +11,12 @@ import { z } from "zod";
 
 import {
   AIProviderError,
+  type AICapabilities,
   type AIMessage,
   type AIProvider,
   type AIRequest,
   type AIStream,
+  type AIUpstreamFailure,
   type AIUsage,
 } from "@/lib/ai/provider";
 
@@ -65,49 +67,69 @@ function usageOf(
   return { inputTokens: usage?.input_tokens ?? null, outputTokens: usage?.output_tokens ?? null };
 }
 
+/** The vendor's machine-readable error code (`rate_limit_exceeded`…); never its message. */
+function upstreamOf(cause: unknown): AIUpstreamFailure | undefined {
+  if (!(cause instanceof OpenAI.APIError) || cause.status === undefined) return undefined;
+  const code = cause.code ?? cause.type ?? null;
+  return { status: cause.status, reason: code && /^[a-z_]{2,60}$/.test(code) ? code : null };
+}
+
 function mapError(cause: unknown): AIProviderError {
   if (cause instanceof AIProviderError) return cause;
+  // An HTTP failure is described, not wrapped: the vendor's message is free
+  // text that can echo the request, so it must not reach a log line.
+  const upstream = upstreamOf(cause);
+  const detail = upstream ? { upstream } : { cause };
   if (cause instanceof OpenAI.APIUserAbortError) {
-    return new AIProviderError("CANCELLED", "openai", "The request was cancelled.", { cause });
+    return new AIProviderError("CANCELLED", "openai", "The request was cancelled.", detail);
   }
   if (cause instanceof OpenAI.APIConnectionTimeoutError) {
-    return new AIProviderError("TIMEOUT", "openai", "The AI provider timed out.", { cause });
+    return new AIProviderError("TIMEOUT", "openai", "The AI provider timed out.", detail);
   }
   if (cause instanceof OpenAI.RateLimitError) {
-    return new AIProviderError("RATE_LIMITED", "openai", "The AI provider is rate limiting.", {
-      cause,
-    });
+    return new AIProviderError(
+      "RATE_LIMITED",
+      "openai",
+      "The AI provider is rate limiting.",
+      detail,
+    );
   }
   if (
     cause instanceof OpenAI.AuthenticationError ||
-    cause instanceof OpenAI.PermissionDeniedError
+    cause instanceof OpenAI.PermissionDeniedError ||
+    cause instanceof OpenAI.NotFoundError
   ) {
     return new AIProviderError(
       "NOT_CONFIGURED",
       "openai",
-      "The AI provider rejected the credentials.",
-      {
-        cause,
-      },
+      cause instanceof OpenAI.NotFoundError
+        ? "The configured AI model was not found."
+        : "The AI provider rejected the credentials.",
+      detail,
     );
   }
   if (cause instanceof OpenAI.BadRequestError) {
-    return new AIProviderError("REFUSED", "openai", "The AI provider refused the request.", {
-      cause,
-    });
+    return new AIProviderError("REFUSED", "openai", "The AI provider refused the request.", detail);
   }
   if (cause instanceof ContentFilterFinishReasonError) {
-    return new AIProviderError("REFUSED", "openai", "The AI provider declined to answer.", {
-      cause,
-    });
+    return new AIProviderError("REFUSED", "openai", "The AI provider declined to answer.", detail);
   }
-  return new AIProviderError("UNAVAILABLE", "openai", "The AI provider is unavailable.", { cause });
+  return new AIProviderError("UNAVAILABLE", "openai", "The AI provider is unavailable.", detail);
 }
 
 /** Reasoning models answer faster with a low effort, which suits interactive use. */
 function reasoningFor(model: string): ResponseCreateParamsNonStreaming["reasoning"] {
   return /^(gpt-5|o\d)/.test(model) ? { effort: "low" } : undefined;
 }
+
+/** Responses API inputs: images, and PDFs as `input_file` (text layer and page images). */
+export const OPENAI_CAPABILITIES: AICapabilities = {
+  imageTypes: ["image/png", "image/jpeg", "image/webp", "image/gif"],
+  maxImages: 16,
+  maxInlineBytes: 20 * 1_048_576,
+  pdf: true,
+  structured: true,
+};
 
 export function createOpenAIProvider(apiKey: string, model: string): AIProvider {
   const client = new OpenAI({ apiKey, timeout: REQUEST_TIMEOUT_MS, maxRetries: 1 });
@@ -125,6 +147,7 @@ export function createOpenAIProvider(apiKey: string, model: string): AIProvider 
   return {
     name: "openai",
     model,
+    capabilities: OPENAI_CAPABILITIES,
 
     async generateText(request) {
       try {
