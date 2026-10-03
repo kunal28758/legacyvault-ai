@@ -1,0 +1,77 @@
+
+name: Production Scheduled Jobs
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/30 * * * *"
+    - cron: "17 3 * * *"
+
+concurrency:
+  group: production-scheduled-jobs
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  trigger-production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Validate cron secret
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::error::CRON_SECRET repository secret is missing"
+            exit 1
+          fi
+
+      - name: Process queued jobs
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          BASE_URL: https://legacyvault-ai-uh7s.vercel.app
+        run: |
+          set -eu
+          code=$(curl --silent --show-error --max-time 120 \
+            --output response.json --write-out "%{http_code}" \
+            --request POST \
+            --header "Authorization: Bearer $CRON_SECRET" \
+            "$BASE_URL/api/internal/cron/run-jobs")
+          echo "run-jobs HTTP: $code"
+          cat response.json
+          test "$code" -ge 200 && test "$code" -lt 300
+
+      - name: Queue Dead Man's Switch scan
+        if: github.event_name == 'schedule' && github.event.schedule == '*/30 * * * *'
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          BASE_URL: https://legacyvault-ai-uh7s.vercel.app
+        run: |
+          set -eu
+          code=$(curl --silent --show-error --max-time 30 \
+            --output response.json --write-out "%{http_code}" \
+            --request POST \
+            --header "Authorization: Bearer $CRON_SECRET" \
+            "$BASE_URL/api/internal/cron/dms-scan")
+          echo "dms-scan HTTP: $code"
+          cat response.json
+          test "$code" -ge 200 && test "$code" -lt 300
+
+      - name: Queue daily housekeeping
+        if: github.event_name == 'schedule' && github.event.schedule == '17 3 * * *'
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          BASE_URL: https://legacyvault-ai-uh7s.vercel.app
+        run: |
+          set -eu
+          code=$(curl --silent --show-error --max-time 30 \
+            --output response.json --write-out "%{http_code}" \
+            --request POST \
+            --header "Authorization: Bearer $CRON_SECRET" \
+            "$BASE_URL/api/internal/cron/housekeeping")
+          echo "housekeeping HTTP: $code"
+          cat response.json
+          test "$code" -ge 200 && test "$code" -lt 300
