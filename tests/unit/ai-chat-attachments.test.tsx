@@ -33,7 +33,7 @@ vi.mock("@/hooks/use-documents", () => ({
       request.onPhase?.("validating");
       request.onPhase?.("uploading", `upload-${uploads.calls.length}`);
       request.onProgress?.(100);
-      request.onPhase?.("scanning", `upload-${uploads.calls.length}`);
+      request.onPhase?.("saving", `upload-${uploads.calls.length}`);
       return new Promise<UploadOutcome>((resolve) => uploads.settle.push(resolve));
     },
   }),
@@ -50,7 +50,6 @@ function promoted(uploadId: string, documentId: string): UploadOutcome {
     uploadId,
     status: "PROMOTED",
     rejectionReason: null,
-    scan: { status: "CLEAN", performed: true, provider: "clamav", scannedAt: null },
     retryable: false,
     inProgress: false,
     documentId,
@@ -116,13 +115,13 @@ describe("assistant attachments", () => {
     expect(accept).not.toContain("application/msword");
   });
 
-  it("holds Send until the security scan promotes the file, then sends only its id", async () => {
+  it("holds Send until the server promotes the file, then sends only its id", async () => {
     const { choose } = renderChat();
     choose(pdf());
 
-    expect(within(pending()).getByText(/Scanning for malware/)).toBeInTheDocument();
+    expect(within(pending()).getByText(/Saving/)).toBeInTheDocument();
     expect(send()).toBeDisabled();
-    expect(screen.getByRole("status")).toHaveTextContent(/uploaded and scanned/);
+    expect(screen.getByRole("status")).toHaveTextContent(/being uploaded/);
 
     await act(async () => uploads.settle[0]!(promoted("upload-1", "doc-1")));
     expect(within(pending()).getByText("Ready")).toBeInTheDocument();
@@ -208,25 +207,24 @@ describe("assistant attachments", () => {
     expect(screen.getAllByText("Hello")).toHaveLength(1);
   });
 
-  it("shows a malware rejection and keeps the file out of the message", async () => {
+  it("shows a rejected file and keeps it out of the message", async () => {
     const { choose } = renderChat();
     choose(pdf());
     await act(async () =>
       uploads.settle[0]!({
         uploadId: "upload-1",
         status: "REJECTED",
-        rejectionReason: "The file was rejected by the malware scanner.",
-        scan: { status: "INFECTED", performed: true, provider: "clamav", scannedAt: null },
+        rejectionReason: "The file contents do not match the declared file type.",
         retryable: false,
         inProgress: false,
       }),
     );
-    expect(within(pending()).getByText(/rejected by the malware scanner/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Retry scan" })).not.toBeInTheDocument();
+    expect(within(pending()).getByText(/do not match the declared file type/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
     expect(send()).toBeDisabled();
   });
 
-  it("offers a retry when the scanner was unavailable, and never treats the file as ready", async () => {
+  it("offers a retry when saving did not finish, and never treats the file as ready", async () => {
     const { choose } = renderChat();
     choose(pdf());
     await act(async () =>
@@ -234,16 +232,15 @@ describe("assistant attachments", () => {
         uploadId: "upload-1",
         status: "UPLOADED",
         rejectionReason:
-          "The malware scanner is unavailable. Your file is held securely in quarantine — try again.",
-        scan: { status: "ERROR", performed: false, provider: "clamav", scannedAt: null },
+          "Something went wrong while saving your file. Your file is held privately and has not been added to your vault — try again.",
         retryable: true,
         inProgress: false,
       }),
     );
-    expect(within(pending()).getByText(/scanner is unavailable/)).toBeInTheDocument();
+    expect(within(pending()).getByText(/went wrong while saving/)).toBeInTheDocument();
     expect(send()).toBeDisabled();
 
-    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Retry scan" })));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Retry" })));
     expect(uploads.retries).toEqual([{ uploadId: "upload-1" }]);
     expect(within(pending()).getByText("Ready")).toBeInTheDocument();
   });

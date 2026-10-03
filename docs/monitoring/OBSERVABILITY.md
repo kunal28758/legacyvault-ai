@@ -78,14 +78,14 @@ traced across API, database and audit trail.
 | Job health | `jobs` table: queue depth, DEAD count, `finished_at` freshness, retry counts |
 | DMS scheduler freshness | health check (§ 5) |
 | Security metrics | `audit_log`: DENIED outcomes, rate-limit hits (429), failed reverifications, `access.*` events, `dms.job_health_failure` |
-| Scanner health | `file.scan` / `video.process` ERROR rate |
+| Upload health | `upload.rejected` audit events; sessions left `UPLOADED` (retryable) |
 | Email delivery | `notifications.deliveryStatus` via provider webhooks |
 | Uptime | external monitor on `/api/v1/health` (T239; SC-010 measured in operation) |
 
 ## 7. Alerting and routing (T188, T239)
 
 Alert rules planned in Sentry (error-rate spikes, `dms.job_health_failure`,
-DEAD job count, scanner ERROR rate) with routing/escalation notes recorded in
+DEAD job count) with routing/escalation notes recorded in
 `docs/DEPLOYMENT.md` when environments exist. Super Admin email
 notifications for DMS health failures are sent through the notification
 service.

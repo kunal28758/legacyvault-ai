@@ -9,8 +9,8 @@ import {
  * Step 1 of the upload (ADR-005).
  *
  * Validates what the browser claims about the file and returns a signed URL
- * into the private quarantine bucket. The object key is derived server-side, so
- * a crafted filename cannot choose where the bytes land.
+ * into the private bucket for its kind. The object key is derived server-side,
+ * so a crafted filename cannot choose where the bytes land.
  */
 export const POST = withApi<UploadSessionBody>(
   {

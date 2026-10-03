@@ -21,6 +21,10 @@ analysis, security center, and administration.
 - Q: Do beneficiaries create platform accounts or receive access through external channels? → A: Beneficiaries receive secure, time-limited email links with scoped access tokens. No platform account required for beneficiaries in v1.
 - Q: What are the maximum file size limits for document and video uploads? → A: Documents: 50 MB max; Videos: 500 MB max.
 
+### Session 2026-10-04 (owner decision — ADR-017)
+
+- Q: Must production file processing run a malware scanner (FR-H016, FR-Q011)? → A: No. The owner removed malware scanning entirely. Uploads are validated for type, extension, size and content (magic bytes) and stored in private buckets; nothing may claim a file was scanned. FR-H016 and FR-Q011 are withdrawn.
+
 ### Session 2026-09-18 (post-analysis remediation)
 
 - Q: Are Dead Man Switch trusted contacts and emergency contacts separate concepts from beneficiaries? → A: No. Every external recipient — beneficiary, trusted contact, emergency contact — is a **Beneficiary record** owned by the user. A trusted contact is a beneficiary linked to the Dead Man Switch; an emergency contact is a beneficiary with an Emergency Access configuration ("emergency beneficiary" in FR-D010 means exactly this). All scoped access, regardless of trigger (direct share, Dead Man Switch release, emergency grant), is delivered through the same time-limited scoped access-token mechanism.
@@ -820,8 +824,9 @@ the summary, verifying completeness indicators, and finalizing.
 - **FR-H014**: System MUST support temporary access grants with expiration.
 - **FR-H015**: System MUST log all document uploads, downloads, views,
   permission changes, and deletions.
-- **FR-H016**: System MUST integrate malware-scanning hooks for production
-  file-processing workflows.
+- **FR-H016**: ~~System MUST integrate malware-scanning hooks for production
+  file-processing workflows.~~ **Withdrawn 2026-10-04** (Clarifications,
+  ADR-017).
 - **FR-H017**: System MUST handle document deletion by removing access while
   maintaining audit records.
 
@@ -1036,8 +1041,8 @@ the summary, verifying completeness indicators, and finalizing.
   validation.
 - **FR-Q010**: System MUST validate file uploads for type, size, extension,
   and content before processing.
-- **FR-Q011**: System MUST integrate malware-scanning hooks for production file
-  processing.
+- **FR-Q011**: ~~System MUST integrate malware-scanning hooks for production file
+  processing.~~ **Withdrawn 2026-10-04** (Clarifications, ADR-017).
 - **FR-Q012**: System MUST maintain tamper-resistant audit logs for all
   security-sensitive operations.
 - **FR-Q013**: System MUST NOT store secrets, API keys, credentials, or

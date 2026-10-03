@@ -7,7 +7,6 @@ import type { AppUser } from "@/lib/auth/ensure-app-user";
 import { resetEnvGroupCache } from "@/lib/config/env";
 import * as assistant from "@/lib/services/ai/assistant.service";
 import * as documentAi from "@/lib/services/ai/document-ai.service";
-import { pingScanner } from "@/lib/services/malware-scanner";
 import * as uploadService from "@/lib/services/upload.service";
 import { BUCKETS } from "@/lib/storage/storage";
 
@@ -20,8 +19,7 @@ import {
 
 /**
  * Provider failover through the real assistant path: the real service, the
- * real database (usage records), the real upload pipeline with ClamAV for the
- * attachment, and the real Gemini and OpenAI-compatible adapters with their
+ * real database (usage records), the real upload pipeline for the attachment, and the real Gemini and OpenAI-compatible adapters with their
  * SDKs. Only the vendors' HTTP endpoints are scripted — every other request
  * (Supabase) goes to the real local stack.
  *
@@ -37,14 +35,9 @@ vi.mock("@/lib/db/server", async (importOriginal) => {
   return { ...actual, createUserClient: async () => clients.current };
 });
 
-const available =
-  (await isLocalStackAvailable()) &&
-  process.env.MALWARE_SCANNER_PROVIDER === "clamav" &&
-  (await pingScanner()).status === "ok";
+const available = await isLocalStackAvailable();
 if (!available) {
-  console.warn(
-    "[ai-fallback] local stack or ClamAV unreachable — assertions are SKIPPED, not passed.",
-  );
+  console.warn("[ai-fallback] local stack unreachable — assertions are SKIPPED, not passed.");
 }
 
 type Vendor = "gemini" | "openrouter" | "groq";
@@ -186,7 +179,7 @@ beforeAll(async () => {
     body: PNG as Uint8Array<ArrayBuffer>,
   });
   const outcome = await uploadService.completeUpload(user, ticket.uploadId, {}, "test");
-  expect(outcome).toMatchObject({ status: "PROMOTED", scan: { provider: "clamav" } });
+  expect(outcome).toMatchObject({ status: "PROMOTED" });
   imageId = outcome.documentId!;
 
   vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {

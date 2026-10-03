@@ -19,6 +19,22 @@ Format: newest first. Categories: *Governance*, *Specification*,
 
 ## [Unreleased]
 
+### Malware scanning removed — 2026-10-04
+
+- **Uploads (changed)**: the ClamAV client, the `MALWARE_SCANNER_PROVIDER` /
+  `CLAMAV_*` variables, the production start-up requirement for a scanner, the
+  scanner status probe and the quarantine stage are gone (ADR-017, superseding
+  ADR-015). Uploads go straight to the private `documents` / `videos` bucket;
+  the server checks the real size and leading bytes before
+  `promote_upload()` adds the file. Promoted rows record `NOT_SCANNED`, and no
+  screen claims a file was scanned.
+- **Database**: forward migration `0006_remove_malware_scanning.sql` (new
+  `VALIDATED` / `NOT_SCANNED` enum values, `promote_upload()` gate, unused
+  quarantine write policy dropped, stale scanning sessions closed). No file
+  or row deleted.
+- **Governance**: constitution 3.0.0 removes the malware-scanning MUST from
+  Principle XI; FR-H016 / FR-Q011 are recorded as not met.
+
 ### Production-readiness pass — 2026-09-30
 - **Upload / malware scanning (fixed)**: uploads no longer hang at "Malware
   scan". `readObjectHead()` reads the ranged response with `arrayBuffer()`

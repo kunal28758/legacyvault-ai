@@ -108,7 +108,7 @@ function defaultQuestion(count: number): string {
  * nothing is persisted on either side, and clearing the chat forgets it.
  *
  * With `allowAttachments`, files go through the vault's upload pipeline first
- * (quarantine, malware scan, private storage) and only their document ids are
+ * (private storage, size and type checks) and only their document ids are
  * sent. Files from earlier in the conversation are carried into the next
  * message — visibly, and removable — so follow-up questions can refer to them.
  */
@@ -142,7 +142,7 @@ export function AIChat({
       : [],
   );
   const working = files.pending.some(
-    (a) => a.state === "preparing" || a.state === "uploading" || a.state === "scanning",
+    (a) => a.state === "preparing" || a.state === "uploading" || a.state === "saving",
   );
   const failed = files.pending.some((a) => a.state === "failed");
 
@@ -275,7 +275,7 @@ export function AIChat({
 
   const last = messages[messages.length - 1];
   const statusHint = working
-    ? "Your files are being uploaded and scanned. You can send once they are ready."
+    ? "Your files are being uploaded. You can send once they are ready."
     : failed
       ? "Remove or retry the files that failed before sending."
       : null;
@@ -525,7 +525,7 @@ export function AIChat({
             {allowAttachments && (
               <span className="block">
                 Attach {AI_ATTACHMENT_TYPES_LABEL} · up to {formatBytes(MAX_DOCUMENT_BYTES)} · files
-                are malware-scanned and saved to your document vault
+                are saved to your private document vault
               </span>
             )}
           </span>

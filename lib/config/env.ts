@@ -19,8 +19,6 @@ export type { ServerEnv } from "@/lib/config/env.schema";
  * offending variable names. Every server module that needs configuration must read
  * it from here — never from `process.env` directly (constitution I, IX).
  *
- * Production refuses to start with `MALWARE_SCANNER_PROVIDER=noop` (ADR-015).
- *
  * Two accessors, same rules:
  *  • `getServerEnv()` validates the **entire** schema. Production start-up and
  *    `pnpm env:check` use it, so a deployment still cannot boot with anything

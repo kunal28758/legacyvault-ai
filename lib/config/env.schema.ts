@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Environment schema for LegacyVault AI (task T007, constitution I / XXI, ADR-015).
+ * Environment schema for LegacyVault AI (task T007, constitution I / XXI).
  *
  * This module is dependency-free (no `server-only`) so it can be unit-tested and
  * used by `scripts/check-env.ts`. Application code must import the validated
@@ -158,13 +158,6 @@ export const serverEnvGroups = {
   cron: {
     CRON_SECRET: z.string().min(32, "CRON_SECRET must be at least 32 characters"),
   },
-  // Malware scanning (ADR-015)
-  malwareScanner: {
-    MALWARE_SCANNER_PROVIDER: z.enum(["noop", "clamav"]).default("noop"),
-    CLAMAV_HOST: z.string().min(1).optional(),
-    CLAMAV_PORT: z.coerce.number().int().min(1).max(65535).default(3310),
-    CLAMAV_TLS: booleanString,
-  },
   // Operations
   operations: {
     ADMIN_EMAIL: z.email(),
@@ -189,15 +182,12 @@ export const serverEnvShape = {
   ...serverEnvGroups.email,
   ...serverEnvGroups.observability,
   ...serverEnvGroups.cron,
-  ...serverEnvGroups.malwareScanner,
   ...serverEnvGroups.operations,
 } as const;
 
 /** The cross-field inputs, loose enough to evaluate on a partially valid environment. */
 export interface CrossFieldInput {
   NODE_ENV?: string;
-  MALWARE_SCANNER_PROVIDER?: string;
-  CLAMAV_HOST?: string;
   OPENAI_API_KEY?: string;
   GEMINI_API_KEY?: string;
   OPENROUTER_API_KEY?: string;
@@ -217,19 +207,6 @@ export interface CrossFieldInput {
 export function crossFieldIssues(env: CrossFieldInput): { path: string; message: string }[] {
   const issues: { path: string; message: string }[] = [];
   const production = env.NODE_ENV === "production";
-  if (production && env.MALWARE_SCANNER_PROVIDER === "noop") {
-    issues.push({
-      path: "MALWARE_SCANNER_PROVIDER",
-      message:
-        "MALWARE_SCANNER_PROVIDER=noop is refused in production (ADR-015): configure clamav.",
-    });
-  }
-  if (env.MALWARE_SCANNER_PROVIDER === "clamav" && !env.CLAMAV_HOST) {
-    issues.push({
-      path: "CLAMAV_HOST",
-      message: "CLAMAV_HOST is required when MALWARE_SCANNER_PROVIDER=clamav.",
-    });
-  }
   const anyAIKey =
     env.OPENAI_API_KEY ||
     env.GEMINI_API_KEY ||

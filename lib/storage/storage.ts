@@ -16,12 +16,16 @@ import { createServiceClient } from "@/lib/db/server";
  * traverse out of its owner's prefix or collide with another owner's object.
  */
 export const BUCKETS = {
-  quarantine: "quarantine",
   documents: "documents",
   videos: "videos",
 } as const;
 
 export type BucketName = (typeof BUCKETS)[keyof typeof BUCKETS];
+
+/** The private bucket an upload of this kind is written to, and stays in. */
+export function uploadBucketFor(kind: "DOCUMENT" | "DOCUMENT_VERSION" | "VIDEO"): BucketName {
+  return kind === "VIDEO" ? BUCKETS.videos : BUCKETS.documents;
+}
 
 /** How long a download link stays valid (FR-H007: short-lived, single purpose). */
 export const DOWNLOAD_URL_TTL_SECONDS = 900; // 15 minutes
@@ -37,19 +41,18 @@ export interface SignedUpload {
 }
 
 /**
- * The quarantine key for an upload session.
+ * The object key for an upload session.
  *
  * Shape: `<ownerId>/<uploadId>`, derived rather than stored — the session row
  * has no key column, and deriving it means there is nothing to tamper with.
  * The original filename is deliberately not part of the path: it lives in a
  * column, so nothing a user types can influence where an object is written.
+ *
+ * The browser writes to this key in the private bucket for the upload's kind,
+ * and the object stays there once promoted. Until `promote_upload()` creates a
+ * row pointing at it, no download URL can be minted for it.
  */
-export function quarantineKey(ownerId: string, uploadId: string): string {
-  return `${ownerId}/${uploadId}`;
-}
-
-/** The permanent key an object takes once it has been promoted out of quarantine. */
-export function permanentKey(ownerId: string, uploadId: string): string {
+export function uploadObjectKey(ownerId: string, uploadId: string): string {
   return `${ownerId}/${uploadId}`;
 }
 
@@ -120,10 +123,10 @@ export const OBJECT_HEAD_TIMEOUT_MS = 15_000;
  *
  * It deliberately does not stream and cancel. Inside a Route Handler `fetch` is
  * the Next.js-patched one, which can tee the response body; cancelling one
- * branch of a tee does not settle while the other branch is open, and that is
- * how an upload used to sit in "Scanning…" forever. A server that ignores
- * `Range` and answers 200 is still bounded by the timeout and by the object
- * size limits enforced before this runs.
+ * branch of a tee does not settle while the other branch is open, so a
+ * completion request could hang forever. A server that ignores `Range` and
+ * answers 200 is still bounded by the timeout and by the object size limits
+ * enforced before this runs.
  */
 export async function readObjectHead(
   bucket: BucketName,
@@ -174,17 +177,6 @@ export async function readObject(
     throw ApiError.invariant("FILE_TOO_LARGE", "This file is too large to process.");
   }
   return bytes;
-}
-
-/** Promotes an object out of quarantine into its permanent bucket. */
-export async function moveObject(
-  from: { bucket: BucketName; key: string },
-  to: { bucket: BucketName; key: string },
-): Promise<void> {
-  const { error } = await storage()
-    .from(from.bucket)
-    .move(from.key, to.key, { destinationBucket: to.bucket });
-  if (error) throw ApiError.internal(error);
 }
 
 export async function removeObject(bucket: BucketName, key: string): Promise<void> {

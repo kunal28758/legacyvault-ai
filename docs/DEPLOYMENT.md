@@ -17,7 +17,7 @@ Context and § Phase 13, `tasks.md` T195/T196/T202/T210,
 capability exists) · 🔧 configured locally in this repository · ⬜ not started.
 
 > **Honesty rule**: as of 2026-09-19 **no Clerk, Supabase (hosted), Vercel,
-> Resend, Sentry or ClamAV dashboard has been configured or inspected by the
+> Resend or Sentry dashboard has been configured or inspected by the
 > implementation work**. Every external item below is ⏳ until an owner with
 > credentials completes it and replaces the status here. Local development does
 > not depend on any of them except a Clerk development instance for signed-in
@@ -31,10 +31,10 @@ capability exists) · 🔧 configured locally in this repository · ⬜ not star
 |---|---|---|---|
 | Application | `pnpm dev` (Next.js 16, Node 20 LTS+) | Vercel preview deployment per PR | Vercel production (manual approval, T238) |
 | Database | Supabase CLI local stack (`pnpm db:start`, Docker) | Supabase staging project | Supabase production project (PITR) |
-| Object storage | local stack buckets `quarantine` / `documents` / `videos` | staging project buckets | production project buckets |
+| Object storage | local stack buckets `documents` / `videos` | staging project buckets | production project buckets |
 | Identity | Clerk **development** instance | Clerk development instance | Clerk **production** instance |
 | Background jobs | `curl` the cron routes with `CRON_SECRET` | Vercel Cron (`vercel.json`) | Vercel Cron + `pg_cron`/`pg_net` redundancy (T211) |
-| Malware scanning | `MALWARE_SCANNER_PROVIDER=noop` (dev only) | `clamav` (recommended) | `clamav` — `noop` is **refused** at start-up (ADR-015, `lib/config/env.schema.ts`) |
+| Malware scanning | none (ADR-017) | none | none — uploads are checked for size and type only |
 | Email | Resend test key or console provider | Resend | Resend |
 | Monitoring | optional Sentry DSN | Sentry | Sentry (required by the env schema) |
 
@@ -60,7 +60,6 @@ lists every variable with placeholders. Validate a local file with
 | `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_WEBHOOK_SECRET` | server | Resend dashboard | ADR-009 |
 | `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN` | server / public | Sentry project | server DSN required in production |
 | `CRON_SECRET` (≥ 32 chars) | server | Vercel env (Vercel Cron sends it automatically) | ADR-006 |
-| `MALWARE_SCANNER_PROVIDER`, `CLAMAV_HOST`, `CLAMAV_PORT`, `CLAMAV_TLS` | server | Vercel env | ADR-015 |
 | `ADMIN_EMAIL` | server | Vercel env | first Super Admin (T033) |
 
 Secrets are managed only through Vercel environment variables (and `.env.local`
@@ -179,7 +178,7 @@ Code that depends on this checklist: `proxy.ts` (T192), `app/layout.tsx`
 | # | Setting (source) | Local stack | Staging | Production |
 |---|---|---|---|---|
 | 1 | Clerk added as third-party auth provider (ADR-004 r2) | ✅ `[auth.third_party.clerk] enabled = true` with the development Frontend API domain in `config.toml` | ⏳ | ⏳ |
-| 2 | Private buckets `quarantine`, `documents`, `videos` (ADR-005) | ✅ created by `supabase/migrations/0004_storage_buckets.sql` and verified private | ⏳ apply the migration | ⏳ apply the migration |
+| 2 | Private buckets `documents`, `videos` (ADR-005; the retired `quarantine` bucket also exists, private and unused) | ✅ created by `supabase/migrations/0004_storage_buckets.sql` and verified private | ⏳ apply the migration | ⏳ apply the migration |
 | 3 | Global file-size limit ≥ 500 MB (FR-K002) — **Pro plan or higher** | 🔧 `file_size_limit = "500MiB"` | ⏳ | ⏳ |
 | 4 | Automated backups on; **PITR add-on** for production (NFR-DR-001) | n/a | ⏳ | ⏳ |
 | 5 | `pg_cron` + `pg_net` extensions available for the redundancy trigger (ADR-006, T211) | ⬜ | ⏳ | ⏳ |
@@ -191,11 +190,11 @@ Code that depends on this checklist: `proxy.ts` (T192), `app/layout.tsx`
 | # | Prerequisite (why) | Status | How to verify / record |
 |---|---|---|---|
 | 1 | Vercel plan supports **minute-level cron** (`*/5` in `vercel.json`, ADR-006) | ⏳ Pending manual verification | Vercel dashboard → Project → Cron Jobs after first deploy; Hobby plans allow only daily crons — the job runner needs 5-minute cadence |
-| 2 | Vercel function `maxDuration` sufficient for job / AI / scan handlers (largest video scan) | ⏳ Pending manual verification | confirm plan limit; handlers declare `export const maxDuration` (T197/T128/T145/T141) |
+| 2 | Vercel function `maxDuration` sufficient for job and AI handlers | ⏳ Pending manual verification | confirm plan limit; handlers declare `export const maxDuration` (T197/T128/T145/T141) |
 | 3 | Supabase file-size limit ≥ 500 MB (videos) | ⏳ Pending manual verification | Project settings → Storage; requires Pro plan |
 | 4 | Supabase PITR for production | ⏳ Pending manual verification | Project settings → Database → Backups |
 | 5 | Clerk plan supports inactivity timeout, session-token customization, reverification | ⏳ Pending manual verification | Clerk dashboard → Sessions / Billing |
-| 6 | ClamAV endpoint reachable from Vercel functions (ADR-015; hosting choice is an owner decision), with `StreamMaxLength 500M` in clamd.conf so 500 MB videos can be scanned (the clamd default is 100M; larger streams are refused and the upload is rejected with that reason) | ⏳ Pending — host not provisioned | completed with T247; `/api/v1/system-status` (signed in) shows the scanner answering PING |
+| 6 | ~~ClamAV endpoint~~ — not needed: malware scanning was removed (ADR-017) | n/a | delete any leftover `MALWARE_SCANNER_PROVIDER` / `CLAMAV_HOST` / `CLAMAV_PORT` / `CLAMAV_TLS` from Vercel (they are ignored) |
 | 10 | `OPENAI_API_KEY` and/or `GEMINI_API_KEY` for the assistant and document intelligence (ADR-008) | 🔧 Development: `GEMINI_API_KEY` set with `AI_DEFAULT_PROVIDER=gemini`, `GEMINI_MODEL=gemini-3.8-flash`, verified through the real assistant (2026-10-02). **That key is on Gemini's free tier, which allows only 20 requests per day for this model** (`GenerateRequestsPerDayPerProjectPerModel-FreeTier`, observed 2026-10-02) and answers bursts of 503 "high demand". Production needs a key on a **paid (billing-enabled) Google AI project** — Google's terms say the free tier must not receive sensitive or personal information — plus, optionally, the fallbacks in § 7a so outages and quota errors fail over automatically. Without any key the AI panels say "not configured" and nothing else is affected | provider console → key; `/api/v1/system-status` (signed in) shows AI services operational; server logs name a provider failure by `upstream.status`/`reason`/`quota`, never the vendor's text |
 | 7 | Vercel WAF rate-limit rules for `/api/v1/emergency-access/{request,verify}`, `/api/v1/access/*` (ADR-007) | ⏳ Pending — the routes now exist and are limited in-application (`publicEmergency` 5/h, `accessExchange` 10/15 min, `tokenAccess` 60/15 min); the WAF rule is the edge layer in front of that | Vercel → Firewall, after the first deploy |
 | 8 | `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` for error tracking (ADR-010) | ⏳ Pending — `instrumentation.ts` and `instrumentation-client.ts` are wired and stay inert until a DSN exists | Sentry project → Client Keys; nothing else to change in the repository |
@@ -271,22 +270,21 @@ only) and `AI_DOCUMENT_PROVIDERS`; no data or migration depends on them.
 Nothing below has been done from here: no hosted Supabase project, Supabase
 access token, Vercel account link or Vercel CLI exists in this environment.
 
-**Hosted Supabase (no Docker needed).** The five migrations contain no
-destructive statements and create the three private buckets themselves.
+**Hosted Supabase (no Docker needed).** The six migrations delete no data
+and create the private buckets themselves (0006 drops one unused storage
+policy and closes upload sessions the retired scanning pipeline left open).
 
 1. Create a project (one per environment) in the Supabase dashboard.
 2. Authentication → Sign In / Providers → Third-party auth → **Clerk**, with
    the Clerk instance's domain (development: `needed-turkey-5633.clerk.accounts.dev`).
 3. `pnpm exec supabase login`, then `pnpm exec supabase link --project-ref <ref>`.
 4. `pnpm exec supabase db push --linked --dry-run` — review the list (expect
-   0001–0005 on an empty project) — then `pnpm exec supabase db push --linked`.
+   0001–0006 on an empty project) — then `pnpm exec supabase db push --linked`.
 5. Put the project's URL, publishable key and secret key in `.env.local`
    (`NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`,
    `SUPABASE_SECRET_KEY`).
 
-Docker is then needed only for ClamAV (or set `MALWARE_SCANNER_PROVIDER=noop`
-in development, which labels uploads as not scanned) and for the integration
-tests, which refuse any non-local database by design so they can never write
+Docker is then needed only for the integration tests, which refuse any non-local database by design so they can never write
 test rows into a hosted project.
 
 **Vercel — blockers found by inspection.**
@@ -295,8 +293,6 @@ test rows into a hosted project.
   `dms-scan` hourly. The Hobby plan allows only daily cron jobs and rejects the
   deployment otherwise — use Pro, or move those two schedules to an external
   scheduler that calls the same `/api/internal/cron/*` routes with `CRON_SECRET`.
-- **Malware scanning:** production refuses `MALWARE_SCANNER_PROVIDER=noop`;
-  a ClamAV daemon reachable from Vercel over TLS (`CLAMAV_TLS=true`) is required.
 - **Required production variables still unset:** `CLERK_WEBHOOK_SIGNING_SECRET`,
   `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_WEBHOOK_SECRET`, `ADMIN_EMAIL`,
   `SENTRY_DSN` (`NODE_ENV=production pnpm env:check --all`).
@@ -330,12 +326,11 @@ signal to alert on, and it is already served.
 
 ### First production deploy — the order that works
 
-1. Create the Supabase project, run `supabase db push` (migrations 0001–0004),
+1. Create the Supabase project, run `supabase db push` (migrations 0001–0006),
    and confirm the three buckets exist and are **private**.
 2. Add Clerk as a third-party auth provider in Supabase, and set the Clerk
    session-token claims per § 3a.
-3. Set every variable in § 2. `pnpm env:check` fails loudly on a missing one;
-   production additionally refuses to start with `MALWARE_SCANNER_PROVIDER=noop`.
+3. Set every variable in § 2. `pnpm env:check` fails loudly on a missing one.
 4. Deploy. Confirm Vercel registered the three crons from `vercel.json`.
 5. Sign up the operator account, then run `pnpm seed:admin` with `ADMIN_EMAIL`
    set — `users.role` is reachable only through the service role, by design.
@@ -345,13 +340,13 @@ signal to alert on, and it is already served.
 ## 8a. Deployment readiness (2026-09-30)
 
 `pnpm env:check --all` answers "is this deployable?": it applies the
-production rules (a real malware scanner, an AI key, a Sentry DSN) and lists
+production rules (an AI key, a Sentry DSN) and lists
 every gap in one run, names only.
 
 | Class | Items |
 |---|---|
-| **A. Code complete** (verified by the test gate) | Every product domain, the upload + ClamAV pipeline, Create Will, AI (assistant + document intelligence), system status, migrations `0001`–`0005`, crons, webhooks with signature verification, CI with Supabase and a ClamAV service |
-| **B. External configuration required** | Clerk: enable Multi-factor (_Authenticator application_ + _Backup codes_) on each instance (§ 5 row 4 — currently off on development, so 2FA cannot be enrolled yet); production instance with "Membership required" off (§ 5 row 12; done on development); `CLERK_WEBHOOK_SIGNING_SECRET` + webhook endpoint; a **billing-enabled** `GEMINI_API_KEY` (the free tier allows 20 requests/day for `gemini-3.8-flash` and must not receive private documents under Google's terms) and, optionally, fallback keys per § 7a (`AI_PROVIDER_ORDER`, `AI_DOCUMENT_PROVIDERS`); `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_WEBHOOK_SECRET`; `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN`; `ADMIN_EMAIL`; hosted Supabase project with the five migrations applied; a hosted ClamAV with `StreamMaxLength 500M`; Vercel project (plan with 5-minute crons) and WAF rules (§ 7) |
+| **A. Code complete** (verified by the test gate) | Every product domain, the upload pipeline, Create Will, AI (assistant + document intelligence), system status, migrations `0001`–`0006`, crons, webhooks with signature verification, CI with Supabase |
+| **B. External configuration required** | Clerk: enable Multi-factor (_Authenticator application_ + _Backup codes_) on each instance (§ 5 row 4 — currently off on development, so 2FA cannot be enrolled yet); production instance with "Membership required" off (§ 5 row 12; done on development); `CLERK_WEBHOOK_SIGNING_SECRET` + webhook endpoint; a **billing-enabled** `GEMINI_API_KEY` (the free tier allows 20 requests/day for `gemini-3.8-flash` and must not receive private documents under Google's terms) and, optionally, fallback keys per § 7a (`AI_PROVIDER_ORDER`, `AI_DOCUMENT_PROVIDERS`); `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_WEBHOOK_SECRET`; `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN`; `ADMIN_EMAIL`; hosted Supabase project with the six migrations applied; Vercel project (plan with 5-minute crons) and WAF rules (§ 7) |
 | **C. Manually verified only** | Clerk session/MFA/lockout settings (§ 5), Supabase plan limits and PITR (§ 6), Vercel cron cadence and `maxDuration` limits (§ 7) |
 | **D. Genuinely missing in code** | None known |
 
@@ -359,6 +354,7 @@ every gap in one run, names only.
 
 | Date | Change |
 |---|---|
+| 2026-10-04 | Malware scanning removed (ADR-017): no ClamAV host or scanner variables are needed; uploads go straight to the private `documents` / `videos` buckets and are checked for size and type. Migration `0006` must be applied before deploying this version. |
 | 2026-09-30 | Clerk development instance: forced organization selection turned off; the full E2E suite (10 journeys) passes. Local E2E notes: this machine's clock runs ~7 s ahead of Clerk (Clerk tolerates 5 s — sync the system clock), and under memory pressure run `pnpm test:e2e --workers=1` (as CI does). |
 | 2026-09-30 | Readiness classification (§ 8a); Clerk Organizations requirement recorded as a blocker (§ 5 row 12); ClamAV `StreamMaxLength` and AI keys added to § 7; `env:check --all` now evaluates the production rules. |
 | 2026-09-19 | Created (T202 initial) with the T195/T196/T210 checklists — all external items ⏳ pending manual verification; local tooling (Supabase CLI, `vercel.json`, env schema) 🔧 in repository. |

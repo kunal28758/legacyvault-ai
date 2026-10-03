@@ -26,10 +26,9 @@ const chatTurnSchema = z.object({
 
 /**
  * Files attached to an assistant message are vault documents, referenced by
- * id: they arrive through the ordinary upload pipeline (quarantine, type
- * check, malware scan, private storage) and the server re-checks ownership and
- * scan status every time one is used. The id is the only thing the browser
- * sends — never a path, a URL, or a claim about the scan.
+ * id: they arrive through the ordinary upload pipeline (private storage, size
+ * and type checks) and the server re-checks ownership and type every time one
+ * is used. The id is the only thing the browser sends — never a path or a URL.
  */
 export const MAX_CHAT_ATTACHMENTS = 3;
 /** Largest file sent to the model inline: an image, or a scan that needs OCR. */

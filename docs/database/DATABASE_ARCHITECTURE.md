@@ -131,12 +131,13 @@ scan-status changes, and unauthorized state-machine transitions.
 
 ## 7. Storage (ADR-005)
 
-Three private buckets — `quarantine`, `documents`, `videos`. Uploads go
-directly from the browser into `quarantine/{clerkUserId}/{uploadId}` via a
-signed upload URL (documents) or a resumable TUS target (videos); the server
-`complete` step validates and scans, then `promote_upload()` moves the object
-and creates the metadata rows atomically. `storage.objects` RLS grants no
-client reads and allows writes only under the caller's quarantine prefix.
+Private buckets `documents` and `videos` (the retired `quarantine` bucket is
+kept but unused). Uploads go directly from the browser into the destination
+bucket at `{ownerId}/{uploadId}` via a signed upload URL; the server
+`complete` step checks size and leading bytes, then `promote_upload()`
+(which requires a `VALIDATED` session) creates the metadata rows atomically.
+No malware scan runs (ADR-017). `storage.objects` RLS grants the client no
+reads or writes.
 Downloads use server-minted 15-minute signed URLs. Object encryption at rest
 is provider-managed (application envelope encryption deferred — ADR-013).
 

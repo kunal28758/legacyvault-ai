@@ -25,7 +25,6 @@ const validServerEnv: EnvSource = {
   EMAIL_FROM: "LegacyVault AI <no-reply@example.com>",
   EMAIL_WEBHOOK_SECRET: "placeholder",
   CRON_SECRET: "0123456789abcdef0123456789abcdef",
-  MALWARE_SCANNER_PROVIDER: "noop",
   ADMIN_EMAIL: "admin@example.com",
 };
 
@@ -36,33 +35,32 @@ describe("server environment schema (T007)", () => {
     if (result.ok) {
       expect(result.value.ENCRYPTION_KEY).toEqual({ keyId: "k1", material: KEY32 });
       expect(result.value.AI_DEFAULT_PROVIDER).toBe("openai");
-      expect(result.value.CLAMAV_PORT).toBe(3310);
     }
   });
 
-  it("refuses MALWARE_SCANNER_PROVIDER=noop in production (ADR-015)", () => {
+  it("accepts a production configuration with no malware scanner", () => {
     const result = validateServerEnv({
       ...validServerEnv,
       NODE_ENV: "production",
       SENTRY_DSN: "https://examplePublicKey@o0.ingest.sentry.io/0",
-    });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.issues.map((issue) => issue.path)).toContain("MALWARE_SCANNER_PROVIDER");
-    }
-  });
-
-  it("accepts clamav in production when a host is configured", () => {
-    const result = validateServerEnv({
-      ...validServerEnv,
-      NODE_ENV: "production",
-      SENTRY_DSN: "https://examplePublicKey@o0.ingest.sentry.io/0",
-      MALWARE_SCANNER_PROVIDER: "clamav",
-      CLAMAV_HOST: "clamav.internal",
-      CLAMAV_TLS: "true",
     });
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value.CLAMAV_TLS).toBe(true);
+  });
+
+  it("ignores scanner variables left over in a hosting dashboard", () => {
+    const result = validateServerEnv({
+      ...validServerEnv,
+      NODE_ENV: "production",
+      SENTRY_DSN: "https://examplePublicKey@o0.ingest.sentry.io/0",
+      MALWARE_SCANNER_PROVIDER: "noop",
+      CLAMAV_HOST: "",
+      CLAMAV_PORT: "not-a-port",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).not.toHaveProperty("MALWARE_SCANNER_PROVIDER");
+      expect(result.value).not.toHaveProperty("CLAMAV_HOST");
+    }
   });
 
   it("rejects key material that is not exactly 32 bytes", () => {
@@ -114,11 +112,8 @@ describe("public environment schema (T007)", () => {
 describe("cross-field production rules", () => {
   it("lists every production-only requirement even on a partial environment", async () => {
     const { crossFieldIssues } = await import("@/lib/config/env.schema");
-    const paths = crossFieldIssues({
-      NODE_ENV: "production",
-      MALWARE_SCANNER_PROVIDER: "noop",
-    }).map((issue) => issue.path);
-    expect(paths).toEqual(["MALWARE_SCANNER_PROVIDER", "OPENAI_API_KEY", "SENTRY_DSN"]);
+    const paths = crossFieldIssues({ NODE_ENV: "production" }).map((issue) => issue.path);
+    expect(paths).toEqual(["OPENAI_API_KEY", "SENTRY_DSN"]);
   });
 
   it("accepts either AI provider in production and ignores production rules in development", async () => {
@@ -126,14 +121,10 @@ describe("cross-field production rules", () => {
     expect(
       crossFieldIssues({
         NODE_ENV: "production",
-        MALWARE_SCANNER_PROVIDER: "clamav",
-        CLAMAV_HOST: "clamav.internal",
         GEMINI_API_KEY: "key",
         SENTRY_DSN: "https://example.ingest.sentry.io/1",
       }),
     ).toEqual([]);
-    expect(crossFieldIssues({ NODE_ENV: "development", MALWARE_SCANNER_PROVIDER: "noop" })).toEqual(
-      [],
-    );
+    expect(crossFieldIssues({ NODE_ENV: "development" })).toEqual([]);
   });
 });

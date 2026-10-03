@@ -5,7 +5,6 @@ import type {
   DocumentAttachmentSummary,
   DocumentSummary,
   DocumentVersionSummary,
-  ScanInfo,
 } from "@/lib/types/document";
 import type { Database } from "@/lib/types/database";
 
@@ -23,30 +22,6 @@ import type { Database } from "@/lib/types/database";
 export type DocumentRow = Database["public"]["Tables"]["documents"]["Row"];
 export type DocumentVersionRow = Database["public"]["Tables"]["document_versions"]["Row"];
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-/**
- * Reads the scan record written at promotion time.
- *
- * A document promoted while no scanner was configured carries
- * `performed: false`, and that is what the UI shows — the database's
- * `scan_status` column says CLEAN because the pipeline completed, not because
- * anything inspected the bytes.
- */
-export function scanInfoOf(row: DocumentRow): ScanInfo {
-  const scan = asRecord(asRecord(row.metadata).scan);
-  return {
-    status: row.scan_status,
-    performed: scan.performed === true,
-    provider: typeof scan.provider === "string" ? scan.provider : null,
-    scannedAt: typeof scan.scannedAt === "string" ? scan.scannedAt : null,
-  };
-}
-
 export function toDocumentSummary(
   row: DocumentRow,
   versionCount = 0,
@@ -58,7 +33,6 @@ export function toDocumentSummary(
     mimeType: row.mime_type,
     sizeBytes: Number(row.size_bytes),
     folderId: row.folder_id,
-    scan: scanInfoOf(row),
     versionCount,
     shareCount,
     currentVersionId: row.current_version_id,

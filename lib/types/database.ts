@@ -2103,7 +2103,7 @@ export type Database = {
         | "GOLD_JEWELRY"
         | "PERSONAL_PROPERTY"
         | "BUSINESS_ASSET"
-      scan_status: "PENDING" | "CLEAN" | "INFECTED" | "ERROR"
+      scan_status: "PENDING" | "CLEAN" | "INFECTED" | "ERROR" | "NOT_SCANNED"
       token_revoked_reason:
         | "OWNER"
         | "BENEFICIARY_INACTIVE"
@@ -2118,6 +2118,7 @@ export type Database = {
         | "PENDING"
         | "UPLOADED"
         | "VALIDATING"
+        | "VALIDATED"
         | "SCANNING"
         | "SCANNED_CLEAN"
         | "PROMOTED"
@@ -2353,7 +2354,7 @@ export const Constants = {
         "PERSONAL_PROPERTY",
         "BUSINESS_ASSET",
       ],
-      scan_status: ["PENDING", "CLEAN", "INFECTED", "ERROR"],
+      scan_status: ["PENDING", "CLEAN", "INFECTED", "ERROR", "NOT_SCANNED"],
       token_revoked_reason: [
         "OWNER",
         "BENEFICIARY_INACTIVE",
@@ -2369,6 +2370,7 @@ export const Constants = {
         "PENDING",
         "UPLOADED",
         "VALIDATING",
+        "VALIDATED",
         "SCANNING",
         "SCANNED_CLEAN",
         "PROMOTED",

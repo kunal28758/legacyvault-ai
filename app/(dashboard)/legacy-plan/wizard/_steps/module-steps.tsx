@@ -148,18 +148,13 @@ export function DocumentAttachmentsStep() {
     documentIds: [] as string[],
     none: false,
   });
-  // Only documents that passed the security scan are in the vault at all, so
-  // everything listed here is safe to attach.
+  // Only documents that passed the upload checks are in the vault at all, and
+  // every one listed here is the owner's own.
   const items = documents.map((document) => ({
     id: document.id,
     title: document.name,
     subtitle: `${formatBytes(document.sizeBytes)} · added ${formatDate(document.createdAt)}`,
     icon: FileText,
-    meta: document.scan.performed ? (
-      <StatusBadge tone="success" icon={null} className="h-5 text-[11px]">
-        Scanned
-      </StatusBadge>
-    ) : null,
   }));
   return (
     <WizardStep

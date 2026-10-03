@@ -7,7 +7,7 @@ is verified). It organizes decisions made in the constitution, the ADRs, the
 spec and the data model; it does not add controls.
 
 **Canonical sources**: constitution v2.0.1 (Principles I–VII, X–XII, XVI,
-XVII, XXI); ADR-003, ADR-004 r2, ADR-005, ADR-007, ADR-013, ADR-014, ADR-015,
+XVII, XXI); ADR-003, ADR-004 r2, ADR-005, ADR-007, ADR-013, ADR-014, ADR-017,
 ADR-016; `spec.md` § Q Security Requirements and § R AI Safety;
 `data-model.md` § Write-Protection Model; `contracts/api-contracts.md`
 header. `docs/BRAIN.md` § 6 holds the one-page summary table.
@@ -133,20 +133,21 @@ All applied by `withApi()` (T030) to every Route Handler:
   paths for the owner and Super Admin. Plaintext is never persisted (T097,
   T131, T135, T148).
 
-## 6. Files — 📐 specified, 📋 planned (ADR-005, ADR-015)
+## 6. Files (ADR-005, ADR-017)
 
 - Private buckets only; no public URLs (FR-H005, FR-Q005).
-- Two-step direct-to-storage upload into `quarantine`; the `complete` step
-  checks actual size (50 MB / 500 MB), magic bytes and the **malware scan**
-  before `promote_upload()` moves the object (FR-H002, H003, H016, FR-Q010,
-  Q011; T032, T090, T141, T181).
-- Production scanner is **ClamAV**; the application refuses to start in
-  production with the `noop` scanner (ADR-015; T007, T247). INFECTED objects
-  never leave quarantine.
+- Two-step direct-to-storage upload straight into the private `documents` /
+  `videos` bucket (whose size limit and MIME allow-list apply); the `complete`
+  step checks actual size (50 MB / 500 MB) and magic bytes before
+  `promote_upload()` creates the row (FR-H002, H003, FR-Q010). A rejected
+  object is deleted; an unpromoted one has no row, so no URL can be minted.
+- **No malware scanning** (ADR-017, owner decision 2026-10-04): FR-H016 /
+  FR-Q011 are not met. Rows record `scan_status = NOT_SCANNED` and nothing
+  in the product claims a file was scanned.
 - Downloads and previews only via server-minted signed URLs (15 minutes)
   after authorization; every access audited (FR-H009, H015).
-- `storage.objects` RLS: no client reads; writes only into the caller's
-  `quarantine/<clerk sub>/` prefix for resumable uploads (T218).
+- `storage.objects` RLS: no client reads or writes; uploads use server-minted
+  signed URLs (the former `quarantine` write policy was dropped in 0006).
 - Encryption at rest by the storage provider (AES-256); application-layer
   envelope encryption deferred with a ready design (ADR-013).
 
@@ -225,13 +226,13 @@ release (NFR-SEC-003).
 | Authorization (service + RLS + write classes) | ✔ | ✔ | — |
 | Request pipeline controls | ✔ | ✔ | — |
 | External recipient access (tokens/cookie/OTP) | ✔ | ✔ | — |
-| Files (quarantine, scan, signed URLs) | ✔ | ✔ | — |
+| Files (validation, private buckets, signed URLs) | ✔ | ✔ | — |
 | Encryption & secrets | ✔ | ✔ | — |
 | Audit | ✔ | ✔ | — |
 | Internal endpoints & jobs | ✔ | ✔ | — |
 | AI safety | ✔ | ✔ | — |
 | Backups / DR / monitoring / review | ✔ | ✔ | — |
 
-Open items with security impact: T203 (Clerk failed-attempt events), ClamAV
-hosting (ADR-015), platform tiers (T210), audit retention schedule — tracked
+Open items with security impact: T203 (Clerk failed-attempt events), no
+malware scanning (accepted, ADR-017), platform tiers (T210), audit retention schedule — tracked
 in `docs/PROJECT_STATUS.md` § 5.

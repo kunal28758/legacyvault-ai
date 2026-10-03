@@ -19,7 +19,6 @@ import {
   Pencil,
   Search,
   Share2,
-  ShieldCheck,
   Sparkles,
   Trash2,
   Upload,
@@ -38,7 +37,7 @@ import { GridSkeleton } from "@/components/shared/loading-skeleton";
 import { PageHeader } from "@/components/shared/page-header";
 import { StaggerGrid, StaggerItem } from "@/components/shared/page-transition";
 import { StatCard } from "@/components/shared/stat-card";
-import { StatusBadge, toneForScanStatus } from "@/components/shared/status-badge";
+import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -90,8 +89,8 @@ import { cn } from "@/lib/utils";
 /**
  * Secure Document Vault (FR-H001–H010).
  *
- * Everything here is persisted: uploads go to a private quarantine bucket and
- * are promoted by the server, downloads are short-lived signed links minted
+ * Everything here is persisted: uploads go straight to a private bucket and
+ * are promoted by the server once checked, downloads are short-lived signed links minted
  * after an ownership check, and deletion runs `delete_document()`.
  */
 export function DocumentsView() {
@@ -148,7 +147,7 @@ export function DocumentsView() {
 
   const detail = detailQuery.data ?? null;
   const totalBytes = allDocuments.reduce((s, d) => s + d.sizeBytes, 0);
-  const clean = allDocuments.filter((d) => d.scan.status === "CLEAN").length;
+  const versions = allDocuments.reduce((s, d) => s + d.versionCount, 0);
   const shared = allDocuments.filter((d) => d.shareCount > 0).length;
 
   const download = async (id: string) => {
@@ -240,18 +239,6 @@ export function DocumentsView() {
       cell: (doc) => <span className="text-sm tabular-nums">{formatBytes(doc.sizeBytes)}</span>,
     },
     {
-      id: "scan",
-      header: "Scan",
-      cell: (doc) => {
-        const s = toneForScanStatus(doc.scan.status);
-        return (
-          <StatusBadge tone={s.tone} pulse={doc.scan.status === "PENDING"}>
-            {s.label}
-          </StatusBadge>
-        );
-      },
-    },
-    {
       id: "shared",
       header: "Shared",
       hideBelowLg: true,
@@ -278,7 +265,7 @@ export function DocumentsView() {
       <PageHeader
         eyebrow="Vault"
         title="Document vault"
-        description="Private storage for wills, deeds, policies and identity documents. Every file is validated and malware-scanned before it enters your vault."
+        description="Private storage for wills, deeds, policies and identity documents. Every file's size and type are checked before it enters your vault."
         actions={
           <>
             <Button variant="outline" onClick={() => setFolderOpen(true)}>
@@ -309,10 +296,11 @@ export function DocumentsView() {
           hint="Provider-encrypted at rest"
         />
         <StatCard
-          label="Scanned clean"
-          value={ready ? `${clean}/${allDocuments.length}` : "—"}
-          icon={ShieldCheck}
-          accent={clean === allDocuments.length ? "success" : "warning"}
+          label="Versions"
+          value={ready ? versions : "—"}
+          icon={History}
+          accent="success"
+          hint="Earlier versions are kept"
         />
         <StatCard
           label="Shared"
@@ -599,16 +587,9 @@ export function DocumentsView() {
               </SheetHeader>
               <div className="space-y-6 px-4 pb-6">
                 <div className="flex flex-wrap items-center gap-2">
-                  <StatusBadge
-                    tone={toneForScanStatus(detail.scan.status).tone}
-                    pulse={detail.scan.status === "PENDING"}
-                  >
-                    {toneForScanStatus(detail.scan.status).label}
-                  </StatusBadge>
                   <StatusBadge tone="info" icon={Lock}>
                     Private bucket
                   </StatusBadge>
-                  {!detail.scan.performed && <StatusBadge tone="warning">Not scanned</StatusBadge>}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button

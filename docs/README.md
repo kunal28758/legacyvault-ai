@@ -56,7 +56,7 @@ source wins and the `docs/` file must be corrected.
 | `security/ENCRYPTION.md` | What is encrypted, how, where keys live, rotation | 📐 / 📋 |
 | `database/DATABASE_ARCHITECTURE.md` | Database platform, migrations, clients, write classes, transactions, RLS, storage (pointers into `data-model.md`) | 📐 / 📋 |
 | `database/DATABASE_SCHEMA.md` | The schema as applied: tables, enums, write classes, guarded and system functions, error convention, storage buckets (T242) | ✅ |
-| `integrations/INTEGRATIONS.md` | External services (Clerk, Supabase, Resend, Sentry, OpenAI/Gemini, Vercel, ClamAV): role, adapter, configuration names, failure behaviour | 📐 / 📋 |
+| `integrations/INTEGRATIONS.md` | External services (Clerk, Supabase, Resend, Sentry, OpenAI/Gemini, Vercel): role, adapter, configuration names, failure behaviour | 📐 / 📋 |
 | `monitoring/OBSERVABILITY.md` | Logging, correlation ids, error monitoring, health checks, metrics, alerts | 📐 / 📋 |
 | `ui/DESIGN_SYSTEM.md` | Established UI/UX direction (dark-first, glassmorphism, motion, accessibility) | 📐 / 📋 |
 | `workflows/WILL_WORKFLOW.md` | Legacy plan creation, auto-save, review, finalization, versioning | 📐 |

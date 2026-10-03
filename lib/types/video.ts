@@ -1,5 +1,4 @@
 import type { Database } from "@/lib/types/database";
-import type { ScanInfo } from "@/lib/types/document";
 
 /**
  * Video legacy view models (FR-K001–K006).
@@ -24,7 +23,6 @@ export interface VideoMessage {
   mimeType: string;
   sizeBytes: number;
   deliveryCondition: DeliveryCondition;
-  scan: ScanInfo;
   assignments: VideoAssignment[];
   createdAt: string;
   updatedAt: string;

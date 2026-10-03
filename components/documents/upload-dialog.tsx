@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -37,7 +36,6 @@ import {
   useUpload,
   type UploadCompletion,
 } from "@/hooks/use-documents";
-import { useSystemStatus } from "@/hooks/use-system-status";
 import { ApiError } from "@/lib/client/api-client";
 import type { UploadOutcome } from "@/lib/types/document";
 import type { DeliveryCondition } from "@/lib/types/video";
@@ -61,14 +59,15 @@ const DELIVERY: { value: DeliveryCondition; label: string }[] = [
 ];
 
 /**
- * Upload dialog (ADR-005, ADR-015).
+ * Upload dialog (ADR-005).
  *
  * The real two-step flow, once per file: the server hands out a signed URL
- * into a private quarantine bucket, the browser PUTs the bytes straight there,
- * and the server measures the object, checks its leading bytes, runs the
- * malware scan and only then promotes it into the vault. Each stage is shown
- * only once the server has confirmed it; a scan that could not run leaves the
- * file safely in quarantine with a Retry, and nothing can spin forever.
+ * into private storage, the browser PUTs the bytes straight there, and the
+ * server measures the object, checks its leading bytes against the declared
+ * type and only then promotes it into the vault. Each stage is shown only once
+ * the server has confirmed it; a completion that fails unexpectedly leaves the
+ * bytes private and unpromoted with a Retry, and nothing can spin forever.
+ * No malware scan runs, and nothing here says one did.
  *
  * Documents may be queued several at a time and are processed one after
  * another; a video is one file with its title and delivery condition.
@@ -83,7 +82,7 @@ export function UploadDialog({ open, onOpenChange, ...props }: UploadDialogProps
         // stop a transfer explicitly instead.
         if (!next && busy) {
           toast.info("An upload is in progress", {
-            description: "Cancel it first, or wait for the security scan to finish.",
+            description: "Cancel it first, or wait for it to finish saving.",
           });
           return;
         }
@@ -122,7 +121,6 @@ function UploadForm({
   const foldersQuery = useFolders();
   const upload = useUpload();
   const retry = useRetryUpload();
-  const status = useSystemStatus();
 
   const [items, setItems] = useState<UploadItem[]>([]);
   const [running, setRunning] = useState(false);
@@ -133,9 +131,6 @@ function UploadForm({
 
   const folders = foldersQuery.data?.items ?? [];
   const multiple = kind === "document";
-  const scanner = status.data?.services?.find((service) => service.id === "malware_scanner");
-  const scannerLabel = status.data?.scannerProvider === "clamav" ? "ClamAV" : "Security";
-  const scannerDown = scanner?.state === "down";
 
   useEffect(() => onBusyChange(running), [running, onBusyChange]);
   useEffect(() => {
@@ -170,10 +165,6 @@ function UploadForm({
         error: null,
         failedAt: null,
         retryable: false,
-        scanPerformed: outcome.scan.performed,
-        scanNote: outcome.scan.performed
-          ? `Scanned by ${outcome.scan.provider === "clamav" ? "ClamAV" : (outcome.scan.provider ?? "the malware scanner")} and stored privately.`
-          : "Stored privately. No malware scanner is configured in this environment, so this file was not scanned.",
       });
       onUploaded?.(outcome, item.file);
       return true;
@@ -181,12 +172,11 @@ function UploadForm({
     patch(item.id, {
       stage: outcome.retryable ? "failed" : "rejected",
       uploaded: true,
-      failedAt: "scan",
+      failedAt: "check",
       retryable: outcome.retryable,
-      infected: outcome.scan.status === "INFECTED",
       error:
         outcome.rejectionReason ??
-        (outcome.retryable ? "The security scan could not finish." : "The file was rejected."),
+        (outcome.retryable ? "Saving the file could not finish." : "The file was rejected."),
     });
     return false;
   };
@@ -195,7 +185,7 @@ function UploadForm({
     const controller = new AbortController();
     controllers.current.set(item.id, controller);
     patch(item.id, { stage: "validating", error: null, failedAt: null, progress: 0 });
-    const track: { reached: "validate" | "upload" | "scan" } = { reached: "validate" };
+    const track: { reached: "validate" | "upload" | "check" } = { reached: "validate" };
     try {
       const outcome = await upload.mutateAsync({
         kind: kind === "video" ? "VIDEO" : "DOCUMENT",
@@ -207,9 +197,9 @@ function UploadForm({
           if (phase === "uploading") {
             track.reached = "upload";
             patch(item.id, { stage: "uploading", uploadId: uploadId ?? null });
-          } else if (phase === "scanning") {
-            track.reached = "scan";
-            patch(item.id, { stage: "scanning", uploaded: true, progress: 100 });
+          } else if (phase === "saving") {
+            track.reached = "check";
+            patch(item.id, { stage: "saving", uploaded: true, progress: 100 });
           }
         },
         onProgress: (percent) => patch(item.id, { progress: percent }),
@@ -220,7 +210,7 @@ function UploadForm({
         patch(item.id, { stage: "cancelled", error: null });
         return false;
       }
-      const uploadedAlready = track.reached === "scan";
+      const uploadedAlready = track.reached === "check";
       patch(item.id, {
         stage: uploadedAlready ? "failed" : "rejected",
         failedAt: track.reached,
@@ -259,20 +249,20 @@ function UploadForm({
     const controller = new AbortController();
     controllers.current.set(item.id, controller);
     setRunning(true);
-    patch(item.id, { stage: "scanning", error: null, failedAt: null, retryable: false });
+    patch(item.id, { stage: "saving", error: null, failedAt: null, retryable: false });
     try {
       const outcome = await retry.mutateAsync({
         uploadId: item.uploadId,
         completion: completion(),
         signal: controller.signal,
       });
-      if (settle(item, outcome)) toast.success("Securely stored");
+      if (settle(item, outcome)) toast.success("Stored privately");
     } catch (error) {
       if (isCancel(error)) patch(item.id, { stage: "cancelled" });
       else {
         patch(item.id, {
           stage: "failed",
-          failedAt: "scan",
+          failedAt: "check",
           retryable: !(error instanceof ApiError && error.isClientError),
           error: describeError(error),
         });
@@ -299,22 +289,11 @@ function UploadForm({
         </DialogTitle>
         <DialogDescription>
           {dialogDescription ??
-            "Files are validated, uploaded directly to a private quarantine, scanned for malware and only then moved into your vault."}
+            "Files are checked for type and size, uploaded directly to private storage and then added to your vault."}
         </DialogDescription>
       </DialogHeader>
 
       <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1">
-        {scannerDown && (
-          <p
-            role="status"
-            className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs leading-5"
-          >
-            <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden />
-            The malware scanner is not responding right now. Uploads will wait safely in quarantine
-            and can be retried when it recovers.
-          </p>
-        )}
-
         {(multiple || items.length === 0) && (
           <FileDropZone kind={kind} multiple={multiple} disabled={running} onSelect={select} />
         )}
@@ -325,7 +304,6 @@ function UploadForm({
               <UploadItemCard
                 key={item.id}
                 item={item}
-                scannerLabel={scannerLabel}
                 onCancel={() => cancelItem(item)}
                 onRetry={() => void retryItem(item)}
                 onRemove={() => removeItem(item)}

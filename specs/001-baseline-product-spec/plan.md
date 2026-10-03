@@ -4,6 +4,12 @@
 
 **Input**: Baseline product specification from `specs/001-baseline-product-spec/spec.md`
 
+> **Revision 2026-10-04 (ADR-017)** — Malware scanning was removed by owner
+> decision: there is no ClamAV, no quarantine stage and no scan gate. Uploads
+> go straight to the private `documents` / `videos` bucket and are promoted
+> after size and magic-byte checks (`VALIDATED` → `promote_upload()`).
+> FR-H016 / FR-Q011 are withdrawn. Scanner references below are historical.
+>
 > **Revision 2026-09-18** — Re-baselined to the single Next.js application
 > architecture recorded in [`docs/ARCHITECTURE_DECISIONS.md`](../../docs/ARCHITECTURE_DECISIONS.md)
 > (ADR-001 … ADR-013) and constitution **v2.0.1**. The two-project

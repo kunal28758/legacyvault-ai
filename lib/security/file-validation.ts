@@ -8,12 +8,13 @@ import {
 } from "@/lib/uploads/file-types";
 
 /**
- * Upload validation (FR-H002, FR-H003, ADR-015).
+ * Upload validation (FR-H002, FR-H003).
  *
  * The browser's declared filename, MIME type and size are all untrusted. They
  * are checked here before an upload is allowed, and the *actual* size and
- * leading bytes are checked again after the object lands in quarantine — a file
- * that claims to be a PDF and starts with `MZ` is rejected at that point.
+ * leading bytes are checked again after the object lands in private storage
+ * and before it is promoted into the vault — a file that claims to be a PDF and
+ * starts with `MZ` is rejected and deleted at that point.
  *
  * The accepted types themselves live in `lib/uploads/file-types.ts`, shared
  * with the browser's pre-check so the two can never disagree.

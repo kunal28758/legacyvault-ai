@@ -9,17 +9,18 @@ import {
 type UploadParams = { uploadId: string };
 
 /**
- * Step 2 of the upload (ADR-005, ADR-015).
+ * Step 2 of the upload (ADR-005).
  *
- * Measures the object that actually arrived, checks its leading bytes against
- * the declared type, runs the malware-scan boundary, and only then moves it out
- * of quarantine and calls `promote_upload()`. A rejected object is deleted; a
- * file whose scan could not run stays in quarantine and may be completed again.
+ * Measures the object that actually arrived and checks its leading bytes
+ * against the declared type, then calls `promote_upload()`. A rejected object
+ * is deleted; one whose completion failed unexpectedly stays private and
+ * unpromoted, and the upload may be completed again.
  *
- * A 500 MB video has to be streamed through the scanner inside this request,
- * and the scan is bounded below this limit (`scanTimeoutFor`).
+ * Nothing here reads the whole file — a size lookup and a few-KB range read —
+ * so the limit is short. `STALE_IN_PROGRESS_MS` in the upload service must stay
+ * above it.
  */
-export const maxDuration = 300;
+export const maxDuration = 60;
 
 export const POST = withApi<UploadCompleteBody, undefined, UploadParams>(
   {

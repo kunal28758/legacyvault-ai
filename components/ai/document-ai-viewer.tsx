@@ -17,8 +17,6 @@ import {
   Loader2,
   RefreshCw,
   ScanText,
-  ShieldAlert,
-  ShieldCheck,
   Sparkles,
   Trash2,
 } from "lucide-react";
@@ -632,7 +630,6 @@ function ViewerBody({
     [allDocuments, document.id],
   );
 
-  const scanned = document.scan.performed;
   const kind = document.mimeType.split("/")[1]?.split(".").pop()?.toUpperCase() ?? "FILE";
 
   const actionButton = (
@@ -719,15 +716,6 @@ function ViewerBody({
           {kind} · {formatBytes(document.sizeBytes)} · uploaded {formatDateTime(document.createdAt)}
         </SheetDescription>
         <div className="flex flex-wrap items-center gap-2 pt-1">
-          {scanned ? (
-            <StatusBadge tone="success" icon={ShieldCheck}>
-              Scanned {document.scan.provider === "clamav" ? "by ClamAV" : ""}
-            </StatusBadge>
-          ) : (
-            <StatusBadge tone="warning" icon={ShieldAlert}>
-              Not scanned
-            </StatusBadge>
-          )}
           {availability.isPending ? null : configured ? (
             <StatusBadge tone="info" icon={Bot}>
               AI: {PROVIDER_LABEL[availability.data?.provider ?? ""] ?? "ready"}

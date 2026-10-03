@@ -188,8 +188,8 @@ export function AssistantView() {
               <p className="flex items-start gap-2">
                 <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-brand-cyan" aria-hidden />
                 The assistant never sees passwords, account numbers or documents unless you attach a
-                file or open a document and ask about it. Attached files are malware-scanned and
-                kept in your private vault.
+                file or open a document and ask about it. Attached files are kept in your private
+                vault.
               </p>
             </CardContent>
           </Card>

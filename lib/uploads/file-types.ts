@@ -5,8 +5,8 @@
  * purpose: the upload dialog pre-checks against these rules for a fast answer,
  * and `lib/security/file-validation.ts` enforces the same rules on the server —
  * declared metadata before a signed URL is issued, and the real bytes after
- * they land in quarantine. The browser's check is a convenience; the server's
- * is the control.
+ * they land in private storage, before the file is added to the vault. The
+ * browser's check is a convenience; the server's is the control.
  *
  * Adding a document type also needs the `documents` bucket allow-list in a new
  * migration (see 0005_document_types.sql).

@@ -26,16 +26,16 @@ that will provide automated coverage (constitution XVII).
 | **C. Legacy Plan** (FR-C001–C012) | ADR-002/004 r2 (guarded functions); Clarifications 2026-09-18 (acknowledged finalization) | `workflows/WILL_WORKFLOW.md`; `data-model.md` § 9–10 | T057–T070, T102, T103, T221–T224 | T225 |
 | **D. Beneficiary Management** (FR-D001–D011) | ADR-014 (recipient/token model); Clarifications 2026-09-18 (allocation, lifecycle) | `workflows/BENEFICIARY_WORKFLOW.md`; `data-model.md` § 2, 16, 21 | T071–T076, T097–T101, T219, T230, T231 | T226, T229, T228 |
 | **E/F/G. Assets** (FR-E001–E005, F001–F004, G001–G005) | Research D13 (field encryption); ADR-004 r2 | `security/ENCRYPTION.md`; `data-model.md` § 3–5, 26 | T079–T089, T227 | T213, T214, T241 |
-| **H. Secure Document Vault** (FR-H001–H017) | ADR-005 (storage), ADR-015 (scanning), ADR-013 (deferred) | `database/DATABASE_ARCHITECTURE.md` § 7; `security/SECURITY_ARCHITECTURE.md` § 6 | T029, T032, T090, T091, T093, T095, T096, T181, T205, T227, T247 | T216, T228 |
+| **H. Secure Document Vault** (FR-H001–H017; **FR-H016 not met** — scanning removed, ADR-017) | ADR-005 (storage), ADR-017 (no scanning; supersedes ADR-015), ADR-013 (deferred) | `database/DATABASE_ARCHITECTURE.md` § 7; `security/SECURITY_ARCHITECTURE.md` § 6 | T029, T032, T090, T091, T093, T095, T096, T181, T205, T227, T247 | T216, T228 |
 | **I. Dead Man Switch** (FR-I001–I012) | ADR-006 (jobs), ADR-014 (release tokens) | `workflows/DEAD_MAN_SWITCH_WORKFLOW.md`; `data-model.md` § 12, 13, 25 | T123–T133, T183, T193, T207, T211 | T235, T217 |
 | **J. Emergency Access** (FR-J001–J010) | ADR-014; Clarifications 2026-09-18 (bootstrap, OTP, timeout rules) | `workflows/BENEFICIARY_WORKFLOW.md` § 6; `data-model.md` § 14–15 | T134–T140, T208 | T236 |
-| **K. Video Legacy** (FR-K001–K008) | ADR-005, ADR-015; Clarifications 2026-09-18 (upload-only) | `database/DATABASE_ARCHITECTURE.md` § 7 | T141, T142, T144, T247 | T228 (shared upload path), T241 |
+| **K. Video Legacy** (FR-K001–K008) | ADR-005, ADR-017; Clarifications 2026-09-18 (upload-only) | `database/DATABASE_ARCHITECTURE.md` § 7 | T141, T142, T144, T247 | T228 (shared upload path), T241 |
 | **L. AI Assistant** (FR-L001–L010; L010 deferred) | ADR-008 | `integrations/INTEGRATIONS.md` § OpenAI and Google Gemini | T104–T113, T206 | T232 |
 | **M. AI Will Generator** (FR-M001–M014) | ADR-008, ADR-016 (drafts) | `workflows/WILL_WORKFLOW.md` § 7; `data-model.md` § 27–28 | T119–T122, T233 | T232, T241 |
 | **N. AI Document Analysis** (FR-N001–N008) | ADR-016 | `data-model.md` § 27–28 | T145–T147, T233 | T232 |
 | **O. Security Center** (FR-O001–O009) | ADR-003 | `security/SECURITY_ARCHITECTURE.md` § 2 | T114–T118, T182, T220 | T241 |
 | **P. Administration** (FR-P001–P012; P003, P008–P010 deferred) | ADR-003/004 | `security/SECURITY_ARCHITECTURE.md` § 3 | T033, T148–T154 | T214, T241 (authorization matrix) |
-| **Q. Security Requirements** (FR-Q001–Q018) | ADR-001 (cache), ADR-004 r2, ADR-007, ADR-015 | `security/*` | T007, T020–T030, T032, T181, T185, T192, T212–T218, T247 | T212–T216 |
+| **Q. Security Requirements** (FR-Q001–Q018; **FR-Q011 not met** — ADR-017) | ADR-001 (cache), ADR-004 r2, ADR-007, ADR-017 | `security/*` | T007, T020–T030, T032, T181, T185, T192, T212–T218, T247 | T212–T216 |
 | **R. AI Safety** (FR-R001–R010) | ADR-008 | `integrations/INTEGRATIONS.md` § OpenAI and Google Gemini | T104–T108, T113, T206 | T232 |
 
 ## Non-functional requirements

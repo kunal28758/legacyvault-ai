@@ -201,7 +201,7 @@ the audit trail does not depend on the application path alone.
 | `confirm_ai_draft(p_draft_id, p_version_id, p_corr)` (auth) | WILL draft → CONFIRMED | ownership; version belongs to draft; supersedes prior CONFIRMED |
 | `confirm_analysis_findings(p_draft_id, p_assets, p_beneficiaries, p_corr)` (auth) | create records from selected findings | ownership; typed payloads; each created row audited; draft → CONFIRMED |
 | **System (service_role only, SECURITY INVOKER)** | | |
-| `promote_upload(p_upload_id, p_target, p_metadata)` | upload → Document/Version or VideoMessage | session state SCANNED_CLEAN; atomic rows |
+| `promote_upload(p_upload_id, p_target, p_metadata)` | upload → Document/Version or VideoMessage | session state VALIDATED (0006; was SCANNED_CLEAN); atomic rows; `scan_status = NOT_SCANNED` |
 | `dms_transition(p_switch_id, p_from, p_to, p_event_type, p_metadata)` | job-driven transitions | guard on `p_from`; the transition to RELEASED also inserts the per-contact `access.deliver` jobs as an **outbox operation inside the function** (same transaction — ADR-014 § 6) |
 | `ea_request_access(p_config_id, p_requester_email, p_otp_hash)` / `ea_verify_otp(p_request_id, p_otp_hash)` / `ea_transition(...)` | public + job flows | email must match beneficiary email; ≤ 3 attempts; timeout rules; `ea_transition(… → AUTO_GRANTED)` inserts the `access.deliver` job as an **outbox operation inside the function** (same transaction — ADR-014 § 6) |
 | `system_issue_access_token(p_beneficiary_id, p_grant_type, p_scope, p_token_hash, p_expires_at, p_dms_id, p_request_id)` | DMS_RELEASE / EMERGENCY_ACCESS tokens (called only by the `access.deliver` job) | scope ⊆ release/access scope (already validated against the § 11 delivery-condition mapping at configuration time; re-checked at issue: DMS_RELEASE admits IMMEDIATE/DEAD_MAN_SWITCH videos, EMERGENCY_ACCESS admits IMMEDIATE/EMERGENCY_ACCESS videos); at most one non-revoked token per (switch, beneficiary) / per emergency request (partial unique indexes, § 21) |
@@ -852,7 +852,7 @@ never DEAD — so phases can register handlers later. Class C.
 
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
-| id | UUID | PK | Object name under `quarantine/{clerkUserId}/` |
+| id | UUID | PK | Object key `{ownerId}/{id}` in the destination bucket |
 | userId | UUID | FK → User, NOT NULL, indexed | |
 | kind | Enum | NOT NULL | DOCUMENT, DOCUMENT_VERSION, VIDEO |
 | targetDocumentId | UUID | FK → Document, NULL | New-version uploads |
@@ -860,13 +860,13 @@ never DEAD — so phases can register handlers later. Class C.
 | declaredMimeType | String | NOT NULL | Whitelisted |
 | declaredSizeBytes | BigInt | NOT NULL | ≤ 50 MB / ≤ 500 MB |
 | folderId | UUID | FK → Folder, NULL | |
-| status | Enum | NOT NULL, default PENDING | PENDING, UPLOADED, VALIDATING, SCANNING, SCANNED_CLEAN, PROMOTED, REJECTED, EXPIRED |
+| status | Enum | NOT NULL, default PENDING | PENDING, UPLOADED, VALIDATING, VALIDATED, PROMOTED, REJECTED, EXPIRED (SCANNING / SCANNED_CLEAN retired in 0006, never set) |
 | rejectionReason | String | NULL | User-facing (FR-H003) |
 | expiresAt | DateTime | NOT NULL | Default 1 hour |
 | createdAt / updatedAt | DateTime | NOT NULL, auto | |
 
 **Indexes**: userId, status, expiresAt. Class C with `SELECT` own (status
-polling). `promote_upload()` requires `SCANNED_CLEAN`.
+polling). `promote_upload()` requires `VALIDATED` (ADR-017).
 
 ---
 
@@ -1010,7 +1010,7 @@ System ─────── Job / RateLimitBucket / ProcessedWebhookEvent
 | Finalization minimum + acknowledgment | LegacyPlan, LegacyPlanVersion | `finalize_legacy_plan()` (Personal Details complete; `acknowledgedIncomplete` otherwise) |
 | Password strength / session expiry / reset single-use | *Clerk* | Clerk configuration (T195) |
 | Idle timeout preference | User.securityPreferences | Client-enforced (T220), ≤ platform lifetime |
-| File size ≤ 50 MB / ≤ 500 MB, type, magic bytes, scan | UploadSession → Document/VideoMessage | Declared checks at session creation; actual size + magic bytes + scan at `complete`; `promote_upload()` requires SCANNED_CLEAN |
+| File size ≤ 50 MB / ≤ 500 MB, type, magic bytes | UploadSession → Document/VideoMessage | Declared checks at session creation; bucket size limit + MIME allow-list at upload; actual size + magic bytes at `complete`; `promote_upload()` requires VALIDATED |
 | Access scope ⊆ owned resources | AccessToken, DeadManSwitch.releaseScope, EmergencyAccessConfig.accessScope | Validated in `issue_access_token()`, `dms_configure()`, `ea_configure_contact()`; system grants ⊆ configured scope; DIRECT_SHARE scope additionally ⊆ the beneficiary's current assignments (FR-D011, 422 `SCOPE_NOT_ASSIGNED`); videos must satisfy the § 11 delivery-condition ↔ grant-type mapping (422 `DELIVERY_CONDITION_MISMATCH`) |
 | Token / OTP single-use & expiry | AccessToken, EmergencyAccessRequest | Hash-only storage, `expiresAt`, `revokedAt`; housekeeping sweeps; cookie exchange |
 | Emergency request email match, attempts, timeout rules | EmergencyAccessRequest | `ea_request_access()`, `ea_verify_otp()`, `ea_transition()` (WAIT/AUTO_GRANT/DENY, request expiry) |
@@ -1037,9 +1037,9 @@ System ─────── Job / RateLimitBucket / ProcessedWebhookEvent
   so these grants — not the absence of a browser client — are the boundary.
 - All other writes: guarded `SECURITY DEFINER` functions (Class B) or the
   `service_role` from server code (Class C).
-- `storage.objects`: no client `SELECT`; `INSERT` only into `quarantine`
-  under the caller's `clerk_user_id/` prefix (resumable uploads); all other
-  object access is server-side via signed URLs.
+- `storage.objects`: no client `SELECT` or `INSERT` (the `quarantine` insert
+  policy was dropped in 0006); all object access is server-side via signed
+  URLs.
 - Policy predicates use `(select auth.jwt()->>'sub')` for plan caching.
 
 ---
@@ -1052,7 +1052,7 @@ System ─────── Job / RateLimitBucket / ProcessedWebhookEvent
 | `jobs` | SUCCEEDED 14 d; FAILED/DEAD 90 d | prune |
 | `rate_limits` | Rolling window | prune |
 | `processed_webhook_events` | 30 d | prune |
-| `upload_sessions` + quarantine objects | EXPIRED/REJECTED 24 h; PROMOTED 30 d | delete objects, prune rows |
+| `upload_sessions` + unpromoted objects | EXPIRED/REJECTED 24 h; PROMOTED 30 d | delete unpromoted objects (never one a row points at), prune rows |
 | `notifications` | 180 d | prune |
 | `ai_interactions` | 12 months (sanitized) | prune |
 | `ai_drafts` REJECTED / SUPERSEDED (+ versions) | 90 d | purge encrypted content |

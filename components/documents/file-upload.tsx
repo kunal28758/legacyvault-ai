@@ -6,9 +6,8 @@ import {
   CheckCircle2,
   FileUp,
   Loader2,
+  Lock,
   RotateCcw,
-  ShieldAlert,
-  ShieldCheck,
   UploadCloud,
   X,
   XCircle,
@@ -40,13 +39,13 @@ export type UploadItemStage =
   | "invalid"
   | "validating"
   | "uploading"
-  | "scanning"
+  | "saving"
   | "done"
   | "rejected"
   | "failed"
   | "cancelled";
 
-export type UploadStep = "validate" | "upload" | "scan" | "store";
+export type UploadStep = "validate" | "upload" | "check" | "store";
 
 export interface UploadItem {
   id: string;
@@ -56,16 +55,11 @@ export interface UploadItem {
   error: string | null;
   /** The step the failure happened at, so the checklist marks the right one. */
   failedAt: UploadStep | null;
-  /** True once the server-confirmed bytes are in quarantine. */
+  /** True once the bytes have reached private storage. */
   uploaded: boolean;
-  /** The server kept the file in quarantine and completing again may succeed. */
+  /** The server holds the bytes, unpromoted, and completing again may succeed. */
   retryable: boolean;
-  /** The scanner flagged the file (as opposed to being unable to scan it). */
-  infected: boolean;
   uploadId: string | null;
-  /** What the malware-scan boundary actually did, once known. */
-  scanNote: string | null;
-  scanPerformed: boolean;
 }
 
 export function newUploadItem(file: File, invalidReason: string | null): UploadItem {
@@ -78,10 +72,7 @@ export function newUploadItem(file: File, invalidReason: string | null): UploadI
     failedAt: null,
     uploaded: false,
     retryable: false,
-    infected: false,
     uploadId: null,
-    scanNote: null,
-    scanPerformed: false,
   };
 }
 
@@ -179,8 +170,8 @@ type StepState = "done" | "active" | "failed" | "pending";
 const STAGE_FOR_STEP: Record<UploadStep, UploadItemStage> = {
   validate: "validating",
   upload: "uploading",
-  scan: "scanning",
-  store: "scanning", // promotion happens in the same server call as the scan
+  check: "saving",
+  store: "saving", // promotion happens in the same server call as the checks
 };
 
 function stepState(item: UploadItem, step: UploadStep): StepState {
@@ -191,7 +182,7 @@ function stepState(item: UploadItem, step: UploadStep): StepState {
       return item.uploadId ? "done" : "pending";
     case "upload":
       return item.uploaded ? "done" : "pending";
-    case "scan":
+    case "check":
     case "store":
       return item.stage === "done" ? "done" : "pending";
   }
@@ -213,7 +204,6 @@ function StepIcon({ state }: { state: StepState }) {
 
 interface UploadItemCardProps {
   item: UploadItem;
-  scannerLabel: string;
   onCancel: () => void;
   onRetry: () => void;
   onRemove: () => void;
@@ -223,33 +213,25 @@ const STATUS_TEXT: Record<UploadItemStage, string> = {
   ready: "Ready to upload",
   invalid: "Not accepted",
   validating: "Validating…",
-  uploading: "Uploading to quarantine…",
-  scanning: "Security scanning…",
-  done: "Securely stored",
+  uploading: "Uploading to private storage…",
+  saving: "Checking and saving…",
+  done: "Stored privately",
   rejected: "Rejected",
   failed: "Upload failed",
   cancelled: "Cancelled",
 };
 
-/** One file's journey: validated → uploaded → scanned → stored, or why not. */
-export function UploadItemCard({
-  item,
-  scannerLabel,
-  onCancel,
-  onRetry,
-  onRemove,
-}: UploadItemCardProps) {
+/** One file's journey: validated → uploaded → checked → stored, or why not. */
+export function UploadItemCard({ item, onCancel, onRetry, onRemove }: UploadItemCardProps) {
   const steps = {
     validate: stepState(item, "validate"),
     upload: stepState(item, "upload"),
-    scan: stepState(item, "scan"),
+    check: stepState(item, "check"),
     store: stepState(item, "store"),
   };
-  const busy =
-    item.stage === "validating" || item.stage === "uploading" || item.stage === "scanning";
+  const busy = item.stage === "validating" || item.stage === "uploading" || item.stage === "saving";
   const showSteps =
     item.stage !== "ready" && item.stage !== "invalid" && item.stage !== "cancelled";
-  const scanFailed = item.failedAt === "scan" && item.retryable;
 
   return (
     <li
@@ -272,7 +254,7 @@ export function UploadItemCard({
             {formatBytes(item.file.size)} · <span role="status">{STATUS_TEXT[item.stage]}</span>
           </p>
         </div>
-        {busy && item.stage !== "scanning" ? (
+        {busy && item.stage !== "saving" ? (
           <Button variant="ghost" size="sm" onClick={onCancel}>
             Cancel
           </Button>
@@ -296,7 +278,7 @@ export function UploadItemCard({
           </li>
           <li className="flex items-center gap-2 text-sm">
             <StepIcon state={steps.upload} />
-            <span>Uploaded to private quarantine</span>
+            <span>Uploaded to private storage</span>
             {steps.upload === "active" && (
               <span className="ml-auto text-xs text-muted-foreground tabular-nums">
                 {item.progress}%
@@ -304,32 +286,20 @@ export function UploadItemCard({
             )}
           </li>
           <li className="flex items-center gap-2 text-sm">
-            <StepIcon state={steps.scan} />
-            <span className={cn(steps.scan === "active" && "font-medium")}>
-              {steps.scan === "active" ? (
-                <>
-                  <span
-                    className="mr-1.5 inline-block size-1.5 animate-pulse rounded-full bg-brand-cyan align-middle motion-reduce:animate-none"
-                    aria-hidden
-                  />
-                  {scannerLabel} scanning…
-                </>
-              ) : steps.scan === "failed" ? (
-                item.infected ? (
-                  "Malware detected"
-                ) : item.retryable ? (
-                  "Malware scan failed"
-                ) : (
-                  "Security checks failed"
-                )
-              ) : (
-                "Content checks and malware scan"
-              )}
+            <StepIcon state={steps.check} />
+            <span className={cn(steps.check === "active" && "font-medium")}>
+              {steps.check === "active"
+                ? "Checking file size and type…"
+                : steps.check === "failed"
+                  ? item.retryable
+                    ? "Could not finish saving"
+                    : "File checks failed"
+                  : "File size and type checked"}
             </span>
           </li>
           <li className="flex items-center gap-2 text-sm">
             <StepIcon state={steps.store} />
-            <span>Moved to your private vault</span>
+            <span>Added to your private vault</span>
           </li>
         </ol>
       )}
@@ -352,12 +322,8 @@ export function UploadItemCard({
 
       {item.stage === "done" && (
         <p className="flex items-start gap-2 text-xs leading-5 text-muted-foreground">
-          {item.scanPerformed ? (
-            <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-success" aria-hidden />
-          ) : (
-            <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden />
-          )}
-          {item.scanNote}
+          <Lock className="mt-0.5 size-3.5 shrink-0 text-brand-cyan" aria-hidden />
+          Stored privately. It opens only through short-lived signed links.
         </p>
       )}
 
@@ -367,13 +333,7 @@ export function UploadItemCard({
           className="flex flex-wrap items-start gap-2 rounded-lg border border-destructive/30 bg-background/60 px-3 py-2 text-sm text-destructive"
         >
           <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
-          <p className="min-w-0 flex-1">
-            {scanFailed && <span className="block font-medium">✕ Malware scan failed</span>}
-            <span className={cn(scanFailed && "text-foreground/80")}>
-              {scanFailed ? "Reason: " : ""}
-              {item.error}
-            </span>
-          </p>
+          <p className="min-w-0 flex-1">{item.error}</p>
           {item.retryable && (
             <Button size="sm" variant="outline" onClick={onRetry} className="ml-auto">
               <RotateCcw aria-hidden /> Retry

@@ -47,12 +47,12 @@ VIII).
 | Hosting, serverless functions, cron, edge WAF | Vercel | 011, 006, 007 |
 | Identity, sessions, MFA, reverification, webhooks | Clerk (sole authentication system) | 003 |
 | Relational data, RLS, transactional functions | Supabase-managed PostgreSQL (SQL migrations, no ORM) | 002, 004 |
-| Private object storage, signed URLs | Supabase Storage (`quarantine`, `documents`, `videos`) | 005 |
+| Private object storage, signed URLs | Supabase Storage (`documents`, `videos`) | 005 |
 | Background work | PostgreSQL `jobs` table drained by Vercel Cron (+ `pg_cron` redundancy in production); no Redis/BullMQ | 006 |
 | AI | OpenAI and Google Gemini behind the in-house `AIProvider` interface | 008, 016 |
 | Email | `EmailProvider` abstraction; Resend baseline | 009 |
 | Monitoring | Sentry, structured JSON logs (pino), health endpoint | 010 |
-| Malware scanning | ClamAV behind `MalwareScanner` (production mandatory) | 015 |
+| Malware scanning | None — removed; uploads are checked for size and type only | 017 (supersedes 015) |
 
 Superseded and **not** part of the baseline (historical only — see
 `research.md` "Superseded (history)"): Express.js, Prisma, AWS S3/MinIO,
@@ -101,10 +101,10 @@ See [`../database/DATABASE_ARCHITECTURE.md`](../database/DATABASE_ARCHITECTURE.m
 
 Uploads never pass through the application server (Vercel request-body
 limits): the server issues a **signed upload URL** (documents, ≤ 50 MB) or a
-**resumable TUS target** (videos, ≤ 500 MB) into the private `quarantine`
-bucket; the browser uploads directly; a `complete` step verifies actual size
-and magic bytes, runs the malware scan, and `promote_upload()` moves the
-object to `documents`/`videos` and creates metadata rows. Downloads and
+**resumable TUS target** (videos, ≤ 500 MB) straight into the private
+`documents` or `videos` bucket; the browser uploads directly; a `complete`
+step verifies actual size and magic bytes, and `promote_upload()` creates the
+metadata rows (the object stays at its key). No malware scan runs (ADR-017). Downloads and
 previews use server-minted **signed URLs (15 minutes)** after authorization
 (ADR-005). Files are encrypted at rest by the storage provider (ADR-005 §4;
 application-layer envelope encryption is deferred — ADR-013).
@@ -157,7 +157,6 @@ gate (ADR-011, T016/T238/T246). Details and prerequisites:
 
 ## 10. Open items affecting architecture
 
-Tracked in [`../PROJECT_STATUS.md`](../PROJECT_STATUS.md) § 5: ClamAV hosting
-location (ADR-015), platform tiers (Vercel cron/`maxDuration`, Supabase file
+Tracked in [`../PROJECT_STATUS.md`](../PROJECT_STATUS.md) § 5: platform tiers (Vercel cron/`maxDuration`, Supabase file
 limit/PITR, Clerk session features), Clerk failed-sign-in event coverage
 (T203), audit-log retention schedule.

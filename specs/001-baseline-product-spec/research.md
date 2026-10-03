@@ -5,6 +5,12 @@
 **Purpose**: Resolve all NEEDS CLARIFICATION items and document technology
 decisions with rationale.
 
+> **Revision 2026-10-04 (ADR-017)** — Malware scanning was removed by owner
+> decision: there is no ClamAV, no quarantine stage and no scan gate. Uploads
+> go straight to the private `documents` / `videos` bucket and are promoted
+> after size and magic-byte checks (`VALIDATED` → `promote_upload()`).
+> FR-H016 / FR-Q011 are withdrawn. Scanner references below are historical.
+>
 > **Revision 2026-09-18** — Decisions re-baselined to the single Next.js
 > application architecture formally adopted in
 > [`docs/ARCHITECTURE_DECISIONS.md`](../../docs/ARCHITECTURE_DECISIONS.md)

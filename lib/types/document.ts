@@ -8,19 +8,9 @@ import type { Database } from "@/lib/types/database";
  * storage misconfiguration is exactly the pair that turns into a data breach.
  * Access is always a freshly signed, short-lived URL.
  */
-export type ScanStatus = Database["public"]["Enums"]["scan_status"];
 export type UploadStatus = Database["public"]["Enums"]["upload_status"];
 export type UploadKind = Database["public"]["Enums"]["upload_kind"];
 export type AttachmentResourceType = Database["public"]["Enums"]["attachment_resource_type"];
-
-/** What the malware-scan boundary actually did (ADR-015). */
-export interface ScanInfo {
-  status: ScanStatus;
-  /** False when no scanner was configured — the file was not inspected. */
-  performed: boolean;
-  provider: string | null;
-  scannedAt: string | null;
-}
 
 export interface DocumentSummary {
   id: string;
@@ -28,7 +18,6 @@ export interface DocumentSummary {
   mimeType: string;
   sizeBytes: number;
   folderId: string | null;
-  scan: ScanInfo;
   versionCount: number;
   /** How many beneficiaries this document is shared with. */
   shareCount: number;
@@ -94,14 +83,13 @@ export interface UploadOutcome {
   uploadId: string;
   status: UploadStatus;
   rejectionReason: string | null;
-  scan: ScanInfo;
   /**
-   * True when the file is still safely held in quarantine and completing the
-   * upload again may succeed — the scanner was unavailable, or a step timed
-   * out. Never true for a rejected or infected file.
+   * True when the uploaded bytes are still held privately and completing the
+   * upload again may succeed — a step failed unexpectedly or timed out. Never
+   * true for a rejected file.
    */
   retryable: boolean;
-  /** True while another request is still validating or scanning this upload. */
+  /** True while another request is still checking and saving this upload. */
   inProgress: boolean;
   documentId?: string;
   videoId?: string;

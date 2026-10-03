@@ -4,6 +4,12 @@
 
 **Spec**: [spec.md](./spec.md) | **Plan**: [plan.md](./plan.md) | **Data Model**: [data-model.md](./data-model.md) | **Contracts**: [contracts/api-contracts.md](./contracts/api-contracts.md) | **ADRs**: [docs/ARCHITECTURE_DECISIONS.md](../../docs/ARCHITECTURE_DECISIONS.md)
 
+> **Revision 2026-10-04 (ADR-017)** — Malware scanning was removed by owner
+> decision: there is no ClamAV, no quarantine stage and no scan gate. Uploads
+> go straight to the private `documents` / `videos` bucket and are promoted
+> after size and magic-byte checks (`VALIDATED` → `promote_upload()`).
+> FR-H016 / FR-Q011 are withdrawn. Scanner tasks below (e.g. T181, T247) are retired; their references are historical.
+>
 > **Revision 2026-09-18 r1** — Re-baselined to the single Next.js 16 application
 > architecture (ADR-001 … ADR-013, constitution v2.0.1). Task IDs are preserved
 > where the task's purpose survives; retired IDs are in the **Removed Tasks**

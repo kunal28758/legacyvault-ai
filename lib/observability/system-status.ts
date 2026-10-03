@@ -5,7 +5,6 @@ import { getEnvGroup } from "@/lib/config/env";
 import { isClerkConfigured } from "@/lib/config/public-env";
 import { checkDatabase, checkStorage, lastFinishedJob } from "@/lib/observability/health";
 import { logger } from "@/lib/observability/logger";
-import { pingScanner } from "@/lib/services/malware-scanner";
 import type {
   ServiceId,
   ServiceState,
@@ -18,8 +17,8 @@ import type {
  *
  * Every entry is a real probe made from this server, never a configured value
  * presented as a result: the database answers a query, storage lists its
- * buckets, Clerk's API answers an authenticated request, ClamAV answers PING,
- * and the AI provider answers an authenticated model lookup. A probe that
+ * buckets, Clerk's API answers an authenticated request, and the AI provider
+ * answers an authenticated model lookup. A probe that
  * cannot complete in a few seconds counts as failed.
  *
  * Anonymous callers receive only the overall state (the same rule the health
@@ -37,7 +36,6 @@ const LABELS: Record<ServiceId, string> = {
   database: "Database",
   storage: "Secure storage",
   authentication: "Authentication",
-  malware_scanner: "Malware scanner",
   ai: "AI services",
   jobs: "Background jobs",
 };
@@ -109,38 +107,6 @@ async function probeAuthentication(): Promise<ServiceStatus> {
       );
 }
 
-async function probeScanner(): Promise<{ service: ServiceStatus; provider: "clamav" | "noop" }> {
-  const result = await withDeadline(pingScanner(), {
-    status: "down" as const,
-    provider: "clamav" as const,
-    reason: "timeout",
-  });
-  if (result.status === "ok") {
-    return {
-      provider: "clamav",
-      service: status("malware_scanner", "operational", "ClamAV is scanning uploads."),
-    };
-  }
-  if (result.status === "not-configured") {
-    return {
-      provider: "noop",
-      service: status(
-        "malware_scanner",
-        "not_configured",
-        "No malware scanner in this environment. Uploads are stored and clearly labelled as not scanned.",
-      ),
-    };
-  }
-  return {
-    provider: "clamav",
-    service: status(
-      "malware_scanner",
-      "down",
-      "ClamAV is not responding. New uploads wait safely in quarantine and can be retried.",
-    ),
-  };
-}
-
 async function probeAI(): Promise<ServiceStatus> {
   const configuration = getAIConfiguration();
   if (!configuration.configured) {
@@ -193,11 +159,10 @@ export function overallOf(services: ServiceStatus[]): SystemStatus["overall"] {
 }
 
 async function probe(): Promise<SystemStatus & { services: ServiceStatus[] }> {
-  const [database, storage, authentication, scanner, ai, jobs] = await Promise.all([
+  const [database, storage, authentication, ai, jobs] = await Promise.all([
     probeDatabase(),
     probeStorage(),
     probeAuthentication(),
-    probeScanner(),
     probeAI(),
     probeJobs(),
   ]);
@@ -206,7 +171,6 @@ async function probe(): Promise<SystemStatus & { services: ServiceStatus[] }> {
     database,
     storage,
     authentication,
-    scanner.service,
     ai,
     jobs,
   ];
@@ -214,12 +178,11 @@ async function probe(): Promise<SystemStatus & { services: ServiceStatus[] }> {
     overall: overallOf(services),
     checkedAt: new Date().toISOString(),
     services,
-    scannerProvider: scanner.provider,
   };
 }
 
 /**
- * Cached briefly: many open tabs poll this, and each uncached call makes six
+ * Cached briefly: many open tabs poll this, and each uncached call makes five
  * outbound probes — an amplification an anonymous caller must not be able to
  * buy. Concurrent callers share one in-flight probe.
  */

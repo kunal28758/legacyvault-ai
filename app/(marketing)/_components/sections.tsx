@@ -81,7 +81,7 @@ const capabilities = [
     icon: FileLock2,
     title: "Secure Document Vault",
     description:
-      "Direct-to-private-storage uploads, malware scanning before anything is accepted, folders and version history.",
+      "Direct-to-private-storage uploads, size and file-type checks before anything is accepted, folders and version history.",
   },
   {
     icon: TimerReset,
@@ -305,19 +305,19 @@ function VaultPreview() {
       name: "Will_Draft_v2.pdf",
       meta: "482 KB · 2 versions",
       tone: "success" as const,
-      label: "Scanned · clean",
+      label: "Stored",
     },
     {
       name: "Palm_Residency_Sale_Deed.pdf",
       meta: "6.3 MB · shared with 1",
       tone: "success" as const,
-      label: "Scanned · clean",
+      label: "Shared",
     },
     {
       name: "Identity_Documents.pdf",
       meta: "2.0 MB · just uploaded",
       tone: "info" as const,
-      label: "Scanning",
+      label: "Uploading",
     },
   ];
   return (
@@ -376,7 +376,7 @@ export function FeatureShowcase() {
     },
     vault: {
       title: "Documents nobody else can reach",
-      body: "Files go straight to private storage, are validated and malware-scanned in quarantine, and are served only through short-lived signed links.",
+      body: "Files go straight to private storage, are checked for size and type before they join your vault, and are served only through short-lived signed links.",
       bullets: [
         "Type, size and magic-byte validation",
         "Version history and folders",

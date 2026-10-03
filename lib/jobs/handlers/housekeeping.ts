@@ -3,7 +3,14 @@ import "server-only";
 import type { TypedSupabaseClient } from "@/lib/db/server";
 import type { JobHandler } from "@/lib/jobs/types";
 import { logger } from "@/lib/observability/logger";
-import { BUCKETS, removeObject } from "@/lib/storage/storage";
+import type { UploadStatus } from "@/lib/repositories/upload.repository";
+import {
+  BUCKETS,
+  removeObject,
+  uploadBucketFor,
+  uploadObjectKey,
+  type BucketName,
+} from "@/lib/storage/storage";
 
 /**
  * The daily sweep (api-contracts.md § Internal, ADR-006).
@@ -107,39 +114,82 @@ async function expireEmergencyRequests(db: TypedSupabaseClient, now: Date): Prom
   return applied;
 }
 
+/** Sessions that never reached PROMOTED and never will. */
+const ABANDONED: readonly UploadStatus[] = [
+  "PENDING",
+  "UPLOADED",
+  "VALIDATING",
+  "VALIDATED",
+  "REJECTED",
+];
+
 /**
  * Uploads that were started and never completed.
  *
- * The bytes go first and the row second: an object left in quarantine with no
- * session to explain it is the one outcome worth avoiding.
+ * An unfinished upload's bytes sit at their final key in the private bucket,
+ * with no row pointing at them. The session is closed first, with a
+ * compare-and-set, and the object is removed only if that succeeded — an
+ * upload promoted in the meantime keeps its bytes. As a second guard, an
+ * object any vault row still points at is never removed.
  */
 async function expireAbandonedUploads(db: TypedSupabaseClient, now: Date): Promise<number> {
   const cutoff = new Date(now.getTime() - UPLOAD_GRACE_MS).toISOString();
   const { data, error } = await db
     .from("upload_sessions")
-    .select("id, user_id, status")
-    .in("status", ["PENDING", "UPLOADED", "VALIDATING", "SCANNING", "SCANNED_CLEAN", "REJECTED"])
+    .select("id, user_id, kind")
+    .in("status", [...ABANDONED])
     .lt("created_at", cutoff)
     .limit(200);
   if (error) throw error;
 
   let applied = 0;
   for (const session of data ?? []) {
-    try {
-      await removeObject(BUCKETS.quarantine, `${session.user_id}/${session.id}`);
-    } catch (cause) {
-      // Nothing was ever uploaded, or it is already gone — either way the
-      // session can still be closed.
-      logger.warn({ err: cause, uploadId: session.id }, "quarantine cleanup skipped");
-    }
-    const { error: updateError } = await db
+    const { data: closed, error: updateError } = await db
       .from("upload_sessions")
       .update({ status: "EXPIRED" })
-      .eq("id", session.id);
+      .eq("id", session.id)
+      .in("status", [...ABANDONED])
+      .select("id");
     if (updateError) throw updateError;
+    if (!closed?.length) continue;
     applied += 1;
+
+    const bucket = uploadBucketFor(session.kind);
+    const key = uploadObjectKey(session.user_id, session.id);
+    try {
+      if (await isReferenced(db, bucket, key)) {
+        logger.warn({ uploadId: session.id }, "abandoned upload object is referenced; kept");
+        continue;
+      }
+      await removeObject(bucket, key);
+    } catch (cause) {
+      // Nothing was ever uploaded, or it is already gone. Anything left is
+      // private and unreachable without a row.
+      logger.warn({ err: cause, uploadId: session.id }, "abandoned upload cleanup skipped");
+    }
   }
   return applied;
+}
+
+/** True when a document, version or video row points at this object. */
+async function isReferenced(
+  db: TypedSupabaseClient,
+  bucket: BucketName,
+  key: string,
+): Promise<boolean> {
+  const tables =
+    bucket === BUCKETS.videos
+      ? (["video_messages"] as const)
+      : (["documents", "document_versions"] as const);
+  for (const table of tables) {
+    const { count, error } = await db
+      .from(table)
+      .select("id", { count: "exact", head: true })
+      .eq("storage_key", key);
+    if (error) throw error;
+    if ((count ?? 0) > 0) return true;
+  }
+  return false;
 }
 
 /**

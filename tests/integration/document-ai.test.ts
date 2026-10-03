@@ -142,11 +142,7 @@ beforeAll(async () => {
   ownerClient = await createUserScopedClient(OWNER);
   otherClient = await createUserScopedClient(OTHER);
 
-  // A real document through the real pipeline. Scanning is covered by the
-  // upload-pipeline suite; here it is the configured no-op so this suite does
-  // not depend on a running ClamAV.
-  vi.stubEnv("MALWARE_SCANNER_PROVIDER", "noop");
-  resetEnvGroupCache();
+  // A real document through the real upload pipeline.
   clients.current = ownerClient;
   const bytes = new TextEncoder().encode(WILL_TEXT);
   const ticket = await uploadService.createUploadSession(
@@ -162,8 +158,6 @@ beforeAll(async () => {
   const outcome = await uploadService.completeUpload(owner, ticket.uploadId, {}, "test");
   if (!outcome.documentId) throw new Error(`upload failed: ${outcome.rejectionReason}`);
   documentId = outcome.documentId;
-  vi.unstubAllEnvs();
-  resetEnvGroupCache();
 }, 60_000);
 
 beforeEach(() => {

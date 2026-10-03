@@ -1,7 +1,6 @@
 import "server-only";
 
 import type { TypedSupabaseClient } from "@/lib/db/server";
-import type { ScanInfo } from "@/lib/types/document";
 import type { VideoAssignment, VideoMessage } from "@/lib/types/video";
 import type { Database } from "@/lib/types/database";
 
@@ -14,22 +13,6 @@ import type { Database } from "@/lib/types/database";
  */
 export type VideoRow = Database["public"]["Tables"]["video_messages"]["Row"];
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-function scanInfoOf(row: VideoRow): ScanInfo {
-  const scan = asRecord(asRecord(row.metadata).scan);
-  return {
-    status: row.scan_status,
-    performed: scan.performed === true,
-    provider: typeof scan.provider === "string" ? scan.provider : null,
-    scannedAt: typeof scan.scannedAt === "string" ? scan.scannedAt : null,
-  };
-}
-
 export function toVideo(row: VideoRow, assignments: VideoAssignment[]): VideoMessage {
   return {
     id: row.id,
@@ -38,7 +21,6 @@ export function toVideo(row: VideoRow, assignments: VideoAssignment[]): VideoMes
     mimeType: row.mime_type,
     sizeBytes: Number(row.size_bytes),
     deliveryCondition: row.delivery_condition,
-    scan: scanInfoOf(row),
     assignments,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

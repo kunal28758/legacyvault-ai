@@ -7,7 +7,7 @@ and how the application behaves when it is unavailable.
 
 **Canonical sources**: ADR-003 (Clerk), ADR-002/004/005 (Supabase), ADR-006/
 007/011 (Vercel), ADR-008/016 (AI providers), ADR-009 (Resend), ADR-010
-(Sentry), ADR-015 (ClamAV); `contracts/api-contracts.md` § Internal
+(Sentry); `contracts/api-contracts.md` § Internal
 Endpoints; tasks T007, T028, T029, T039, T104–T107, T188, T195, T196, T198,
 T209, T247.
 
@@ -28,9 +28,9 @@ probe was removed on 2026-09-19 (its client files go with T028). No credential v
 | OpenAI / Google Gemini | AI generation with structured outputs | `lib/ai/provider.ts`, `lib/ai/providers/{openai,gemini}.ts`, `lib/ai/factory.ts` | 008, 016 |
 | Resend | Transactional email (application emails) | `lib/email/provider.ts`, `lib/email/providers/resend.ts`, `app/api/webhooks/email` | 009 |
 | Sentry | Error monitoring, alerting, performance | `@sentry/nextjs` instrumentation, `withApi()`, job runner | 010 |
-| ClamAV (`clamd`) | Production malware scanning | `lib/security/scanners/clamav.ts` behind `MalwareScanner` | 015 |
 
-Superseded / not integrated (historical only): Supabase Auth, AWS S3/MinIO,
+Superseded / not integrated (historical only): ClamAV (removed 2026-10-04,
+ADR-017), Supabase Auth, AWS S3/MinIO,
 Redis/BullMQ, Nodemailer SMTP (may implement `EmailProvider` later).
 
 ---
@@ -66,8 +66,9 @@ Redis/BullMQ, Nodemailer SMTP (may implement `EmailProvider` later).
   token; RLS applies) and service (secret key; system paths only); SQL
   migrations via the Supabase CLI; `pg_cron` + `pg_net` as the production
   redundant cron trigger (T211).
-- **Storage buckets**: `quarantine`, `documents`, `videos` — all private;
-  quarantine → validate/scan → promote (ADR-005).
+- **Storage buckets**: `documents`, `videos` — private; upload straight to
+  the destination bucket → size/type check → promote (ADR-005, ADR-017). The
+  retired `quarantine` bucket is kept, private and unused.
 - **Configuration (names)**: `SUPABASE_URL`, `SUPABASE_SECRET_KEY`,
   `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; project
   settings per T196 (file-size limit ≥ 500 MB, PITR, buckets, third-party
@@ -132,25 +133,9 @@ Redis/BullMQ, Nodemailer SMTP (may implement `EmailProvider` later).
 - **Application keeps**: PII scrubbing (`beforeSend`; `t` query parameters
   and cookies stripped), correlation id as a tag, capture points in
   `withApi()` and the job runner, alert routing (error-rate spikes,
-  `dms.job_health_failure`, DEAD job count, scanner errors — T239).
+  `dms.job_health_failure`, DEAD job count — T239).
 - **Configuration (names)**: `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN`.
 - **Unavailable**: monitoring degrades; the application keeps serving.
-
-## ClamAV (ADR-015)
-
-- **Owns**: malware verdicts for uploaded documents and videos via `clamd`
-  `INSTREAM` over a TLS private endpoint; signature updates via `freshclam`.
-- **Application keeps**: `MalwareScanner` interface; `ClamAvScanner`
-  streams the quarantine object; `ERROR` on connection failure (never a
-  default CLEAN); verdicts recorded on `upload_sessions`, `documents` /
-  `video_messages` and the audit log; INFECTED objects deleted from
-  quarantine; promotion requires `SCANNED_CLEAN`.
-- **Configuration (names)**: `MALWARE_SCANNER_PROVIDER` (`clamav` in
-  production; `noop` only for development), `CLAMAV_HOST`, `CLAMAV_PORT`,
-  `CLAMAV_TLS`. Production start-up refuses `noop` (T007).
-- **Unavailable**: scans return ERROR, jobs retry with backoff, files stay in
-  quarantine; nothing is promoted unscanned.
-- **Open**: hosting location is an owner decision (`docs/PROJECT_STATUS.md`).
 
 ---
 

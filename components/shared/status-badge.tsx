@@ -77,19 +77,3 @@ export function toneForBeneficiaryStatus(status: "PENDING" | "ACTIVE" | "INACTIV
       return { tone: "neutral", label: "Inactive" };
   }
 }
-
-export function toneForScanStatus(status: "PENDING" | "CLEAN" | "INFECTED" | "ERROR"): {
-  tone: StatusTone;
-  label: string;
-} {
-  switch (status) {
-    case "CLEAN":
-      return { tone: "success", label: "Scanned · clean" };
-    case "PENDING":
-      return { tone: "info", label: "Scanning" };
-    case "INFECTED":
-      return { tone: "danger", label: "Blocked" };
-    case "ERROR":
-      return { tone: "warning", label: "Scan error" };
-  }
-}

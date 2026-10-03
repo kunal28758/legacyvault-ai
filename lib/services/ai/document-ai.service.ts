@@ -60,9 +60,9 @@ import { toAIApiError } from "./errors";
  * Document intelligence (ADR-008 § 5, ADR-016).
  *
  * Every entry point starts the same way: the document row is read through RLS
- * as the caller, so a document that is not theirs — or is deleted, or never
- * passed the malware scan — is a 404 before a single byte is fetched. Only
- * then is the object read, server-side, from private storage.
+ * as the caller, so a document that is not theirs — or is deleted — is a 404
+ * before a single byte is fetched. Only then is the object read, server-side,
+ * from private storage.
  *
  * Results are grounded (values checked against the document's own text),
  * stored as encrypted AI versions so reopening a summary costs nothing, and
@@ -124,12 +124,6 @@ export function clearExtractionCache(): void {
 async function findOwnedDocument(db: TypedSupabaseClient, user: AppUser, documentId: string) {
   const row = await documentRepository.findById(db, user.id, documentId);
   if (!row) throw ApiError.notFound();
-  if (row.scan_status !== "CLEAN") {
-    throw ApiError.invariant(
-      "FILE_INFECTED",
-      "This document has not passed the security scan, so it cannot be analysed.",
-    );
-  }
   return row;
 }
 
@@ -598,9 +592,8 @@ export interface AssistantAttachments {
  * Files the user attached to an assistant message (ADR-008 § 5).
  *
  * Every id is treated as untrusted: each one is looked up through RLS as the
- * caller, so another user's document, a deleted one, or one that has not
- * passed the malware scan is refused before a single byte is read — exactly as
- * for document intelligence. Text-bearing files are read through the same
+ * caller, so another user's document or a deleted one is refused before a
+ * single byte is read — exactly as for document intelligence. Text-bearing files are read through the same
  * extraction (and OCR) path, cache included; an image is sent to the model as
  * the image itself, so a photo without text can still be described.
  *

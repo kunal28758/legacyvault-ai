@@ -4,8 +4,7 @@
  * `not_configured` is distinct from `down`: a service this environment has
  * not been set up with is reported as such, never as working.
  */
-export type ServiceId =
-  "application" | "database" | "storage" | "authentication" | "malware_scanner" | "ai" | "jobs";
+export type ServiceId = "application" | "database" | "storage" | "authentication" | "ai" | "jobs";
 
 export type ServiceState = "operational" | "degraded" | "down" | "not_configured";
 
@@ -22,6 +21,4 @@ export interface SystemStatus {
   checkedAt: string;
   /** Present for signed-in users only. */
   services?: ServiceStatus[];
-  /** Present for signed-in users only: which scanner is in use. */
-  scannerProvider?: "clamav" | "noop";
 }

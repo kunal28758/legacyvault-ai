@@ -206,7 +206,7 @@ export function useDocumentAccess() {
  * Where an upload is, as the browser tracks it. The server's session status
  * is the authority; these stages are how the browser narrates reaching it.
  */
-export type UploadPhase = "validating" | "uploading" | "scanning" | "storing";
+export type UploadPhase = "validating" | "uploading" | "saving";
 
 export interface UploadRequest {
   kind: "DOCUMENT" | "DOCUMENT_VERSION" | "VIDEO";
@@ -276,8 +276,11 @@ function putToSignedUrl(
 }
 
 const STATUS_POLL_INTERVAL_MS = 3_000;
-/** The server bounds a scan well inside its 300 s request limit. */
-const STATUS_POLL_LIMIT_MS = 330_000;
+/**
+ * Longer than the server's staleness window (2 minutes), after which an
+ * abandoned completion is reported as retryable rather than in progress.
+ */
+const STATUS_POLL_LIMIT_MS = 150_000;
 
 function wait(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -294,12 +297,13 @@ function wait(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 /**
- * Finishes an upload server-side: validation, malware scan, promotion.
+ * Finishes an upload server-side: size and content checks, then promotion into
+ * the vault.
  *
  * If the completion request itself is lost (a dropped connection, a proxy
- * timeout) or another request is already scanning the file, the session status
- * is polled until it settles — with a hard ceiling, so the browser can never
- * show "Scanning…" indefinitely. Callers use this directly to retry.
+ * timeout) or another request is already completing the file, the session
+ * status is polled until it settles — with a hard ceiling, so the browser can
+ * never show "Saving…" indefinitely. Callers use this directly to retry.
  */
 export async function completeUploadRequest(
   uploadId: string,
@@ -335,7 +339,7 @@ export async function completeUploadRequest(
         ...outcome,
         inProgress: false,
         retryable: true,
-        rejectionReason: "The security scan is taking longer than expected. Try again.",
+        rejectionReason: "Saving the file is taking longer than expected. Try again.",
       };
     }
     await wait(STATUS_POLL_INTERVAL_MS, signal);
@@ -354,9 +358,9 @@ async function readUploadStatus(uploadId: string, signal?: AbortSignal): Promise
 /**
  * The full two-step upload: session, bytes, completion.
  *
- * The browser never learns the permanent storage path — it PUTs to a signed
- * quarantine URL and the server decides where the object ends up once it has
- * been measured and scanned.
+ * The browser never learns the storage path — it PUTs to a short-lived signed
+ * URL the server minted for a key it derived, and the file becomes part of the
+ * vault only once the server has measured and checked what arrived.
  */
 export function useUpload() {
   const invalidate = useInvalidateDocuments();
@@ -390,7 +394,7 @@ export function useUpload() {
         request.signal,
       );
 
-      request.onPhase?.("scanning", ticket.uploadId);
+      request.onPhase?.("saving", ticket.uploadId);
       return await completeUploadRequest(
         ticket.uploadId,
         {
@@ -409,7 +413,7 @@ export function useUpload() {
   });
 }
 
-/** Re-runs the server-side half of an upload whose scan could not complete. */
+/** Re-runs the server-side half of an upload whose completion did not finish. */
 export function useRetryUpload() {
   const invalidate = useInvalidateDocuments();
   const queryClient = useQueryClient();

@@ -7,7 +7,6 @@ import type { AppUser } from "@/lib/auth/ensure-app-user";
 import { resetEnvGroupCache } from "@/lib/config/env";
 import * as assistant from "@/lib/services/ai/assistant.service";
 import * as documentAi from "@/lib/services/ai/document-ai.service";
-import { pingScanner } from "@/lib/services/malware-scanner";
 import * as uploadService from "@/lib/services/upload.service";
 import { BUCKETS } from "@/lib/storage/storage";
 
@@ -20,14 +19,14 @@ import {
 
 /**
  * Files attached to an assistant message, end to end against the real stack:
- * each file goes through the real upload pipeline (quarantine, type check,
- * ClamAV, private storage) and is then read by the assistant service as the
+ * each file goes through the real upload pipeline (private storage, size and
+ * type checks, promotion) and is then read by the assistant service as the
  * caller, through RLS. Only the language model is replaced, by a scripted
  * provider that records exactly what it would have been sent.
  *
- * Asserted: a document id is never trusted — another user's file, a file that
- * has not passed the scan, a deleted file or a type the AI cannot read is
- * refused before anything reaches the model; text arrives as a delimited
+ * Asserted: a document id is never trusted — another user's file, a deleted
+ * file or a type the AI cannot read is refused before anything reaches the
+ * model; text arrives as a delimited
  * document block and an image as the image itself; extra attachments are
  * charged to the AI rate limit; usage records carry no names or content.
  */
@@ -40,14 +39,10 @@ vi.mock("@/lib/db/server", async (importOriginal) => {
   return { ...actual, createUserClient: async () => clients.current };
 });
 
-const stackAvailable = await isLocalStackAvailable();
-const available =
-  stackAvailable &&
-  process.env.MALWARE_SCANNER_PROVIDER === "clamav" &&
-  (await pingScanner()).status === "ok";
+const available = await isLocalStackAvailable();
 if (!available) {
   console.warn(
-    "[assistant-attachments] local Supabase stack or ClamAV unreachable — assertions are SKIPPED, not passed.",
+    "[assistant-attachments] local Supabase stack unreachable — assertions are SKIPPED, not passed.",
   );
 }
 
@@ -137,11 +132,7 @@ async function uploadAs(
   });
   expect(put.ok).toBe(true);
   const outcome = await uploadService.completeUpload(user, ticket.uploadId, {}, "test");
-  // Through ClamAV for real: a clean verdict from the actual daemon.
-  expect(outcome).toMatchObject({
-    status: "PROMOTED",
-    scan: { status: "CLEAN", performed: true, provider: "clamav" },
-  });
+  expect(outcome).toMatchObject({ status: "PROMOTED" });
   return outcome.documentId!;
 }
 
@@ -277,18 +268,6 @@ describe.skipIf(!available)("assistant attachments", () => {
     const error = await reply(owner, [ids.removed]).catch((e: unknown) => e);
     expect((error as ApiError).status).toBe(404);
     expect(prompts).toHaveLength(0);
-  });
-
-  it("refuses a document that has not passed the malware scan", async () => {
-    const service = createServiceScopedClient();
-    await service.from("documents").update({ scan_status: "PENDING" }).eq("id", ids.will);
-    try {
-      const error = await reply(owner, [ids.will]).catch((e: unknown) => e);
-      expect(error).toMatchObject({ code: "FILE_INFECTED" });
-      expect(prompts).toHaveLength(0);
-    } finally {
-      await service.from("documents").update({ scan_status: "CLEAN" }).eq("id", ids.will);
-    }
   });
 
   it("refuses a vault file type the AI has no safe parser for", async () => {

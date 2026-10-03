@@ -146,7 +146,7 @@ export async function streamAssistantReply(
       return "Account overview: unavailable right now.";
     });
 
-    // Ownership, scan status and type are checked again here for every id.
+    // Ownership and type are checked again here for every id.
     const attachments = await loadAssistantAttachments(user, body.attachmentIds, signal);
     const hasAttachments = attachments.documentIds.length > 0;
     const question: string | AIContentPart[] = hasAttachments

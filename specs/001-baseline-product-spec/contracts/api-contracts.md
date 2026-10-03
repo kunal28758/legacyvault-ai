@@ -159,8 +159,8 @@ GET; `/decrypt` requires reverification. Ownership enforced (403).
 | Method | Endpoint | Auth | Description |
 |--------|----------|:----:|-------------|
 | GET | `/documents` | ✅ | List (folder filter) |
-| POST | `/documents/uploads` | ✅ | **Step 1** — create upload session; returns signed upload URL into `quarantine`. Optional `documentId` → `kind: DOCUMENT_VERSION` |
-| POST | `/documents/uploads/:uploadId/complete` | ✅ | **Step 2** — actual size, magic bytes, malware scan → `SCANNED_CLEAN` → `promote_upload()` creates `Document` (or `DocumentVersion` + `currentVersionId`) |
+| POST | `/documents/uploads` | ✅ | **Step 1** — create upload session; returns signed upload URL into the private `documents` bucket. Optional `documentId` → `kind: DOCUMENT_VERSION` |
+| POST | `/documents/uploads/:uploadId/complete` | ✅ | **Step 2** — actual size, magic bytes → `VALIDATED` → `promote_upload()` creates `Document` (or `DocumentVersion` + `currentVersionId`). No malware scan (ADR-017) |
 | GET | `/documents/uploads/:uploadId` | ✅ | Upload/scan status |
 | GET | `/documents/:id` | ✅ | Metadata (+ attachments, shares, versions summary) |
 | GET | `/documents/:id/download` | ✅ | Signed download URL (15 min) — audited |
@@ -184,16 +184,17 @@ Response: { uploadId, uploadUrl, token, expiresAt }
 ```
 **POST /documents/uploads/:uploadId/complete**
 ```
-Server:   object exists → actual size ≤ 50 MB → magic bytes → malware scan
-          (inline ≤ 10 MB else job) → SCANNED_CLEAN → promote_upload()
-Response: { document } | 202 { uploadId, status: "SCANNING" }
-Errors:   422 FILE_TYPE_MISMATCH / FILE_TOO_LARGE / FILE_INFECTED
+Server:   object exists → actual size ≤ 50 MB → magic bytes → VALIDATED
+          → promote_upload()
+Response: { uploadId, status, rejectionReason, retryable, inProgress, documentId? | videoId? }
+Errors:   409 CONFLICT (expired / already completed / rejected); a failed check
+          returns status REJECTED with a reason and deletes the object
 ```
 
 ### Key Validations
 - Whitelist (PDF, images, text, office docs); declared MIME/extension + actual magic bytes
 - Size ≤ 50 MB checked at declaration and at completion
-- Infected/invalid files never leave quarantine; production scanner is mandatory (ADR-015)
+- Invalid files are rejected and deleted; nothing is reachable until promoted. No malware scanning (ADR-017)
 - Signed URLs expire in 15 minutes; bucket URLs never exposed; provider AES-256 at rest
 
 ---
@@ -271,7 +272,7 @@ contact exchanges it for an access cookie). Timeout handling (`WAIT`,
 | Method | Endpoint | Auth | Description |
 |--------|----------|:----:|-------------|
 | GET | `/videos` | ✅ | List |
-| POST | `/videos/uploads` | ✅ | **Step 1** — upload session; resumable (TUS) target into `quarantine` |
+| POST | `/videos/uploads` | ✅ | **Step 1** — upload session; target in the private `videos` bucket |
 | POST | `/videos/uploads/:uploadId/complete` | ✅ | **Step 2** — size ≤ 500 MB + container magic bytes → `video.process` job → promote |
 | GET | `/videos/uploads/:uploadId` | ✅ | Processing status |
 | GET | `/videos/:id` | ✅ | Metadata |
@@ -296,7 +297,7 @@ owner's own `/videos/:id/stream` is authorized by ownership.
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|:----:|-------------|
-| POST | `/ai/assistant/message` | ✅ `ai` | Body `{ message, history?: { role ∈ {user, assistant}, content }[], attachmentIds?: uuid[] }` — `history` is the **client-held, session-scoped** prior turns (max **20** turns, bounded per-turn length, Zod-validated). `attachmentIds` (max **3**, unique) are the caller's own vault documents, uploaded through the normal upload pipeline (quarantine → type check → malware scan → private storage); each is re-checked server-side through RLS — owner, not deleted, `scan_status = CLEAN`, an AI-readable type — before any byte is read, or the request is refused (`404` / `FILE_INFECTED` / `FILE_TYPE_MISMATCH` / `FILE_TOO_LARGE`) with nothing sent to the model. Each attachment beyond the first is one more hit on the caller's `ai` budget; reading one is audited (`ai.assistant_attachment_read`). Attachment content goes only to providers approved for vault documents that can read the file type; if none can, `422 AI_UNAVAILABLE` (`details.reason: "unsupported"`). A provider failure after the first token ends the stream with one `error` event (`reason: "interrupted"`). Streamed reply with disclaimer; missing-information detection from the plan. The server does **not** persist `message` or `history` text; only a sanitized `ai_interactions` metadata row (provider, model, tokens, sanitized summary — no content) may be persisted (ADR-016) |
+| POST | `/ai/assistant/message` | ✅ `ai` | Body `{ message, history?: { role ∈ {user, assistant}, content }[], attachmentIds?: uuid[] }` — `history` is the **client-held, session-scoped** prior turns (max **20** turns, bounded per-turn length, Zod-validated). `attachmentIds` (max **3**, unique) are the caller's own vault documents, uploaded through the normal upload pipeline (private storage → size and type check → promotion); each is re-checked server-side through RLS — owner, not deleted, an AI-readable type — before any byte is read, or the request is refused (`404` / `FILE_INFECTED` / `FILE_TYPE_MISMATCH` / `FILE_TOO_LARGE`) with nothing sent to the model. Each attachment beyond the first is one more hit on the caller's `ai` budget; reading one is audited (`ai.assistant_attachment_read`). Attachment content goes only to providers approved for vault documents that can read the file type; if none can, `422 AI_UNAVAILABLE` (`details.reason: "unsupported"`). A provider failure after the first token ends the stream with one `error` event (`reason: "interrupted"`). Streamed reply with disclaimer; missing-information detection from the plan. The server does **not** persist `message` or `history` text; only a sanitized `ai_interactions` metadata row (provider, model, tokens, sanitized summary — no content) may be persisted (ADR-016) |
 | GET | `/ai/assistant/interactions` | ✅ | Sanitized `ai_interactions` records of the **current user only** (usage/audit metadata). Never exposes persisted conversation or message content — none is stored |
 | **Will generator (AiDraft kind = WILL_DRAFT)** | | | |
 | POST | `/ai/will-generator/drafts` | ✅ `ai` | `{ input?: string, instructions?: string }` — NL input extracted (FR-M001/M002) + plan data → new draft (version 1, createdBy AI) |
@@ -401,7 +402,7 @@ exchanges the token and removes it from the URL (`history.replaceState`).
 | POST | `/api/webhooks/email` | `webhook` mode — provider signature (raw body) | Delivery events → `notifications.deliveryStatus` |
 | GET/POST | `/api/internal/cron/run-jobs` | `Authorization: Bearer $CRON_SECRET` | Drain due jobs (every 5 min) |
 | GET/POST | `/api/internal/cron/dms-scan` | `CRON_SECRET` | Enqueue **one** idempotent `dms.scan` job (hourly; `idempotency_key = dms.scan:{YYYY-MM-DDTHH}` — duplicate Vercel Cron / `pg_cron` triggers are no-ops). The job handler performs the scan and enqueues per-switch transition jobs; its SUCCEEDED `finished_at` is the scheduler heartbeat used by the health check |
-| GET/POST | `/api/internal/cron/housekeeping` | `CRON_SECRET` | Expiry/timeout sweeps, quarantine cleanup, retention purges, deletion grace (daily) |
+| GET/POST | `/api/internal/cron/housekeeping` | `CRON_SECRET` | Expiry/timeout sweeps, abandoned-upload cleanup, retention purges, deletion grace (daily) |
 | GET | `/api/v1/health` | ❌ | Public: `{ status: "ok"|"degraded" }` only. With `Authorization: Bearer $CRON_SECRET` or Super Admin session: `{ status, database, storage, jobs: { lastRunAgeSeconds }, dmsScan }` |
 
 Internal endpoints are excluded from Clerk protection in `proxy.ts`, verify

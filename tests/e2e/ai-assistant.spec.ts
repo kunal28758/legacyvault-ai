@@ -6,8 +6,8 @@ import { E2E_USERS } from "./users";
 
 /**
  * The AI Assistant against the real stack: Clerk, the application's own API,
- * the vault upload pipeline (quarantine → type check → ClamAV → private
- * storage) and the configured AI provider. Nothing is mocked — this is the
+ * the vault upload pipeline (private storage → size and type checks →
+ * promotion) and the configured AI provider. Nothing is mocked — this is the
  * production request path end to end, so it needs a configured provider key
  * and the local stack running, and skips (it does not pass) without them.
  *
@@ -141,7 +141,7 @@ test.describe("AI assistant — real provider", () => {
     await page.locator('input[type="file"]').setInputFiles(files.policy);
     const chip = page.getByRole("list", { name: "Files to send" }).getByRole("listitem");
     await expect(chip).toContainText("life-policy.pdf");
-    // Uploaded to quarantine, scanned, and promoted before it can be sent.
+    // Uploaded to private storage, checked and promoted before it can be sent.
     await expect(chip).toContainText("Ready", { timeout: 120_000 });
 
     const summary = await ask(page, "Summarize this document.");

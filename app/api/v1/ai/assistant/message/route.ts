@@ -14,8 +14,8 @@ import {
  * tab (or pressing Stop) aborts the request, which cancels the model call.
  *
  * `attachmentIds` name vault documents the user attached; the service checks
- * ownership, scan status and type for each before anything is read. A scanned
- * file may need OCR first, so the limit matches the document-analysis routes.
+ * ownership and type for each before anything is read. A scanned (image-only)
+ * PDF may need OCR first, so the limit matches the document-analysis routes.
  */
 export const maxDuration = 180;
 

@@ -1,9 +1,16 @@
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { AppUser } from "@/lib/auth/ensure-app-user";
+import { resetEnvGroupCache } from "@/lib/config/env";
 import type { TypedSupabaseClient } from "@/lib/db/server";
+import { accessDeliverHandler } from "@/lib/jobs/handlers/access-deliver";
 import { runDmsScan } from "@/lib/jobs/handlers/dms-scan";
+import type { JobRow } from "@/lib/repositories/job.repository";
 import * as jobRepository from "@/lib/repositories/job.repository";
 import { hashAccessToken, mintAccessToken } from "@/lib/security/access-token";
+import * as portal from "@/lib/services/access-portal.service";
+import * as uploadService from "@/lib/services/upload.service";
+import { BUCKETS, removeObject, uploadObjectKey } from "@/lib/storage/storage";
 
 import {
   createServiceScopedClient,
@@ -22,6 +29,19 @@ import {
  */
 const SUBJECT_A = "user_protection_alice";
 const SUBJECT_B = "user_protection_bob";
+
+// The upload service reads the caller's client from the Clerk session; here it
+// is Alice's Clerk-shaped token, so RLS applies exactly as in the app.
+const userClient = vi.hoisted(() => ({ current: null as unknown }));
+vi.mock("@/lib/db/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/db/server")>();
+  return { ...actual, createUserClient: async () => userClient.current };
+});
+// Delivery mints its token for real; only the outbound email is replaced.
+vi.mock("@/lib/email/send", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/email/send")>();
+  return { ...actual, sendAccessLinkEmail: async () => ({ providerMessageId: "msg_test" }) };
+});
 
 const available = await isLocalStackAvailable();
 let aliceId: string;
@@ -88,16 +108,20 @@ async function asset(client: TypedSupabaseClient, name: string): Promise<string>
   return data as string;
 }
 
-function scopeOf(assetId: string) {
+function scopeOf(assetId: string | null, documentIds: string[] = []) {
   return {
-    documents: [],
-    assets: [{ type: "FINANCIAL_ASSET", id: assetId }],
+    documents: documentIds,
+    assets: assetId ? [{ type: "FINANCIAL_ASSET", id: assetId }] : [],
     videos: [],
     planSections: [],
   };
 }
 
-async function configureSwitch(contactIds: string[], assetId: string): Promise<string> {
+async function configureSwitch(
+  contactIds: string[],
+  assetId: string | null,
+  documentIds: string[] = [],
+): Promise<string> {
   const { data, error } = await alice.rpc("dms_configure", {
     p_config: {
       inactivityPeriodDays: 30,
@@ -106,10 +130,37 @@ async function configureSwitch(contactIds: string[], assetId: string): Promise<s
       escalationRules: { steps: 1 },
     } as never,
     p_contact_beneficiary_ids: contactIds,
-    p_release_scope: scopeOf(assetId) as never,
+    p_release_scope: scopeOf(assetId, documentIds) as never,
   });
   if (error) throw error;
   return data as string;
+}
+
+/** Makes a switch overdue and runs the hourly scan until it releases. */
+async function driveToRelease(switchId: string): Promise<string[]> {
+  const past = new Date(Date.now() - 400 * 24 * 3_600_000).toISOString();
+  await service
+    .from("dead_man_switches")
+    .update({ last_check_in_at: past, next_check_in_at: past })
+    .eq("id", switchId);
+
+  const statuses: string[] = [];
+  for (let tick = 0; tick < 8; tick += 1) {
+    await runDmsScan(service, new Date());
+    const { data } = await service
+      .from("dead_man_switches")
+      .select("status")
+      .eq("id", switchId)
+      .single();
+    statuses.push(data!.status);
+    if (data!.status === "RELEASED") break;
+    // Each transition schedules the next action; bring it forward for the next tick.
+    await service
+      .from("dead_man_switches")
+      .update({ next_check_in_at: new Date(Date.now() - 1000).toISOString() })
+      .eq("id", switchId);
+  }
+  return statuses;
 }
 
 describe.skipIf(!available)("dead man switch", () => {
@@ -234,29 +285,7 @@ describe.skipIf(!available)("dead man switch", () => {
     const contact = await beneficiary("dms-release@example.com");
     const switchId = await configureSwitch([contact], await asset(alice, "Savings"));
 
-    // Make the schedule overdue so the scan has work to do.
-    const past = new Date(Date.now() - 400 * 24 * 3_600_000).toISOString();
-    await service
-      .from("dead_man_switches")
-      .update({ last_check_in_at: past, next_check_in_at: past })
-      .eq("id", switchId);
-
-    const statuses: string[] = [];
-    for (let tick = 0; tick < 8; tick += 1) {
-      await runDmsScan(service, new Date());
-      const { data } = await service
-        .from("dead_man_switches")
-        .select("status")
-        .eq("id", switchId)
-        .single();
-      statuses.push(data!.status);
-      if (data!.status === "RELEASED") break;
-      // Each transition schedules the next action; bring it forward for the next tick.
-      await service
-        .from("dead_man_switches")
-        .update({ next_check_in_at: new Date(Date.now() - 1000).toISOString() })
-        .eq("id", switchId);
-    }
+    const statuses = await driveToRelease(switchId);
 
     expect(statuses).toEqual([
       "REMINDER_SENT",
@@ -299,6 +328,82 @@ describe.skipIf(!available)("dead man switch", () => {
       .single();
     expect(recovered?.status).toBe("ACTIVE");
     expect(recovered?.current_escalation_step).toBe(0);
+  }, 60_000);
+
+  it("releases a freshly uploaded document and delivers it, with no scanner involved", async () => {
+    vi.stubEnv("APP_URL", "http://localhost:3000");
+    resetEnvGroupCache();
+    userClient.current = alice;
+    const owner: AppUser = {
+      id: aliceId,
+      clerkUserId: SUBJECT_A,
+      email: "alice.protection@example.com",
+      emailVerified: true,
+      name: "Alice",
+      mfaEnabled: false,
+      role: "USER",
+      onboardingCompletedAt: new Date().toISOString(),
+      deletionRequestedAt: null,
+    };
+
+    // A real upload: private bucket, size and type checks, promotion. No scan.
+    const bytes = new TextEncoder().encode("%PDF-1.7\nLetter to my family\n%%EOF\n");
+    const ticket = await uploadService.createUploadSession(
+      owner,
+      {
+        kind: "DOCUMENT",
+        name: "letter.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: bytes.byteLength,
+      },
+      "test",
+    );
+    const put = await fetch(ticket.uploadUrl, {
+      method: "PUT",
+      headers: { "content-type": "application/pdf" },
+      body: bytes,
+    });
+    expect(put.ok).toBe(true);
+    const uploaded = await uploadService.completeUpload(owner, ticket.uploadId, {}, "test");
+    expect(uploaded.status).toBe("PROMOTED");
+    const documentId = uploaded.documentId!;
+
+    try {
+      const contact = await beneficiary("dms-document@example.com");
+      const switchId = await configureSwitch([contact], null, [documentId]);
+
+      // Release completes without waiting on anything about the file.
+      expect((await driveToRelease(switchId)).at(-1)).toBe("RELEASED");
+
+      // The queued delivery mints a token scoped to the release, document included.
+      const { data: job } = await service
+        .from("jobs")
+        .select("*")
+        .eq("type", "access.deliver")
+        .single();
+      await accessDeliverHandler(job as unknown as JobRow, service);
+      const { data: token } = await service
+        .from("access_tokens")
+        .select("id, scope, delivered_at")
+        .eq("owner_user_id", aliceId)
+        .single();
+      expect((token!.scope as { documents: string[] }).documents).toEqual([documentId]);
+      expect(token!.delivered_at).not.toBeNull();
+
+      // The contact receives exactly the uploaded bytes, through a signed link.
+      const grant = await portal.requireGrant(token!.id);
+      const access = await portal.documentDownload(grant, documentId, "test");
+      const fetched = await fetch(access.url);
+      expect(fetched.ok).toBe(true);
+      expect(new Uint8Array(await fetched.arrayBuffer())).toEqual(bytes);
+    } finally {
+      vi.unstubAllEnvs();
+      resetEnvGroupCache();
+      // Its version row references Alice, which would stop the next run from
+      // re-creating her in `beforeAll`.
+      await service.from("documents").delete().eq("id", documentId);
+      await removeObject(BUCKETS.documents, uploadObjectKey(aliceId, ticket.uploadId));
+    }
   }, 60_000);
 });
 

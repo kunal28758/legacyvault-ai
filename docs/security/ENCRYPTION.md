@@ -21,7 +21,7 @@ T230, T240.
 |---|---|---|---|
 | In transit | TLS 1.2+ (Vercel, Supabase, Clerk, provider APIs) | all traffic (FR-Q004) | platform-provided |
 | Database disks | Supabase provider encryption at rest | every table | platform-provided |
-| Storage objects | Supabase Storage provider encryption at rest (AES-256), private buckets, signed URLs | documents, videos, quarantine objects (FR-H004, FR-K003) | platform-provided (ADR-005 § 4) |
+| Storage objects | Supabase Storage provider encryption at rest (AES-256), private buckets, signed URLs | documents and videos (FR-H004, FR-K003) | platform-provided (ADR-005 § 4) |
 | Application field encryption | AES-256-GCM in `lib/security/encryption.ts` (Node.js `crypto`), applied in the repository layer | the fields listed in § 2 | 📋 T020 |
 | Access cookie | AES-GCM with a dedicated key (`ACCESS_COOKIE_KEY`) over `{ tokenId, exp }` | external-recipient access sessions | 📋 T230 (ADR-014) |
 | Application-layer envelope encryption of file bodies | per-object data key wrapped by an app master key | documents (≤ 50 MB) | ⏸️ **deferred** (ADR-013) |

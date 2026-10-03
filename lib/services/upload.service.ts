@@ -10,7 +10,6 @@ import * as documentRepository from "@/lib/repositories/document.repository";
 import * as folderRepository from "@/lib/repositories/folder.repository";
 import * as uploadRepository from "@/lib/repositories/upload.repository";
 import type { UploadStatus } from "@/lib/repositories/upload.repository";
-import { SCAN_ERROR_MESSAGES, scanObject, scannerProvider } from "@/lib/services/malware-scanner";
 import {
   magicBytesMatch,
   maxBytesFor,
@@ -18,31 +17,33 @@ import {
   type UploadKind,
 } from "@/lib/security/file-validation";
 import {
-  BUCKETS,
   createSignedUploadUrl,
-  moveObject,
-  permanentKey,
-  quarantineKey,
   readObjectHead,
   removeObject,
   statObject,
+  uploadBucketFor,
+  uploadObjectKey,
 } from "@/lib/storage/storage";
-import type { ScanInfo, UploadOutcome, UploadTicket } from "@/lib/types/document";
+import type { UploadOutcome, UploadTicket } from "@/lib/types/document";
 import type { UploadCompleteBody, UploadSessionBody } from "@/lib/validators/document.validators";
 
 /**
  * Two-step upload (ADR-005, FR-H002/H003).
  *
  *   1. `createUploadSession` validates what the browser *claims*, records a
- *      session and hands back a signed URL into the private quarantine bucket.
- *      The key is derived from the owner id and the session id, so the browser
- *      never chooses a path.
+ *      session and hands back a signed URL straight into the private bucket
+ *      for the upload's kind (`documents` or `videos`). The key is derived
+ *      from the owner id and the session id, so the browser never chooses a
+ *      path, and the bucket's own size limit and MIME allow-list apply to the
+ *      bytes it sends.
  *   2. `completeUpload` measures what actually arrived — real size, leading
- *      bytes — runs the malware-scan boundary, and only then moves the object
- *      into its permanent bucket and calls `promote_upload()`.
+ *      bytes — and only then calls `promote_upload()`, which creates the row
+ *      that makes the object reachable.
  *
- * Nothing exists as a Document until step 2 succeeds, and a rejected object is
- * deleted from quarantine rather than left behind.
+ * No malware scanner runs, and nothing claims one did: promoted rows record
+ * `scan_status = NOT_SCANNED`. Nothing exists as a Document until step 2
+ * succeeds — an object with no row behind it cannot be downloaded, shared or
+ * released — and a rejected object is deleted rather than left behind.
  */
 const SESSION_TTL_MINUTES = 60;
 
@@ -92,8 +93,8 @@ export async function createUploadSession(
   });
 
   const upload = await createSignedUploadUrl(
-    BUCKETS.quarantine,
-    quarantineKey(user.id, session.id),
+    uploadBucketFor(kind),
+    uploadObjectKey(user.id, session.id),
   );
 
   await audit.log({
@@ -120,14 +121,15 @@ export async function createUploadSession(
 /** Statuses a completion request may claim the session from. */
 const CLAIMABLE: readonly UploadStatus[] = ["PENDING", "UPLOADED"];
 /** Statuses that mean a completion request is (or was) working on the session. */
-const IN_PROGRESS: readonly UploadStatus[] = ["VALIDATING", "SCANNING", "SCANNED_CLEAN"];
+const IN_PROGRESS: readonly UploadStatus[] = ["VALIDATING", "VALIDATED"];
 /**
  * A session that has sat mid-pipeline this long belongs to a request that died
- * (the longest scan is bounded well below it), so a retry may reclaim it.
+ * (completion is a size check, a few-KB read and one database call, and the
+ * route is capped at 60 s), so a retry may reclaim it.
  */
-export const STALE_IN_PROGRESS_MS = 6 * 60_000;
+export const STALE_IN_PROGRESS_MS = 2 * 60_000;
 
-const RETRY_HINT = "Your file is held securely in quarantine — try again.";
+const RETRY_HINT = "Your file is held privately and has not been added to your vault — try again.";
 
 function isStale(updatedAt: string, now = Date.now()): boolean {
   return now - Date.parse(updatedAt) > STALE_IN_PROGRESS_MS;
@@ -155,21 +157,23 @@ export async function completeUpload(
   // Narrowed once here so the pipeline below, a nested function, can use it.
   const row = session;
   const kind = session.kind as UploadKind;
-  const quarantined = { bucket: BUCKETS.quarantine, key: quarantineKey(user.id, uploadId) };
+  const object = { bucket: uploadBucketFor(kind), key: uploadObjectKey(user.id, uploadId) };
 
   if (session.status === "EXPIRED" || new Date(session.expires_at).getTime() < Date.now()) {
-    await uploadRepository.transition(
+    const closed = await uploadRepository.transition(
       service,
       uploadId,
       [...CLAIMABLE, ...IN_PROGRESS],
       "EXPIRED",
-      {
-        rejectionReason: "The upload window expired.",
-      },
+      { rejectionReason: "The upload window expired." },
     );
-    await removeObject(quarantined.bucket, quarantined.key).catch((cause: unknown) =>
-      logger.warn({ err: cause, uploadId }, "expired upload cleanup skipped"),
-    );
+    // Only the request that closed the session removes its object, so a late
+    // request can never delete bytes another one has just promoted.
+    if (closed) {
+      await removeObject(object.bucket, object.key).catch((cause: unknown) =>
+        logger.warn({ err: cause, uploadId }, "expired upload cleanup skipped"),
+      );
+    }
     throw ApiError.conflict("CONFLICT", "This upload expired. Start a new one.");
   }
 
@@ -186,23 +190,28 @@ export async function completeUpload(
       uploadId,
       status: session.status,
       rejectionReason: null,
-      scan: { status: "PENDING", performed: false, provider: null, scannedAt: null },
       retryable: false,
       inProgress: true,
     };
   }
 
-  const reject = async (
-    reason: string,
-    scan: ScanInfo = { status: "ERROR", performed: false, provider: null, scannedAt: null },
-  ): Promise<UploadOutcome> => {
-    await uploadRepository.transition(service, uploadId, IN_PROGRESS, "REJECTED", {
-      rejectionReason: reason,
-    });
-    // A rejected object must not linger in quarantine.
-    await removeObject(quarantined.bucket, quarantined.key).catch((cause: unknown) =>
-      logger.error({ err: cause, uploadId }, "failed to remove rejected upload"),
+  const reject = async (reason: string): Promise<UploadOutcome> => {
+    const stillOurs = await uploadRepository.transition(
+      service,
+      uploadId,
+      IN_PROGRESS,
+      "REJECTED",
+      {
+        rejectionReason: reason,
+      },
     );
+    // A rejected object never becomes a document, so it is not kept — unless
+    // another request has taken the session over, in which case it decides.
+    if (stillOurs) {
+      await removeObject(object.bucket, object.key).catch((cause: unknown) =>
+        logger.error({ err: cause, uploadId }, "failed to remove rejected upload"),
+      );
+    }
     await audit.log({
       actorId: user.id,
       actorRole: user.role,
@@ -217,7 +226,6 @@ export async function completeUpload(
       uploadId,
       status: "REJECTED",
       rejectionReason: reason,
-      scan,
       retryable: false,
       inProgress: false,
     };
@@ -227,10 +235,10 @@ export async function completeUpload(
     return await runPipeline();
   } catch (cause) {
     // Anything unexpected hands the session back as retryable rather than
-    // leaving it mid-pipeline. The file stays in quarantine, unpromoted.
+    // leaving it mid-pipeline. The object stays where it is, unpromoted.
     await uploadRepository
       .transition(service, uploadId, IN_PROGRESS, "UPLOADED", {
-        rejectionReason: `Something went wrong while securing your file. ${RETRY_HINT}`,
+        rejectionReason: `Something went wrong while saving your file. ${RETRY_HINT}`,
       })
       .catch((releaseError: unknown) =>
         logger.error({ err: releaseError, uploadId }, "failed to release upload session"),
@@ -239,7 +247,7 @@ export async function completeUpload(
   }
 
   async function runPipeline(): Promise<UploadOutcome> {
-    const stat = await statObject(quarantined.bucket, quarantined.key);
+    const stat = await statObject(object.bucket, object.key);
     if (!stat || stat.sizeBytes <= 0) {
       return await reject("No file was uploaded.");
     }
@@ -249,71 +257,28 @@ export async function completeUpload(
 
     // The declared type has to match the bytes that arrived — a renamed
     // executable is caught here, not by trusting the browser's Content-Type.
-    const head = await readObjectHead(quarantined.bucket, quarantined.key);
+    const head = await readObjectHead(object.bucket, object.key);
     if (!magicBytesMatch(kind, row.declared_mime_type, head)) {
       return await reject("The file contents do not match the declared file type.");
     }
 
-    await uploadRepository.setStatus(service, uploadId, "SCANNING");
-    const scan = await scanObject({
-      bucket: quarantined.bucket,
-      key: quarantined.key,
-      sizeBytes: stat.sizeBytes,
-      mimeType: row.declared_mime_type,
-    });
-
-    if (scan.verdict === "INFECTED") {
-      return await reject("The file was rejected by the malware scanner.", {
-        status: "INFECTED",
-        performed: true,
-        provider: scan.provider,
-        scannedAt: scan.scannedAt,
-      });
-    }
-    if (scan.verdict === "ERROR") {
-      const reason = SCAN_ERROR_MESSAGES[scan.errorReason ?? "UNAVAILABLE"];
-      // A file too large for the scanner will never pass; anything else
-      // (scanner down, timeout) is worth retrying. Never treated as clean.
-      if (scan.errorReason === "SIZE_LIMIT") return await reject(reason);
-
-      await uploadRepository.transition(service, uploadId, IN_PROGRESS, "UPLOADED", {
-        rejectionReason: `${reason} ${RETRY_HINT}`,
-      });
-      await audit.log({
-        actorId: user.id,
-        actorRole: user.role,
-        action: "upload.scan_failed",
-        resourceType: "upload_session",
-        resourceId: uploadId,
-        outcome: "FAILURE",
-        metadata: { reason: scan.errorReason ?? "UNAVAILABLE", kind: row.kind },
-        correlationId,
-      });
+    // `promote_upload()` accepts only a VALIDATED session. Moving there is a
+    // compare-and-set too, so a request that lost its claim cannot promote.
+    const validated = await uploadRepository.transition(
+      service,
+      uploadId,
+      ["VALIDATING"],
+      "VALIDATED",
+    );
+    if (!validated) {
       return {
         uploadId,
-        status: "UPLOADED",
-        rejectionReason: `${reason} ${RETRY_HINT}`,
-        scan: { status: "ERROR", performed: false, provider: scan.provider, scannedAt: null },
-        retryable: true,
-        inProgress: false,
+        status: "VALIDATING",
+        rejectionReason: null,
+        retryable: false,
+        inProgress: true,
       };
     }
-
-    await uploadRepository.setStatus(service, uploadId, "SCANNED_CLEAN");
-
-    const destinationBucket = kind === "VIDEO" ? BUCKETS.videos : BUCKETS.documents;
-    const destinationKey = permanentKey(user.id, uploadId);
-    const destination = { bucket: destinationBucket, key: destinationKey };
-    await moveObject(quarantined, destination);
-
-    // Recorded on the row so the UI can say "not scanned" truthfully when the
-    // environment has no scanner configured (ADR-015).
-    const scanRecord = {
-      performed: scan.performed,
-      provider: scan.provider,
-      scannedAt: scan.scannedAt,
-      verdict: scan.verdict,
-    };
 
     const metadata =
       kind === "VIDEO"
@@ -321,28 +286,22 @@ export async function completeUpload(
             title: body.title ?? row.declared_name,
             description: body.description ?? null,
             deliveryCondition: body.deliveryCondition ?? "IMMEDIATE",
-            metadata: { scan: scanRecord },
+            metadata: {},
           }
-        : { document: { scan: scanRecord } };
+        : { document: {} };
 
     const { data, error } = await service.rpc("promote_upload", {
       p_upload_id: uploadId,
       p_target: {
-        bucket: destinationBucket,
-        key: destinationKey,
+        bucket: object.bucket,
+        key: object.key,
         mimeType: row.declared_mime_type,
         sizeBytes: stat.sizeBytes,
       } as never,
       p_metadata: metadata as never,
     });
-    if (error) {
-      // Put the bytes back where a retry expects them, so a failed promotion
-      // never leaves an object in the vault with no row pointing at it.
-      await moveObject(destination, quarantined).catch((cause: unknown) =>
-        logger.error({ err: cause, uploadId }, "failed to return object to quarantine"),
-      );
-      throw error;
-    }
+    // The object stays at its key either way; a retry finds it there.
+    if (error) throw error;
 
     const resourceId = data as string;
     await audit.log({
@@ -356,24 +315,14 @@ export async function completeUpload(
         uploadId,
         sizeBytes: stat.sizeBytes,
         mimeType: row.declared_mime_type,
-        scanPerformed: scan.performed,
-        scanProvider: scan.provider,
       },
       correlationId,
     });
-
-    const scanInfo: ScanInfo = {
-      status: "CLEAN",
-      performed: scan.performed,
-      provider: scan.provider,
-      scannedAt: scan.scannedAt,
-    };
 
     return {
       uploadId,
       status: "PROMOTED",
       rejectionReason: null,
-      scan: scanInfo,
       retryable: false,
       inProgress: false,
       ...(kind === "VIDEO" ? { videoId: resourceId } : { documentId: resourceId }),
@@ -383,16 +332,15 @@ export async function completeUpload(
 
 /**
  * The session as it stands, for a browser that lost its connection mid-upload
- * or is waiting on another request's scan. A session abandoned mid-pipeline is
- * reported as retryable rather than as "still scanning", so no screen can show
- * an endless spinner.
+ * or is waiting on another request's completion. A session abandoned
+ * mid-pipeline is reported as retryable rather than as still in progress, so no
+ * screen can show an endless spinner.
  */
 export async function getUploadStatus(user: AppUser, uploadId: string): Promise<UploadOutcome> {
   const db = await createUserClient();
   const session = await uploadRepository.findById(db, user.id, uploadId);
   if (!session) throw ApiError.notFound();
 
-  const provider = scannerProvider();
   const expired =
     session.status === "EXPIRED" ||
     (session.status !== "PROMOTED" &&
@@ -409,17 +357,6 @@ export async function getUploadStatus(user: AppUser, uploadId: string): Promise<
       : stale
         ? `The previous attempt stopped before finishing. ${RETRY_HINT}`
         : session.rejection_reason,
-    scan: {
-      status:
-        session.status === "PROMOTED"
-          ? "CLEAN"
-          : session.status === "UPLOADED" && session.rejection_reason
-            ? "ERROR"
-            : "PENDING",
-      performed: provider !== "noop" && session.status === "PROMOTED",
-      provider,
-      scannedAt: null,
-    },
     retryable: !expired && (stale || session.status === "UPLOADED" || session.status === "PENDING"),
     inProgress: inProgress && !stale,
   };

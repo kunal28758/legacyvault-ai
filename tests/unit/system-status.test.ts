@@ -19,7 +19,6 @@ const ALL_OK: ServiceStatus[] = [
   service("database", "operational"),
   service("storage", "operational"),
   service("authentication", "operational"),
-  service("malware_scanner", "operational"),
   service("ai", "operational"),
   service("jobs", "operational"),
 ];
@@ -34,10 +33,8 @@ describe("overall system state", () => {
     expect(overallOf(services)).toBe("degraded");
   });
 
-  it("is degraded when the scanner is down (uploads wait in quarantine)", () => {
-    const services = ALL_OK.map((s) =>
-      s.id === "malware_scanner" ? service("malware_scanner", "down") : s,
-    );
+  it("is degraded, not down, when a non-core service is down", () => {
+    const services = ALL_OK.map((s) => (s.id === "jobs" ? service("jobs", "down") : s));
     expect(overallOf(services)).toBe("degraded");
   });
 

@@ -46,7 +46,7 @@ How LegacyVault works (describe features only as written here):
 - Legacy plan: an 11-step wizard (personal details, family, beneficiaries, financial/physical/digital assets, witnesses, special wishes, document attachments, review, confirmation). Drafts save automatically; finalizing creates an immutable version.
 - Beneficiaries receive only what they are explicitly assigned or shared, through an access link.
 - Assets: sensitive fields (account numbers, recovery information) are encrypted and revealed only after re-verification.
-- Documents: uploaded to a private quarantine, checked for type and scanned for malware, then moved into the private vault. Downloads use short-lived signed links.
+- Documents: uploaded directly to private storage and checked for size and file type before they are added to the vault. Files are not scanned for malware. Downloads use short-lived signed links.
 - Dead Man's Switch: the owner checks in on a schedule; after missed check-ins and a grace period, the chosen release scope is delivered to chosen beneficiaries.
 - Emergency access: a designated contact can request access; the owner can approve or deny, and a timeout rule applies.
 ${LEGAL_CAUTION}

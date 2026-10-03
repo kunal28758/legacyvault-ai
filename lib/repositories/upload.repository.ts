@@ -9,9 +9,10 @@ import type { Database } from "@/lib/types/database";
  * `upload_sessions` is Class C with SELECT-own: the owner can read their own
  * sessions, but every write goes through the service client from the upload
  * service, which has already proven ownership. That keeps the status machine
- * (PENDING → VALIDATING → SCANNING → SCANNED_CLEAN → PROMOTED, or REJECTED /
- * EXPIRED; UPLOADED marks a file held in quarantine awaiting a retry) out of
- * the browser's reach entirely.
+ * (PENDING → VALIDATING → VALIDATED → PROMOTED, or REJECTED / EXPIRED; UPLOADED
+ * marks bytes held privately, unpromoted, awaiting a retry) out of the
+ * browser's reach entirely. SCANNING and SCANNED_CLEAN belong to the retired
+ * malware-scanning pipeline and are never set (migration 0006).
  */
 export type UploadSessionRow = Database["public"]["Tables"]["upload_sessions"]["Row"];
 export type UploadStatus = Database["public"]["Enums"]["upload_status"];

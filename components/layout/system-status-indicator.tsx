@@ -166,8 +166,8 @@ export function SystemStatusIndicator({
           </ul>
         ) : data ? (
           <p className="mt-3 text-xs leading-5 text-muted-foreground">
-            Sign in to see the status of each service — database, storage, authentication, malware
-            scanning and AI.
+            Sign in to see the status of each service — database, storage, authentication, AI and
+            background jobs.
           </p>
         ) : null}
 

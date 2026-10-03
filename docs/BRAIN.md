@@ -18,7 +18,10 @@
 > the provider interface, and CI exists. For what is true **right now**, read
 > [`PROJECT_STATUS.md`](./PROJECT_STATUS.md) (the authoritative current-state
 > doc) and [`ARCHITECTURE.md`](./ARCHITECTURE.md) (the code map). The identity,
-> scope and architecture-decision context below remains valid.
+> scope and architecture-decision context below remains valid, except that
+> **malware scanning was removed on 2026-10-04** (ADR-017, constitution
+> 3.0.0): every mention below of ClamAV, a quarantine bucket or scan-gated
+> promotion is historical.
 >
 > **Status Legend**:
 > ✅ Completed | 🔧 In Progress | 📋 Planned | ⬜ Not Started | 🔍 Needs Review | ⏸️ Deferred

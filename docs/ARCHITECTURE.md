@@ -61,11 +61,11 @@ data call services, and client components call the API.
 | Backend / server code | `app/api/**` (route handlers) and server-only `lib/**` |
 | Business logic | `lib/services/` (domain services; AI services in `lib/services/ai/`) |
 | Database code | `lib/repositories/` (queries), `lib/db/server.ts` (the two Supabase clients), `supabase/migrations/` (schema, RLS, guarded functions) |
-| Storage code | `lib/storage/storage.ts` (private buckets, signed URLs); upload pipeline in `lib/services/upload.service.ts`; malware scanning in `lib/services/malware-scanner.ts` |
+| Storage code | `lib/storage/storage.ts` (private buckets, signed URLs); upload pipeline in `lib/services/upload.service.ts` |
 | AI server logic | `lib/ai/` — `provider.ts` (interface), `providers/` (OpenAI, Gemini), `index.ts` (factory + fallback), `prompts.ts` (versioned), `grounding.ts`, `documents/extract-text.ts`; orchestration in `lib/services/ai/` |
 | Browser AI UI | `components/ai/` (chat, document AI viewer, safe Markdown), page at `app/(dashboard)/ai/`, hooks in `hooks/use-ai.ts` |
 | Shared types | `lib/types/` (view models), `lib/validators/` (Zod schemas used on both sides), `lib/types/database.ts` (generated) |
-| Tests | `tests/unit/` (jsdom, fast), `tests/security/` (static boundary checks), `tests/integration/` (real local Supabase + ClamAV), `tests/e2e/` (Playwright + Clerk testing tokens), shared helpers in `tests/helpers/` |
+| Tests | `tests/unit/` (jsdom, fast), `tests/security/` (static boundary checks), `tests/integration/` (real local Supabase), `tests/e2e/` (Playwright + Clerk testing tokens), shared helpers in `tests/helpers/` |
 | Static assets | `public/` (currently none are needed: the hero is procedural 3D and the favicon is `app/favicon.ico`); styles in `app/globals.css` and `styles/` |
 | Migrations | `supabase/migrations/NNNN_*.sql` — append-only; never edit an applied migration |
 | Scripts | `scripts/` (`check-env.ts`, `seed-admin.ts`) |
@@ -87,14 +87,17 @@ App Router idiom for code that belongs to exactly one page.
 
 ## 4. Key subsystems
 
-### Uploads and malware scanning (ADR-005, ADR-015)
-`PENDING → VALIDATING → SCANNING → SCANNED_CLEAN → PROMOTED`, or `REJECTED` /
-`EXPIRED`; `UPLOADED` marks a file held in quarantine after a scan could not
-run, awaiting a retry. A completion claims the session atomically
+### Uploads (ADR-005, ADR-017)
+The browser PUTs straight to the private `documents` or `videos` bucket at a
+server-derived key; `complete` checks the real size and leading bytes, then
+`promote_upload()` creates the row. There is no malware scanner: promoted rows
+record `scan_status = NOT_SCANNED`, and no screen claims a scan.
+`PENDING → VALIDATING → VALIDATED → PROMOTED`, or `REJECTED` / `EXPIRED`;
+`UPLOADED` marks bytes held privately, unpromoted, after a completion failed
+unexpectedly, awaiting a retry. A completion claims the session atomically
 (compare-and-set), so concurrent completions promote once. Every step is
-bounded (object head read 15 s, scan 30 s + 1 s/MB ≤ 270 s, clamd connect 5 s),
-a scanner failure is never treated as clean, and a session silent for six
-minutes can be reclaimed. The accepted types are defined once in
+bounded (object head read 15 s, route limit 60 s), a rejected file's bytes are
+deleted, and a session silent for two minutes can be reclaimed. The accepted types are defined once in
 `lib/uploads/file-types.ts` and enforced by the browser pre-check, the server
 declaration check, the magic-byte check and the bucket allow-list. The Dead
 Man's Switch uses the same dialog and pipeline.
@@ -120,10 +123,10 @@ carry no content.
 
 Files attached in the assistant are not a second upload path: the composer
 (`components/ai/chat-attachments.tsx`) runs the vault's own two-step upload,
-so each file is quarantined, type-checked, ClamAV-scanned and promoted to a
+so each file is stored privately, size- and type-checked and promoted to a
 private vault document before it can be sent. A message carries only document
 ids; `loadAssistantAttachments()` re-checks each through RLS (owner, not
-deleted, `CLEAN`, AI-readable type) and then reads it server-side — text
+deleted, AI-readable type) and then reads it server-side — text
 through the same extraction/OCR path as document intelligence, images inline
 to the model. Extra attachments are charged to the `ai` rate limit.
 
@@ -143,8 +146,8 @@ vendor's 429 to tell a per-minute limit from a daily one. A stream that fails
 after its first token is reported as `INTERRUPTED`, never retried or replayed.
 
 ### System status
-`GET /api/v1/system-status` probes the database, storage, Clerk, ClamAV (PING)
-and the AI provider for real, caches for 30 s, and returns only the overall
+`GET /api/v1/system-status` probes the database, storage, Clerk, the AI
+provider and the scheduled-job heartbeat for real, caches for 30 s, and returns only the overall
 state to anonymous callers. `components/layout/system-status-indicator.tsx`
 shows it in the site navbar and the app shell.
 

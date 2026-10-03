@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { motion, useScroll, useTransform } from "framer-motion";
-import { ArrowRight, Bot, FileLock2, Fingerprint, Lock, ScanLine, Sparkles } from "lucide-react";
+import { ArrowRight, Bot, FileLock2, Fingerprint, Lock, Sparkles } from "lucide-react";
 import gsap from "gsap";
 
 import { VaultVisual } from "@/components/landing/vault-visual";
@@ -16,7 +16,7 @@ const HEADLINE = ["Secure", "Your", "Legacy", "Forever"];
 /** Every claim here describes a control that exists in the product today. */
 const TRUST = [
   { icon: Lock, label: "AES-256-GCM encrypted secrets" },
-  { icon: ScanLine, label: "Malware-scanned private vault" },
+  { icon: FileLock2, label: "Private, type-checked document vault" },
   { icon: Fingerprint, label: "Re-verified, audited access" },
 ];
 

@@ -1,5 +1,22 @@
 <!--
 SYNC IMPACT REPORT
+Version change: 2.0.1 → 3.0.0
+Amendment date: 2026-10-04
+Proposal / rationale: docs/ARCHITECTURE_DECISIONS.md ADR-017 (supersedes
+  ADR-015) — owner decision to remove malware scanning.
+Bump rationale: MAJOR — a requirement is REMOVED from Principle XI.
+Modified principles:
+  - XI. API and Web Security — REMOVED: "MUST integrate malware-scanning hooks
+    for production file-processing workflows". File type, size, extension and
+    content (magic-byte) validation remains mandatory.
+  - Technology Stack table — object storage flow "quarantine → promote" →
+    "validate → promote".
+Impact reviewed: uploads go straight to private buckets and are promoted only
+  after validation; nothing may claim a file was scanned; FR-H016 / FR-Q011
+  are recorded as not met (docs/product/REQUIREMENTS_TRACEABILITY.md).
+Unchanged: every other principle and section.
+
+---- Report for 2.0.1 ----
 Version change: 2.0.0 → 2.0.1 (same day)
 Bump rationale: PATCH — clarification only. Principle IX wording "all frontend
   and backend code" → "all application code (presentation and server-side)" to
@@ -255,8 +272,6 @@ APIs MUST be protected against common web attack vectors.
   and public-facing APIs.
 - MUST validate file type, size, extension, and content (magic bytes) before
   processing uploads.
-- MUST integrate malware-scanning hooks for production file-processing
-  workflows.
 - MUST protect against brute-force attacks on login, password reset, and
   verification endpoints.
 
@@ -418,7 +433,7 @@ Baseline (v1) stack. Rationale and alternatives for each row are recorded in
 | Authentication        | Clerk (sole application auth provider: sessions, MFA, reverification)        | 003 |
 | Authorization         | Server-side service-layer checks (primary) + PostgreSQL RLS (defense-in-depth) | 004 |
 | Database              | PostgreSQL (Supabase-managed), SQL migrations via Supabase CLI, no ORM       | 002 |
-| Object storage        | Supabase Storage, private buckets, signed URLs, quarantine → promote flow    | 005 |
+| Object storage        | Supabase Storage, private buckets, signed URLs, validate → promote flow      | 005 |
 | Background processing | PostgreSQL job table + Vercel Cron (+ `pg_cron` redundancy); no Redis/BullMQ | 006 |
 | Rate limiting         | Clerk attack protection + Vercel WAF + Postgres-backed app limiter           | 007 |
 | AI                    | OpenAI, Google Gemini via in-house provider abstraction; structured outputs  | 008 |
@@ -486,4 +501,4 @@ comply with these principles.
   read and comply with this constitution before making changes. Agents MUST NOT
   introduce code that violates these principles.
 
-**Version**: 2.0.1 | **Ratified**: 2026-09-16 | **Last Amended**: 2026-09-18
+**Version**: 3.0.0 | **Ratified**: 2026-09-16 | **Last Amended**: 2026-10-04

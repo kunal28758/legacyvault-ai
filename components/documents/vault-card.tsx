@@ -1,8 +1,7 @@
 "use client";
 
-import { FileImage, FileText, FlaskConical, Lock, MoreHorizontal, Share2 } from "lucide-react";
+import { FileImage, FileText, Lock, MoreHorizontal, Share2 } from "lucide-react";
 
-import { StatusBadge, toneForScanStatus } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import type { DocumentSummary } from "@/lib/types/document";
@@ -36,7 +35,7 @@ interface VaultCardProps {
   className?: string;
 }
 
-/** Document tile for the vault grid: type, size, scan status, sharing and privacy indicator. */
+/** Document tile for the vault grid: type, size, sharing and privacy indicator. */
 export function VaultCard({
   document,
   folderName,
@@ -45,7 +44,6 @@ export function VaultCard({
   menu,
   className,
 }: VaultCardProps) {
-  const scan = toneForScanStatus(document.scan.status);
   return (
     <Card
       className={cn(
@@ -83,18 +81,6 @@ export function VaultCard({
           )}
         </div>
         <div className="mt-auto flex flex-wrap items-center gap-2">
-          <StatusBadge
-            tone={scan.tone}
-            pulse={document.scan.status === "PENDING"}
-            className="h-5 text-[11px]"
-          >
-            {scan.label}
-          </StatusBadge>
-          {!document.scan.performed && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-warning/30 bg-warning/10 px-2 py-0.5 text-[11px] font-medium text-warning">
-              <FlaskConical className="size-3" aria-hidden /> Not scanned
-            </span>
-          )}
           <span className="ml-auto flex items-center gap-2 text-[11px] text-muted-foreground">
             {sharedCount > 0 && (
               <span className="flex items-center gap-1">

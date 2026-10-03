@@ -42,8 +42,8 @@ const REQUIRED_LOCALLY: { group: ServerEnvGroupName; why: string }[] = [
 /**
  * Everything else: each one gates a feature and is reported, not enforced.
  * `configured` tells a group that merely validates (every variable optional)
- * apart from one that is actually set up — an empty Sentry DSN or the no-op
- * scanner must not be reported as working.
+ * apart from one that is actually set up — an empty Sentry DSN must not be
+ * reported as working.
  */
 const OPTIONAL_LOCALLY: {
   group: ServerEnvGroupName;
@@ -71,12 +71,6 @@ const OPTIONAL_LOCALLY: {
     feature: "Sentry",
     without: "errors are logged locally only",
     configured: (values) => Boolean(values.SENTRY_DSN),
-  },
-  {
-    group: "malwareScanner",
-    feature: "malware scanning",
-    without: "uploads record `performed: false` (production refuses this)",
-    configured: (values) => values.MALWARE_SCANNER_PROVIDER === "clamav",
   },
   {
     group: "operations",
@@ -115,7 +109,7 @@ let failed = false;
 
 if (strict) {
   // "Is this deployable?" is a production question, so the production-only
-  // rules (Sentry DSN, an AI key, a real malware scanner) are always applied.
+  // rules (Sentry DSN, an AI key) are always applied.
   const server = validateServerEnv({ ...process.env, NODE_ENV: "production" });
   if (server.ok) {
     console.log("✔ server environment valid for production (full schema)");

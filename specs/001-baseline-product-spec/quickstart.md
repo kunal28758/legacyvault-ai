@@ -161,7 +161,7 @@ curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/internal/
 1. Upload a valid PDF (< 50 MB) → POST /documents/uploads returns a signed URL;
    browser PUTs the file; POST …/complete → expect PROMOTED, document listed
 2. Upload an .exe renamed to .pdf → complete step rejects (FILE_TYPE_MISMATCH,
-   magic bytes); object never leaves `quarantine`
+   magic bytes); the object is deleted and never promoted
 3. Declare a 60 MB file → POST /documents/uploads rejects (FILE_TOO_LARGE);
    also verify a 60 MB object uploaded against a session declared smaller is
    rejected at complete

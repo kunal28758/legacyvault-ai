@@ -5,8 +5,8 @@ one uses, which tools are required, and which **categories** of configuration
 they need. Configuration is listed by **variable name only** — this document
 never contains values, keys, tokens, passwords or connection strings.
 
-**Canonical sources**: ADR-011 (deployment), ADR-006 (cron), ADR-015 (malware
-scanning), `plan.md` § Technical Context and § Phase 13, tasks T007 (env
+**Canonical sources**: ADR-011 (deployment), ADR-006 (cron), ADR-017 (no
+malware scanning), `plan.md` § Technical Context and § Phase 13, tasks T007 (env
 schema), T015/T016 (test/CI), T193 (cron), T194–T196 (Supabase/Clerk
 checklists), T202 (`docs/DEPLOYMENT.md`), T210 (prerequisites), T238 (CD).
 
@@ -28,9 +28,8 @@ written when environments are provisioned.
 | **Staging** | Pre-production validation | Vercel deployment from the main branch | Supabase staging project | Clerk development instance | Vercel Cron | No production data (constitution II, NFR-PRV-002) |
 | **Production** | Live service | Vercel production deployment behind manual approval | Supabase production project (PITR enabled) | Clerk **production** instance | Vercel Cron **plus** Supabase `pg_cron` + `pg_net` redundant trigger (T211) | Real data; backups + DR (NFR-DR-001/002) |
 
-Additional production service: a **ClamAV (`clamd`) endpoint** reachable from
-Vercel functions over TLS (ADR-015). Hosting location is an open owner
-decision (`docs/PROJECT_STATUS.md` § 5).
+No additional production service is needed: malware scanning (and its
+ClamAV endpoint) was removed on 2026-10-04 (ADR-017).
 
 ## 2. Required services per environment
 
@@ -38,12 +37,11 @@ decision (`docs/PROJECT_STATUS.md` § 5).
 |---|:-:|:-:|:-:|:-:|---|
 | Vercel (hosting, cron, WAF) | — | — | ✓ | ✓ | ADR-011, ADR-007 |
 | Supabase PostgreSQL | local stack / dev project | local stack | staging project | production project | ADR-002 |
-| Supabase Storage (private buckets `quarantine`, `documents`, `videos`) | ✓ | ✓ (tests) | ✓ | ✓ | ADR-005 |
+| Supabase Storage (private buckets `documents`, `videos`) | ✓ | ✓ (tests) | ✓ | ✓ | ADR-005 |
 | Clerk | dev instance | test JWTs (RLS) / dev instance (E2E) | dev instance | production instance | ADR-003 |
 | Resend (email) | console transport or Resend test mode | console transport | ✓ | ✓ | ADR-009 |
 | Sentry | optional | — | ✓ | ✓ | ADR-010 |
 | OpenAI / Google Gemini | ✓ (dev keys) | mocked | ✓ | ✓ | ADR-008 |
-| ClamAV | `noop` scanner allowed | `noop` allowed | recommended | **mandatory** (start-up refuses `noop`) | ADR-015 |
 
 ## 3. Tools
 
@@ -75,7 +73,6 @@ in `.env.example` (T008). Server variables are readable only in server code;
 | Email | `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_WEBHOOK_SECRET` | server |
 | Monitoring | `SENTRY_DSN` · public `NEXT_PUBLIC_SENTRY_DSN` | server · public |
 | Background jobs | `CRON_SECRET` | server (also configured in Vercel Cron and, for production, in Supabase Vault for `pg_cron`) |
-| Malware scanning | `MALWARE_SCANNER_PROVIDER` (`noop` \| `clamav`), `CLAMAV_HOST`, `CLAMAV_PORT`, `CLAMAV_TLS` | server |
 | Application | `APP_URL`, `ADMIN_EMAIL` (first Super Admin seed), `NODE_ENV` | server |
 
 Where they live: local `.env.local` (git-ignored), Vercel project environment
@@ -92,12 +89,11 @@ secrets for CI. Never in the repository, never in documentation.
 
 ## 6. Platform prerequisites to verify before relying on them (T210)
 
-- Vercel plan supports minute-level cron and the `maxDuration` needed for job,
-  AI and scan handlers (largest video scan).
+- Vercel plan supports minute-level cron and the `maxDuration` needed for job
+  and AI handlers.
 - Supabase plan supports a ≥ 500 MB file-size limit and PITR (production).
 - Clerk plan supports inactivity timeout, session-token customization and
   reverification.
-- ClamAV endpoint reachable from Vercel functions.
 
 ## 7. Deployment expectations (ADR-011, T238)
 

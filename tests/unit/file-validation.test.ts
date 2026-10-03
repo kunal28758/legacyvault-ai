@@ -11,7 +11,7 @@ import {
 import { declaredMimeType, precheckUpload } from "@/lib/uploads/file-types";
 
 /**
- * Upload validation (FR-H002/H003, ADR-015).
+ * Upload validation (FR-H002/H003).
  *
  * These are the checks that stand between a user-supplied file and private
  * storage: what the browser claims is bounded here, and what actually arrives

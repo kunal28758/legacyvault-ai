@@ -76,7 +76,7 @@ Each encrypted column is a JSONB envelope validated by `lv_is_envelope()`:
 | Table | Purpose | Notes |
 |---|---|---|
 | `folders` | document tree | unique on `(user_id, parent_id, name)` among live rows |
-| `documents` | current version of a file | `storage_bucket` + `storage_key`; `scan_status`, `scan_provider`, `scanned_at` |
+| `documents` | current version of a file | `storage_bucket` + `storage_key`; `scan_status` (retired — `NOT_SCANNED` since 0006) |
 | `document_versions` | every prior version | its own storage key; removed with the document |
 | `document_attachments` | a document attached to a plan or asset | created by `attach_document()` |
 | `video_messages` | recorded messages | `delivery_condition` decides which grant type may ever play them |
@@ -148,8 +148,8 @@ Guarded functions raise SQLSTATEs the API maps to HTTP without leaking SQL:
 
 ## 6. Storage (migration 0004)
 
-Three **private** buckets — `quarantine` (500 MB), `documents` (50 MB),
-`videos` (500 MB). There is deliberately **no storage policy for the
+Two **private** buckets in use — `documents` (50 MB) and `videos` (500 MB);
+the retired `quarantine` bucket (0004) is kept, private and unused (0006). There is deliberately **no storage policy for the
 `authenticated` role**: the browser can neither read nor write an object
 directly, and every transfer is a short-lived signed URL minted server-side
 after the service layer has authorised it. Object keys are derived from the

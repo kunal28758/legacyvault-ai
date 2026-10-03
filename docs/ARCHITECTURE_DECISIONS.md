@@ -27,8 +27,9 @@
 | [ADR-012](#adr-012--constitution-amendment-100--200) | Constitution amendment 1.0.0 → 2.0.0 | ✅ Accepted | 2026-09-18 |
 | [ADR-013](#adr-013--application-layer-encryption-of-file-bodies) | Application-layer encryption of file bodies | ⏸️ Deferred | 2026-09-18 |
 | [ADR-014](#adr-014--unified-access-token-model-and-cookie-exchange) | Unified access-token model and cookie exchange | ✅ Accepted | 2026-09-18 |
-| [ADR-015](#adr-015--production-malware-scanning) | Production malware scanning | ✅ Accepted (hosting: owner input) | 2026-09-18 |
+| [ADR-015](#adr-015--production-malware-scanning) | Production malware scanning | ⛔ Superseded by ADR-017 | 2026-09-18 |
 | [ADR-016](#adr-016--ai-draft-persistence-and-versioning) | AI draft persistence and versioning | ✅ Accepted | 2026-09-18 |
+| [ADR-017](#adr-017--uploads-without-malware-scanning) | Uploads without malware scanning | ✅ Accepted | 2026-10-04 |
 
 > **Revision r2 (2026-09-18, post-`/speckit-analyze`)**: ADR-002 §6 and
 > ADR-004 revised (write-protection model, RLS test strategy); ADR-001 gains a
@@ -408,25 +409,29 @@ limited (≈4.5 MB), so 50 MB documents and 500 MB videos cannot be proxied
 through Route Handlers; the Next.js backend-for-frontend guide recommends
 uploading user files from the browser directly to a storage service.
 
+> **Revised 2026-10-04 (ADR-017)**: uploads now go straight to the private
+> destination bucket; there is no quarantine stage and no malware scan.
+> Items 1, 2, 5 and 8 below describe the current design.
+
 ### Decision
-1. **Supabase Storage**, private buckets only: `quarantine` (untrusted
-   inbound), `documents`, `videos`. No public buckets (FR-H005, FR-Q005).
+1. **Supabase Storage**, private buckets only: `documents`, `videos`. No
+   public buckets (FR-H005, FR-Q005). (The retired `quarantine` bucket is
+   kept, private and unused, so nothing left in it is lost.)
 2. **Two-step upload contract** (see `api-contracts.md`):
    - `POST /api/v1/documents/uploads` (or `/videos/uploads`) — server
      validates *declared* name/MIME/size against the whitelist and limits
      (**50 MB documents, 500 MB videos** — FR-H002, FR-K002), records an
      `upload_sessions` row and returns a **signed upload URL** (documents) or
-     a **resumable TUS upload target** (videos) into
-     `quarantine/{clerk_user_id}/{upload_id}`.
-   - Browser uploads directly to Storage.
+     a **resumable TUS upload target** (videos) into the destination
+     bucket at `{owner_id}/{upload_id}`.
+   - Browser uploads directly to Storage; the bucket enforces its size limit
+     and MIME allow-list.
    - `POST …/uploads/{uploadId}/complete` — server verifies the object
      exists, checks *actual* size, reads the leading bytes for **magic-byte
-     verification**, runs the **malware-scanner abstraction** (inline for
-     small files, as a job for large ones), then **promotes** the object to
-     `documents`/`videos` and creates the metadata rows + audit entries.
-     Failed validation/scan leaves the object in quarantine for deletion and
-     produces an audit event and a clear user-facing error (FR-H003, FR-H016,
-     FR-Q010, FR-Q011).
+     verification**, then **promotes** it (`promote_upload()` creates the
+     metadata rows + audit entries; the object does not move). Failed
+     validation deletes the object and produces an audit event and a clear
+     user-facing error (FR-H003, FR-Q010). No malware scan runs (ADR-017).
 3. **Downloads/previews**: never direct bucket URLs. The server authorizes
    (owner / shared beneficiary token / active emergency access), then mints a
    **signed download URL with 15-minute expiry** (configurable) and logs the
@@ -436,15 +441,17 @@ uploading user files from the browser directly to a storage service.
    FR-H004, FR-K003, FR-Q003 and constitution IV. Application-layer envelope
    encryption of file bodies is **deferred** with a documented design
    (ADR-013). Sensitive *database fields* remain application-encrypted.
-5. **Storage policies**: `storage.objects` RLS denies direct client access
-   except owner-prefixed writes to `quarantine` (needed for resumable TUS
-   uploads authenticated with the Clerk JWT); all other access is server-side.
+5. **Storage policies**: `storage.objects` RLS denies all direct client
+   access; uploads use server-minted signed URLs and every other access is
+   server-side. (The owner-prefixed `quarantine` write policy was dropped in
+   migration 0006.)
 6. **Platform prerequisite**: the Supabase project's global file-size limit
    must be raised to ≥ 500 MB (Pro plan feature) before video upload work;
    the free tier caps files at 50 MB. Tracked in Phase 0/13 tasks.
 7. Metadata (name, type, size, upload date, last modified, uploader,
    versions, folder, custom JSONB) lives in Postgres (FR-H007, FR-H010).
-8. Housekeeping deletes stale quarantine objects and expired upload sessions.
+8. Housekeeping expires abandoned upload sessions and deletes their
+   unpromoted objects — never an object a row points at.
 
 ### Requirements preserved
 FR-H001–H017, FR-K001–K008, FR-Q005, FR-Q010, FR-Q011, constitution IV & XI.
@@ -476,8 +483,7 @@ retries and AI jobs. The owner directed that Redis/BullMQ not be added merely
 because the old plan mentioned it, and that the simplest reliable design be
 used. The workloads are: scheduled DMS scans (hourly granularity), escalation
 timers (hours/days), notification delivery with retry, AI document analysis
-(seconds to a few minutes), video validation/scanning, malware scanning,
-housekeeping sweeps. None needs sub-second latency or a long-lived process.
+(seconds to a few minutes), video validation, housekeeping sweeps. None needs sub-second latency or a long-lived process.
 
 ### Decision
 1. **Durable job table in PostgreSQL** (`jobs`: type, payload JSONB, status
@@ -500,7 +506,7 @@ housekeeping sweeps. None needs sub-second latency or a long-lived process.
      deadlines have passed, enqueues per-switch idempotent transition jobs and
      completes — the runner records its `finished_at`
    - `housekeeping` daily (token expiry, emergency-access expiry/auto-grant
-     sweeps, notification retry sweep, quarantine cleanup, deletion
+     sweeps, notification retry sweep, abandoned-upload cleanup, deletion
      grace-period processing, prune old succeeded jobs)
    Endpoints require `Authorization: Bearer $CRON_SECRET`.
 4. **Availability safeguard for the Dead Man Switch (NFR-AVL-002)**: a health
@@ -710,6 +716,10 @@ Removing Express.js from a principle is a **removal/redefinition** → MAJOR →
 code" → "all application code (presentation and server-side)". No
 requirement changed; recorded in the constitution's sync-impact report.
 
+### Later amendment
+**3.0.0** (2026-10-04, MAJOR): the malware-scanning requirement is removed
+from Principle XI — see ADR-017.
+
 ---
 
 ## ADR-013 — Application-layer encryption of file bodies
@@ -725,8 +735,8 @@ protect file bodies even against compromise of the storage platform
 credentials.
 
 ### Design (ready to activate)
-Encrypt in the `complete` step (server streams quarantine object → AES-256-GCM
-→ `documents` bucket); serve via an app-signed, time-limited download route
+Encrypt in the `complete` step (server streams the uploaded object →
+AES-256-GCM → its encrypted replacement in the `documents` bucket); serve via an app-signed, time-limited download route
 that decrypts and streams; record `encryption_mode = 'APP_ENVELOPE'` and
 `encryption_key_id`. Constraints: feasible for ≤ 50 MB documents within
 serverless limits; **not** feasible for 500 MB videos in a serverless
@@ -871,8 +881,9 @@ FR-J007–J010, FR-K005–K008; constitution I, III, VII, XII.
 
 ## ADR-015 — Production malware scanning
 
-**Status**: ✅ Accepted — 2026-09-18 (finding S4). **Hosting choice requires
-owner input** (see Consequences).
+**Status**: ⛔ Superseded by [ADR-017](#adr-017--uploads-without-malware-scanning)
+on 2026-10-04 — kept for history. Originally accepted 2026-09-18 (finding S4);
+no ClamAV host was ever provisioned, and the code below no longer exists.
 
 ### Context
 FR-H016 / FR-Q011 require malware-scanning hooks for production
@@ -959,3 +970,60 @@ FR-M001–M014, FR-N001–N008, FR-R006–R007, constitution V, VI, XII, XVI.
   mixes AI output with user-entered data).
 - Store findings on `ai_interactions.metadata`: rejected (violates the
   sanitized-record rule).
+
+---
+
+## ADR-017 — Uploads without malware scanning
+
+**Status**: ✅ Accepted — 2026-10-04. **Supersedes ADR-015.** Owner decision.
+
+### Context
+ADR-015 made a ClamAV daemon mandatory in production: production start-up
+refused to run without one, and every upload waited in a `quarantine` bucket
+until the daemon answered. No ClamAV host was provisioned (it needs an
+always-on service outside Vercel; `docs/DEPLOYMENT.md` § 5 listed it as
+pending). The owner decided to remove malware scanning entirely.
+
+### Decision
+1. No malware scanner exists in the application. `MALWARE_SCANNER_PROVIDER`
+   and `CLAMAV_*` are no longer read; leftover values in a hosting dashboard
+   are ignored.
+2. Uploads keep the two-step contract (ADR-005), but the signed upload URL
+   points **directly at the private destination bucket** — `documents` for
+   documents and versions, `videos` for videos — at the server-derived key
+   `<ownerId>/<uploadId>`. The bucket's own size limit and MIME allow-list
+   apply to the PUT.
+3. `complete` measures the object that arrived (size) and checks its leading
+   bytes against the declared type. A failure rejects the session and deletes
+   the object. On success the session moves to `VALIDATED` and
+   `promote_upload()` — which now requires `VALIDATED` — creates the row. Until
+   then no row points at the object, so it cannot be downloaded, shared or
+   released.
+4. Nothing claims a scan happened. Rows promoted from now on record
+   `scan_status = 'NOT_SCANNED'`; the UI no longer shows scan badges; the
+   assistant's product description says files are not scanned for malware.
+5. Migration `0006_remove_malware_scanning.sql` is forward-only: it adds the
+   `VALIDATED` / `NOT_SCANNED` enum values, replaces `promote_upload()`, drops
+   the unused `quarantine_insert_own_prefix` storage policy and closes
+   sessions the scanning pipeline left open. It deletes no file and no row.
+   The `quarantine` bucket and anything left in it are kept.
+6. Housekeeping closes abandoned sessions with a compare-and-set and only
+   then removes their unpromoted object, and never removes an object that a
+   document, version or video row points at.
+
+### Consequences
+- Constitution amended to **3.0.0**: Principle XI no longer requires
+  malware-scanning hooks (MAJOR — a requirement removed).
+- FR-H016 / FR-Q011 (malware-scanning hooks) are **not met**. Files are
+  checked for type and size only; a file of an allowed type can still carry
+  malicious content. Downloads remain attachment-style, short-lived signed
+  links from private buckets.
+- No service outside Vercel and Supabase is needed; the Dead Man's Switch
+  release path never waited on scans and is unchanged.
+- Rows promoted before 0006 keep their recorded `scan_status` and
+  `metadata.scan`; `metadata.scan.performed` says whether a scan really ran.
+
+### Alternatives considered
+- Keep ClamAV and host it (Fly.io / Render / a VM): not chosen by the owner.
+- A hosted scanning API: rejected earlier for the privacy of legal documents
+  (ADR-015) and not revisited.

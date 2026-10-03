@@ -427,7 +427,7 @@ export function DashboardView({ firstName }: { firstName: string | null }) {
           <StatCard
             label="Documents in vault"
             value={documents.length}
-            hint={`${documents.filter((d) => d.scan.status === "CLEAN").length} ready · ${documentsQuery.data?.total ?? documents.length} total`}
+            hint={`${documentsQuery.data?.total ?? documents.length} total · private storage`}
             icon={FileText}
             accent="cyan"
             href="/documents"
@@ -601,7 +601,7 @@ export function DashboardView({ firstName }: { firstName: string | null }) {
             <QuickAction
               icon={Upload}
               label="Upload document"
-              description="Private, scanned, versioned"
+              description="Private, checked, versioned"
               href="/documents?upload=1"
               accent="success"
             />

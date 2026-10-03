@@ -56,7 +56,7 @@ describe("assistant attachments", () => {
       assistantMessageBodySchema.safeParse({ message: "x", attachmentIds }).success;
     expect(parse([id(1), id(2), id(3), id(4)])).toBe(false);
     expect(parse([id(1), id(1)])).toBe(false);
-    expect(parse(["../../quarantine/other-user/file.pdf"])).toBe(false);
+    expect(parse(["../../documents/other-user/file.pdf"])).toBe(false);
     expect(parse(["https://example.com/file.pdf"])).toBe(false);
   });
 

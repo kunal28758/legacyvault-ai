@@ -3,7 +3,6 @@
 import { useState } from "react";
 import {
   Clock,
-  FlaskConical,
   MoreHorizontal,
   Play,
   Share2,
@@ -25,7 +24,7 @@ import { GridSkeleton } from "@/components/shared/loading-skeleton";
 import { PageHeader } from "@/components/shared/page-header";
 import { StaggerGrid, StaggerItem } from "@/components/shared/page-transition";
 import { StatCard } from "@/components/shared/stat-card";
-import { StatusBadge, toneForScanStatus } from "@/components/shared/status-badge";
+import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -177,7 +176,6 @@ export function VideoLegacyView() {
           {videos.map((video) => {
             const delivery = DELIVERY_META[video.deliveryCondition];
             const DeliveryIcon = delivery.icon;
-            const scan = toneForScanStatus(video.scan.status);
             const names = recipients(video);
             return (
               <StaggerItem key={video.id}>
@@ -254,18 +252,6 @@ export function VideoLegacyView() {
                       <StatusBadge tone={delivery.tone} icon={DeliveryIcon}>
                         {delivery.label}
                       </StatusBadge>
-                      <StatusBadge
-                        tone={scan.tone}
-                        pulse={video.scan.status === "PENDING"}
-                        className="h-5 text-[11px]"
-                      >
-                        {scan.label}
-                      </StatusBadge>
-                      {!video.scan.performed && (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-warning/30 bg-warning/10 px-2 py-0.5 text-[11px] font-medium text-warning">
-                          <FlaskConical className="size-3" aria-hidden /> Not scanned
-                        </span>
-                      )}
                     </div>
                     <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <Users className="size-3.5" aria-hidden />

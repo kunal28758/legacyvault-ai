@@ -77,15 +77,15 @@ test.describe("documents and access links", () => {
       buffer: PDF,
     });
     await page.getByRole("button", { name: "Upload", exact: true }).last().click();
-    // "Securely stored" appears only once the server has scanned the file and
-    // `promote_upload()` has moved it out of quarantine. (The file's name alone
+    // "Stored privately" appears only once the server has checked the bytes
+    // that arrived and `promote_upload()` has added the file. (The file's name alone
     // proves nothing: the upload queue shows it as soon as it is selected, and
     // the dialog refuses to close while an upload is still in flight.)
     const uploaded = page
       .getByRole("dialog")
       .getByRole("listitem")
       .filter({ hasText: documentName });
-    await expect(uploaded.getByRole("status")).toHaveText("Securely stored", { timeout: 120_000 });
+    await expect(uploaded.getByRole("status")).toHaveText("Stored privately", { timeout: 120_000 });
     await page
       .getByRole("dialog")
       .getByRole("button", { name: "Close", exact: true })

@@ -9,7 +9,6 @@ import {
   LoaderCircle,
   Presentation,
   RotateCcw,
-  ShieldAlert,
   X,
 } from "lucide-react";
 
@@ -29,13 +28,13 @@ import { precheckChatAttachment } from "@/lib/validators/ai.validators";
  * Files attached to an assistant message (ADR-005, ADR-008 § 5).
  *
  * There is no separate upload path for the chat: each file goes through the
- * vault's own two-step upload — a signed URL into the private quarantine
- * bucket, then server-side size and type checks and the malware scan — and
- * becomes a vault document. Only once the server has promoted it does the chip
- * turn "Ready", and only its document id is ever sent with a message; the
- * server checks ownership and scan status again when the AI reads it.
+ * vault's own two-step upload — a signed URL into private storage, then
+ * server-side size and type checks — and becomes a vault document. Only once
+ * the server has promoted it does the chip turn "Ready", and only its document
+ * id is ever sent with a message; the server checks ownership and type again
+ * when the AI reads it.
  */
-export type AttachmentState = "preparing" | "uploading" | "scanning" | "ready" | "failed";
+export type AttachmentState = "preparing" | "uploading" | "saving" | "ready" | "failed";
 
 export interface ChatAttachment {
   /** Local id for this chip. */
@@ -48,10 +47,8 @@ export interface ChatAttachment {
   documentId?: string;
   uploadId?: string;
   error?: string;
-  /** The scan could not run; the file is still held in quarantine. */
+  /** Saving did not finish; the bytes are held privately and a retry may succeed. */
   retryable?: boolean;
-  /** The malware scanner rejected the file. */
-  blocked?: boolean;
 }
 
 /** An attachment as it is remembered on a sent message. */
@@ -65,8 +62,7 @@ export interface SentAttachment {
 const STATE_FOR_PHASE: Record<UploadPhase, AttachmentState> = {
   validating: "preparing",
   uploading: "uploading",
-  scanning: "scanning",
-  storing: "scanning",
+  saving: "saving",
 };
 
 function describeError(error: unknown): string {
@@ -89,8 +85,7 @@ function fromOutcome(outcome: UploadOutcome): Partial<ChatAttachment> {
     state: "failed",
     uploadId: outcome.uploadId,
     retryable: outcome.retryable,
-    blocked: outcome.scan.status === "INFECTED",
-    error: outcome.rejectionReason ?? "The file could not be secured. Try again.",
+    error: outcome.rejectionReason ?? "The file could not be saved. Try again.",
   };
 }
 
@@ -161,11 +156,11 @@ export function useChatAttachments(limit: number) {
     return files.length - accepted.length;
   };
 
-  /** Runs the security scan again for a file still held in quarantine. */
+  /** Finishes saving a file whose bytes are already held privately. */
   const retry = (key: string) => {
     const item = pending.find((a) => a.key === key);
     if (!item?.uploadId || !item.retryable) return;
-    patch(key, { state: "scanning", error: undefined });
+    patch(key, { state: "saving", error: undefined });
     const uploadId = item.uploadId;
     void run(key, (signal) => retryUpload.mutateAsync({ uploadId, signal }));
   };
@@ -200,12 +195,12 @@ function kindLabel(mimeType: string, name: string): string {
 const STATE_TEXT: Record<AttachmentState, string> = {
   preparing: "Preparing…",
   uploading: "Uploading",
-  scanning: "Scanning for malware…",
+  saving: "Saving…",
   ready: "Ready",
   failed: "Failed",
 };
 
-/** One file waiting to be sent, with its upload and scan state. */
+/** One file waiting to be sent, with its upload state. */
 export function AttachmentChip({
   attachment,
   onRemove,
@@ -218,7 +213,7 @@ export function AttachmentChip({
   const busy =
     attachment.state === "preparing" ||
     attachment.state === "uploading" ||
-    attachment.state === "scanning";
+    attachment.state === "saving";
   const status =
     attachment.state === "uploading"
       ? `Uploading ${attachment.progress}%`
@@ -233,17 +228,13 @@ export function AttachmentChip({
           : "border-border bg-background/70",
       )}
     >
-      {attachment.blocked ? (
-        <ShieldAlert className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
-      ) : (
-        <FileTypeIcon
-          mimeType={attachment.mimeType}
-          className={cn(
-            "mt-0.5 size-4 shrink-0",
-            attachment.state === "failed" ? "text-destructive" : "text-brand-cyan",
-          )}
-        />
-      )}
+      <FileTypeIcon
+        mimeType={attachment.mimeType}
+        className={cn(
+          "mt-0.5 size-4 shrink-0",
+          attachment.state === "failed" ? "text-destructive" : "text-brand-cyan",
+        )}
+      />
       <div className="min-w-0 flex-1">
         <p className="truncate font-medium" title={attachment.name}>
           {attachment.name}
@@ -282,7 +273,7 @@ export function AttachmentChip({
             onClick={onRetry}
             className="mt-1 inline-flex items-center gap-1 rounded-md px-1 py-0.5 font-medium text-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <RotateCcw className="size-3" aria-hidden /> Retry scan
+            <RotateCcw className="size-3" aria-hidden /> Retry
           </button>
         )}
       </div>

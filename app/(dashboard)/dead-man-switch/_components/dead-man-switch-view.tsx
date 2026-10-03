@@ -632,7 +632,7 @@ function DmsConfigForm({ onClose }: { onClose: () => void }) {
         </fieldset>
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed border-border px-3 py-2.5">
           <p className="text-xs text-muted-foreground">
-            Need to add a document for release? It is validated and malware-scanned before it can be
+            Need to add a document for release? Its size and type are checked before it can be
             selected.
           </p>
           <Button size="sm" variant="outline" onClick={() => setUploadOpen(true)}>
