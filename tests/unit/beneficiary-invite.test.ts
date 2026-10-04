@@ -124,7 +124,13 @@ describe("inviteBeneficiary — delivery", () => {
         correlationId: "corr",
       }),
     );
-    expect(auditMetadata()).toMatchObject({ emailSent: true });
+    // The provider's id ties this invitation to its delivery events; the
+    // response itself does not carry it.
+    expect(auditMetadata()).toMatchObject({ emailSent: true, providerMessageId: "msg_1" });
+    expect(result).not.toHaveProperty("providerMessageId");
+    const audited = JSON.stringify(auditMetadata());
+    expect(audited).not.toContain(ADDRESS);
+    expect(audited).not.toContain("Asha Rao");
   });
 
   it("records the invitation but reports emailSent false when email is not configured", async () => {
@@ -136,6 +142,7 @@ describe("inviteBeneficiary — delivery", () => {
     expect(beneficiaryRepository.markInvited).toHaveBeenCalledTimes(1);
     expect(sendBeneficiaryInvitationEmail).not.toHaveBeenCalled();
     expect(auditMetadata()).toMatchObject({ emailSent: false });
+    expect(auditMetadata()).not.toHaveProperty("providerMessageId");
   });
 });
 
@@ -168,6 +175,7 @@ describe("inviteBeneficiary — provider failure", () => {
     expect(result.emailSent).toBe(false);
     expect(result.beneficiary.invitedAt).not.toBeNull();
     expect(auditMetadata()).toMatchObject({ emailSent: false });
+    expect(auditMetadata()).not.toHaveProperty("providerMessageId");
     expect(vi.mocked(audit.log).mock.calls[0][0].outcome).toBe("SUCCESS");
 
     expect(logger.error).toHaveBeenCalledTimes(1);

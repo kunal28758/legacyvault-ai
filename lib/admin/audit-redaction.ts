@@ -64,6 +64,7 @@ const STRUCTURAL_KEYS = new Set([
   "resourceType",
   "resourceId",
   "notificationId",
+  "providerMessageId",
   "subjectEmail",
   "field",
   "fields",

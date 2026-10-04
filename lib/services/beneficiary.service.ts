@@ -292,8 +292,12 @@ export async function inviteBeneficiary(
     invitedAt,
   );
 
-  const emailSent = await sendInvitation(user, updated, invitedAt, correlationId);
+  const providerMessageId = await sendInvitation(user, updated, invitedAt, correlationId);
+  const emailSent = providerMessageId !== null;
 
+  // `beneficiaries` has no delivery columns and the email webhook tracks only
+  // the owner's own notifications, so the audit row is where this invitation
+  // is tied to the provider's record of the message.
   await audit.log({
     actorId: user.id,
     actorRole: user.role,
@@ -301,7 +305,11 @@ export async function inviteBeneficiary(
     resourceType: "beneficiary",
     resourceId: id,
     outcome: "SUCCESS",
-    metadata: { previousInvitedAt: beneficiary.invitedAt, emailSent },
+    metadata: {
+      previousInvitedAt: beneficiary.invitedAt,
+      emailSent,
+      ...(providerMessageId ? { providerMessageId } : {}),
+    },
     correlationId,
   });
 
@@ -309,7 +317,8 @@ export async function inviteBeneficiary(
 }
 
 /**
- * Sends the invitation and reports honestly whether it went out.
+ * Sends the invitation and returns the provider's message id, or null when it
+ * did not go out.
  *
  * A mail failure does not undo the recorded invitation — the owner can resend —
  * but it is never reported as sent. The key is the invitation itself: a retry
@@ -320,23 +329,23 @@ async function sendInvitation(
   beneficiary: Beneficiary,
   invitedAt: string,
   correlationId: string,
-): Promise<boolean> {
-  if (!emailConfigured()) return false;
+): Promise<string | null> {
+  if (!emailConfigured()) return null;
   try {
-    await sendBeneficiaryInvitationEmail({
+    const sent = await sendBeneficiaryInvitationEmail({
       to: beneficiary.email,
       beneficiaryName: beneficiary.name,
       ownerName: user.name,
       idempotencyKey: `beneficiary-invite:${beneficiary.id}:${invitedAt}`,
     });
-    return true;
+    return sent.providerMessageId;
   } catch (cause) {
     // Never the recipient's address, never the message.
     logger.error(
       { err: cause, beneficiaryId: beneficiary.id, correlationId },
       "beneficiary invitation email failed",
     );
-    return false;
+    return null;
   }
 }
 

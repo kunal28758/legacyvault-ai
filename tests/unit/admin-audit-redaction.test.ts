@@ -46,6 +46,20 @@ describe("admin audit redaction", () => {
     });
   });
 
+  it("keeps an invitation's provider message id so support can match delivery events", () => {
+    const safe = redactAdminMetadata({
+      previousInvitedAt: "2026-10-01T09:00:00.000Z",
+      emailSent: true,
+      providerMessageId: "4ef9a417-02e9-4d39-ad75-9611e0fcc33c",
+    });
+
+    expect(safe).toEqual({
+      emailSent: true,
+      providerMessageId: "4ef9a417-02e9-4d39-ad75-9611e0fcc33c",
+      redactedKeys: 1,
+    });
+  });
+
   it("refuses an unexpected nested object even under an allowed key", () => {
     // A new domain could start writing an object where a scalar used to be.
     const safe = redactAdminMetadata({ reason: { note: "a sentence about the person" } });
