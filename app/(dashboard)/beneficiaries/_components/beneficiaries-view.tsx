@@ -147,7 +147,7 @@ export function BeneficiariesView() {
       toast.success(`Invitation recorded for ${b.name}`, {
         description: result.emailSent
           ? "The invitation email has been sent."
-          : "Email delivery starts once the notification service is connected.",
+          : "The invitation email could not be sent. You can resend it later.",
       });
     } catch (error) {
       toast.error(messageFor(error, "Could not record the invitation."));

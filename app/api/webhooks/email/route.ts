@@ -40,7 +40,7 @@ export const POST = withApi(
     auditAction: "webhook.email",
     auditResourceType: "processed_webhook_event",
     verify: (rawBody, headers) => {
-      const secret = getEnvGroup("email").EMAIL_WEBHOOK_SECRET;
+      const secret = getEnvGroup("emailWebhook").EMAIL_WEBHOOK_SECRET;
       try {
         new Webhook(secret).verify(rawBody, {
           "svix-id": headers.get("svix-id") ?? "",

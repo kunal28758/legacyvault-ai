@@ -144,10 +144,14 @@ export const serverEnvGroups = {
     CEREBRAS_MODEL: blankAsUnset(z.string().min(1).default("gpt-oss-120b")),
     HF_MODEL: blankAsUnset(z.string().min(1).optional()),
   },
-  // Email (ADR-009)
+  // Email (ADR-009). Sending and the delivery-event webhook are separate
+  // features, as with Clerk above: outbound mail does not need the secret that
+  // verifies inbound events.
   email: {
     RESEND_API_KEY: z.string().min(1),
     EMAIL_FROM: z.string().min(3),
+  },
+  emailWebhook: {
     EMAIL_WEBHOOK_SECRET: z.string().min(1),
   },
   // Observability (ADR-010) — optional locally, required in production below
@@ -180,6 +184,7 @@ export const serverEnvShape = {
   ...serverEnvGroups.accessCookie,
   ...serverEnvGroups.ai,
   ...serverEnvGroups.email,
+  ...serverEnvGroups.emailWebhook,
   ...serverEnvGroups.observability,
   ...serverEnvGroups.cron,
   ...serverEnvGroups.operations,

@@ -63,9 +63,13 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
   );
 
   if (error || !data) {
-    // The message, never the recipient's data, and never the link.
-    logger.error({ err: error, subject: input.subject }, "email send failed");
-    throw new Error(error?.message ?? "email send failed");
+    // The provider's error code and status only. Its message can quote an
+    // address — the account owner's, when the testing sender is refused — and
+    // the subject carries people's names; callers log and persist what is
+    // thrown here, so neither leaves this function.
+    const code = error?.name ?? "no_response";
+    logger.error({ provider: code, statusCode: error?.statusCode ?? null }, "email send failed");
+    throw new Error(`email send failed: ${code}`);
   }
   return { providerMessageId: data.id };
 }

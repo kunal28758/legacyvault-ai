@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   findSuspiciousPublicVariables,
+  groupSchema,
   validatePublicEnv,
   validateServerEnv,
   type EnvSource,
@@ -77,6 +78,22 @@ describe("server environment schema (T007)", () => {
       const issue = result.issues.find((entry) => entry.path === "CLERK_SECRET_KEY");
       expect(issue).toBeDefined();
       expect(JSON.stringify(result.issues)).not.toContain("sk_test_placeholder");
+    }
+  });
+
+  it("sends email without the webhook secret, which deployment still requires", () => {
+    const sending = {
+      RESEND_API_KEY: validServerEnv.RESEND_API_KEY,
+      EMAIL_FROM: validServerEnv.EMAIL_FROM,
+    };
+    expect(groupSchema("email").safeParse(sending).success).toBe(true);
+    expect(groupSchema("emailWebhook").safeParse(sending).success).toBe(false);
+
+    const { EMAIL_WEBHOOK_SECRET: _omitted, ...withoutWebhook } = validServerEnv;
+    const result = validateServerEnv(withoutWebhook);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issues.map((issue) => issue.path)).toContain("EMAIL_WEBHOOK_SECRET");
     }
   });
 

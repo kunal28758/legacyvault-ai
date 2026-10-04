@@ -1,0 +1,287 @@
+import { render } from "@react-email/components";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/db/server", () => ({
+  createUserClient: vi.fn(),
+  createServiceClient: vi.fn(),
+}));
+vi.mock("@/lib/auth/require-user", () => ({
+  assertAccountActive: vi.fn(),
+}));
+vi.mock("@/lib/repositories/beneficiary.repository", () => ({
+  findById: vi.fn(),
+  markInvited: vi.fn(),
+}));
+vi.mock("@/lib/audit/audit.service", () => ({
+  audit: { log: vi.fn() },
+}));
+vi.mock("@/lib/email/client", () => ({
+  emailConfigured: vi.fn(),
+}));
+vi.mock("@/lib/email/send", () => ({
+  sendBeneficiaryInvitationEmail: vi.fn(),
+}));
+vi.mock("@/lib/observability/logger", () => ({
+  logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
+}));
+
+import { ApiError } from "@/lib/api/errors";
+import { audit } from "@/lib/audit/audit.service";
+import type { AppUser } from "@/lib/auth/ensure-app-user";
+import { assertAccountActive } from "@/lib/auth/require-user";
+import { createServiceClient, createUserClient } from "@/lib/db/server";
+import { emailConfigured } from "@/lib/email/client";
+import { sendBeneficiaryInvitationEmail } from "@/lib/email/send";
+import { BeneficiaryInvitationEmail } from "@/lib/email/templates/beneficiary-invitation-email";
+import { logger } from "@/lib/observability/logger";
+import * as beneficiaryRepository from "@/lib/repositories/beneficiary.repository";
+import { inviteBeneficiary } from "@/lib/services/beneficiary.service";
+import type { Beneficiary } from "@/lib/types/beneficiary";
+
+/**
+ * Beneficiary invitation email (POST /beneficiaries/:id/invite).
+ *
+ * `emailSent` is what the owner is told, so it must be the provider's answer and
+ * nothing else; a failed send keeps the recorded invitation; nothing is stamped
+ * or sent for a beneficiary the caller does not own; and the message carries a
+ * notification, never the owner's data or anything resembling access.
+ */
+const BENEFICIARY_ID = "33333333-3333-4333-8333-333333333333";
+const ADDRESS = "asha.rao@example.com";
+
+const user = {
+  id: "22222222-2222-4222-8222-222222222222",
+  name: "Priya Sharma",
+  email: "owner@example.com",
+  role: "USER",
+  deletionRequestedAt: null,
+} as unknown as AppUser;
+
+function beneficiary(overrides: Partial<Beneficiary> = {}): Beneficiary {
+  return {
+    id: BENEFICIARY_ID,
+    name: "Asha Rao",
+    relationship: "Sibling",
+    email: ADDRESS,
+    phone: "+91 98765 43210",
+    status: "PENDING",
+    invitedAt: null,
+    activatedAt: null,
+    notes: "Gets the Goa flat",
+    createdAt: "2026-09-01T00:00:00.000Z",
+    updatedAt: "2026-09-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+const userDb = { from: vi.fn(), rpc: vi.fn() };
+const serviceDb = { from: vi.fn(), rpc: vi.fn() };
+
+beforeEach(() => {
+  vi.mocked(createUserClient).mockResolvedValue(userDb as never);
+  vi.mocked(createServiceClient).mockReturnValue(serviceDb as never);
+  vi.mocked(beneficiaryRepository.findById).mockResolvedValue(beneficiary());
+  vi.mocked(beneficiaryRepository.markInvited).mockImplementation(async (_db, _userId, _id, at) =>
+    beneficiary({ invitedAt: at }),
+  );
+  vi.mocked(emailConfigured).mockReturnValue(true);
+  vi.mocked(sendBeneficiaryInvitationEmail).mockResolvedValue({ providerMessageId: "msg_1" });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+function auditMetadata() {
+  return vi.mocked(audit.log).mock.calls.at(-1)?.[0].metadata;
+}
+
+describe("inviteBeneficiary — delivery", () => {
+  it("emails the stored address and reports emailSent only after the provider accepts", async () => {
+    const result = await inviteBeneficiary(user, BENEFICIARY_ID, "corr");
+
+    expect(result.emailSent).toBe(true);
+    expect(result.beneficiary.invitedAt).not.toBeNull();
+    expect(sendBeneficiaryInvitationEmail).toHaveBeenCalledTimes(1);
+    const input = vi.mocked(sendBeneficiaryInvitationEmail).mock.calls[0][0];
+    expect(input).toMatchObject({
+      to: ADDRESS,
+      beneficiaryName: "Asha Rao",
+      ownerName: "Priya Sharma",
+    });
+    // Exactly what the template needs — no notes, phone or relationship.
+    expect(Object.keys(input).sort()).toEqual([
+      "beneficiaryName",
+      "idempotencyKey",
+      "ownerName",
+      "to",
+    ]);
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "beneficiary.invited",
+        resourceId: BENEFICIARY_ID,
+        outcome: "SUCCESS",
+        correlationId: "corr",
+      }),
+    );
+    expect(auditMetadata()).toMatchObject({ emailSent: true });
+  });
+
+  it("records the invitation but reports emailSent false when email is not configured", async () => {
+    vi.mocked(emailConfigured).mockReturnValue(false);
+
+    const result = await inviteBeneficiary(user, BENEFICIARY_ID, "corr");
+
+    expect(result.emailSent).toBe(false);
+    expect(beneficiaryRepository.markInvited).toHaveBeenCalledTimes(1);
+    expect(sendBeneficiaryInvitationEmail).not.toHaveBeenCalled();
+    expect(auditMetadata()).toMatchObject({ emailSent: false });
+  });
+});
+
+describe("inviteBeneficiary — missing email", () => {
+  it.each([
+    ["empty", ""],
+    ["malformed", "not-an-address"],
+  ])("refuses a beneficiary with an %s address before recording or sending", async (_, email) => {
+    vi.mocked(beneficiaryRepository.findById).mockResolvedValue(beneficiary({ email }));
+
+    await expect(inviteBeneficiary(user, BENEFICIARY_ID, "corr")).rejects.toMatchObject({
+      status: 422,
+      code: "VALIDATION_ERROR",
+      fields: { email: expect.any(Array) },
+    });
+    expect(beneficiaryRepository.markInvited).not.toHaveBeenCalled();
+    expect(sendBeneficiaryInvitationEmail).not.toHaveBeenCalled();
+    expect(audit.log).not.toHaveBeenCalled();
+  });
+});
+
+describe("inviteBeneficiary — provider failure", () => {
+  it("keeps the recorded invitation, reports emailSent false and logs no address", async () => {
+    vi.mocked(sendBeneficiaryInvitationEmail).mockRejectedValue(
+      new Error("email send failed: validation_error"),
+    );
+
+    const result = await inviteBeneficiary(user, BENEFICIARY_ID, "corr");
+
+    expect(result.emailSent).toBe(false);
+    expect(result.beneficiary.invitedAt).not.toBeNull();
+    expect(auditMetadata()).toMatchObject({ emailSent: false });
+    expect(vi.mocked(audit.log).mock.calls[0][0].outcome).toBe("SUCCESS");
+
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    const logged = JSON.stringify(vi.mocked(logger.error).mock.calls);
+    expect(logged).toContain(BENEFICIARY_ID);
+    expect(logged).not.toContain(ADDRESS);
+    expect(logged).not.toContain("Asha Rao");
+  });
+});
+
+describe("inviteBeneficiary — idempotency", () => {
+  it("keys the email to the recorded invitation, so a resend is a new message", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+
+    vi.setSystemTime(new Date("2026-10-04T09:00:00.000Z"));
+    await inviteBeneficiary(user, BENEFICIARY_ID, "corr-1");
+    vi.setSystemTime(new Date("2026-10-04T09:05:00.000Z"));
+    await inviteBeneficiary(user, BENEFICIARY_ID, "corr-2");
+
+    const stamps = vi.mocked(beneficiaryRepository.markInvited).mock.calls.map((call) => call[3]);
+    const keys = vi
+      .mocked(sendBeneficiaryInvitationEmail)
+      .mock.calls.map((call) => call[0].idempotencyKey);
+
+    // Same key for the same invitation (a retried send is deduplicated by the
+    // provider); a deliberate resend stamps a new invitation and a new key.
+    expect(keys).toEqual([
+      `beneficiary-invite:${BENEFICIARY_ID}:${stamps[0]}`,
+      `beneficiary-invite:${BENEFICIARY_ID}:${stamps[1]}`,
+    ]);
+    expect(new Set(keys).size).toBe(2);
+    // One row, re-stamped — never a second invitation record.
+    expect(vi.mocked(beneficiaryRepository.markInvited).mock.calls.map((call) => call[2])).toEqual([
+      BENEFICIARY_ID,
+      BENEFICIARY_ID,
+    ]);
+  });
+});
+
+describe("inviteBeneficiary — authorization", () => {
+  it("scopes the read and the stamp to the caller", async () => {
+    await inviteBeneficiary(user, BENEFICIARY_ID, "corr");
+
+    expect(beneficiaryRepository.findById).toHaveBeenCalledWith(userDb, user.id, BENEFICIARY_ID);
+    expect(beneficiaryRepository.markInvited).toHaveBeenCalledWith(
+      serviceDb,
+      user.id,
+      BENEFICIARY_ID,
+      expect.any(String),
+    );
+  });
+
+  it("answers 404 for a beneficiary the caller does not own and sends nothing", async () => {
+    vi.mocked(beneficiaryRepository.findById).mockResolvedValue(null);
+
+    await expect(inviteBeneficiary(user, BENEFICIARY_ID, "corr")).rejects.toMatchObject({
+      status: 404,
+    });
+    expect(createServiceClient).not.toHaveBeenCalled();
+    expect(beneficiaryRepository.markInvited).not.toHaveBeenCalled();
+    expect(sendBeneficiaryInvitationEmail).not.toHaveBeenCalled();
+    expect(audit.log).not.toHaveBeenCalled();
+  });
+
+  it("refuses an inactive beneficiary and sends nothing", async () => {
+    vi.mocked(beneficiaryRepository.findById).mockResolvedValue(
+      beneficiary({ status: "INACTIVE" }),
+    );
+
+    await expect(inviteBeneficiary(user, BENEFICIARY_ID, "corr")).rejects.toMatchObject({
+      status: 422,
+      code: "BENEFICIARY_INACTIVE",
+    });
+    expect(beneficiaryRepository.markInvited).not.toHaveBeenCalled();
+    expect(sendBeneficiaryInvitationEmail).not.toHaveBeenCalled();
+  });
+
+  it("refuses an account scheduled for deletion before reading anything", async () => {
+    vi.mocked(assertAccountActive).mockImplementationOnce(() => {
+      throw ApiError.forbidden();
+    });
+
+    await expect(inviteBeneficiary(user, BENEFICIARY_ID, "corr")).rejects.toMatchObject({
+      status: 403,
+    });
+    expect(createUserClient).not.toHaveBeenCalled();
+    expect(sendBeneficiaryInvitationEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe("BeneficiaryInvitationEmail", () => {
+  it("notifies without granting access or carrying the owner's data", async () => {
+    const html = await render(
+      BeneficiaryInvitationEmail({
+        beneficiaryName: "Asha Rao",
+        ownerName: "Priya Sharma",
+        appUrl: "https://app.example.com",
+      }),
+    );
+    const text = await render(
+      BeneficiaryInvitationEmail({
+        beneficiaryName: "Asha Rao",
+        ownerName: "Priya Sharma",
+        appUrl: "https://app.example.com",
+      }),
+      { plainText: true },
+    );
+
+    expect(text).toContain("Priya Sharma");
+    expect(text).toContain("Asha Rao");
+    expect(text).toMatch(/does not give you access/i);
+    expect(text).toMatch(/contact Priya Sharma directly/i);
+    // The only link is the app itself — no token, no access or sign-up path.
+    const hrefs = [...html.matchAll(/href="([^"]*)"/g)].map((match) => match[1]);
+    expect(hrefs).toEqual(["https://app.example.com"]);
+  });
+});

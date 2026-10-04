@@ -3,6 +3,7 @@ import "server-only";
 import { getEnvGroup } from "@/lib/config/env";
 import { sendEmail, type SendEmailResult } from "@/lib/email/client";
 import { AccessLinkEmail } from "@/lib/email/templates/access-link-email";
+import { BeneficiaryInvitationEmail } from "@/lib/email/templates/beneficiary-invitation-email";
 import { DmsReminderEmail } from "@/lib/email/templates/dms-reminder-email";
 import { EmergencyCodeEmail } from "@/lib/email/templates/emergency-code-email";
 import { EmergencyDesignationEmail } from "@/lib/email/templates/emergency-designation-email";
@@ -34,6 +35,25 @@ export async function sendAccessLinkEmail(input: {
       link: input.link,
       expiresAt: input.expiresAt,
       grantType: input.grantType,
+    }),
+  });
+}
+
+export async function sendBeneficiaryInvitationEmail(input: {
+  to: string;
+  beneficiaryName: string;
+  ownerName: string;
+  idempotencyKey: string;
+}): Promise<SendEmailResult> {
+  const { APP_URL } = getEnvGroup("core");
+  return sendEmail({
+    to: input.to,
+    subject: `${input.ownerName} named you a beneficiary`,
+    idempotencyKey: input.idempotencyKey,
+    react: BeneficiaryInvitationEmail({
+      beneficiaryName: input.beneficiaryName,
+      ownerName: input.ownerName,
+      appUrl: APP_URL.replace(/\/$/, ""),
     }),
   });
 }

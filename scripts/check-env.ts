@@ -62,6 +62,11 @@ const OPTIONAL_LOCALLY: {
     without: "links and reminders are created but reported as `emailSent: false`",
   },
   {
+    group: "emailWebhook",
+    feature: "the email delivery webhook",
+    without: "sent mail stays SENT; bounces and deliveries are not recorded",
+  },
+  {
     group: "clerkWebhook",
     feature: "the Clerk webhook",
     without: "user sync falls back to the lazy path on first request",

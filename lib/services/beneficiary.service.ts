@@ -5,6 +5,9 @@ import { audit } from "@/lib/audit/audit.service";
 import type { AppUser } from "@/lib/auth/ensure-app-user";
 import { assertAccountActive } from "@/lib/auth/require-user";
 import { createServiceClient, createUserClient } from "@/lib/db/server";
+import { emailConfigured } from "@/lib/email/client";
+import { sendBeneficiaryInvitationEmail } from "@/lib/email/send";
+import { logger } from "@/lib/observability/logger";
 import * as beneficiaryRepository from "@/lib/repositories/beneficiary.repository";
 import type {
   Beneficiary,
@@ -13,10 +16,11 @@ import type {
   BeneficiaryRoles,
   BeneficiaryWithRoles,
 } from "@/lib/types/beneficiary";
-import type {
-  BeneficiaryCreateBody,
-  BeneficiaryListQuery,
-  BeneficiaryUpdateBody,
+import {
+  beneficiaryCreateBodySchema,
+  type BeneficiaryCreateBody,
+  type BeneficiaryListQuery,
+  type BeneficiaryUpdateBody,
 } from "@/lib/validators/beneficiary.validators";
 
 /**
@@ -249,7 +253,7 @@ export async function unassignBeneficiary(
 
 export interface InviteResult {
   beneficiary: Beneficiary;
-  /** False until the email service is wired — the UI must not claim otherwise. */
+  /** True only when the provider accepted the invitation email. */
   emailSent: boolean;
 }
 
@@ -269,15 +273,26 @@ export async function inviteBeneficiary(
       "Reactivate this beneficiary before inviting them again.",
     );
   }
+  // Every write path validates the address, but the column only guarantees
+  // lower case, so the stored value is re-checked before anything is recorded.
+  if (!beneficiaryCreateBodySchema.shape.email.safeParse(beneficiary.email).success) {
+    throw ApiError.validation(
+      { email: ["Add a valid email address before sending an invitation."] },
+      "This beneficiary has no valid email address.",
+    );
+  }
 
   // Ownership is proven above through the user client; the service client is
   // used only because `invited_at` carries no `authenticated` grant.
+  const invitedAt = new Date().toISOString();
   const updated = await beneficiaryRepository.markInvited(
     createServiceClient(),
     user.id,
     id,
-    new Date().toISOString(),
+    invitedAt,
   );
+
+  const emailSent = await sendInvitation(user, updated, invitedAt, correlationId);
 
   await audit.log({
     actorId: user.id,
@@ -286,11 +301,43 @@ export async function inviteBeneficiary(
     resourceType: "beneficiary",
     resourceId: id,
     outcome: "SUCCESS",
-    metadata: { previousInvitedAt: beneficiary.invitedAt, emailSent: false },
+    metadata: { previousInvitedAt: beneficiary.invitedAt, emailSent },
     correlationId,
   });
 
-  return { beneficiary: updated, emailSent: false };
+  return { beneficiary: updated, emailSent };
+}
+
+/**
+ * Sends the invitation and reports honestly whether it went out.
+ *
+ * A mail failure does not undo the recorded invitation — the owner can resend —
+ * but it is never reported as sent. The key is the invitation itself: a retry
+ * of this send is deduplicated, a deliberate resend is a new message.
+ */
+async function sendInvitation(
+  user: AppUser,
+  beneficiary: Beneficiary,
+  invitedAt: string,
+  correlationId: string,
+): Promise<boolean> {
+  if (!emailConfigured()) return false;
+  try {
+    await sendBeneficiaryInvitationEmail({
+      to: beneficiary.email,
+      beneficiaryName: beneficiary.name,
+      ownerName: user.name,
+      idempotencyKey: `beneficiary-invite:${beneficiary.id}:${invitedAt}`,
+    });
+    return true;
+  } catch (cause) {
+    // Never the recipient's address, never the message.
+    logger.error(
+      { err: cause, beneficiaryId: beneficiary.id, correlationId },
+      "beneficiary invitation email failed",
+    );
+    return false;
+  }
 }
 
 /* ── Helpers ──────────────────────────────────────────────────────────────── */

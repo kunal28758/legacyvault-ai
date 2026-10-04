@@ -7,12 +7,13 @@ type IdParams = { id: string };
 /**
  * Send or re-send the invitation (api-contracts.md § Beneficiaries).
  *
- * This records the invitation and stamps `invitedAt`. Delivery itself belongs to
- * the email service, which is not wired yet, so the response reports
- * `emailSent: false` rather than letting the UI imply a message went out.
+ * This records the invitation, stamps `invitedAt` and emails the beneficiary a
+ * notification — never access. `emailSent` is true only when the provider
+ * accepted the message; an unconfigured or failed send leaves the invitation
+ * recorded and reports `emailSent: false`.
  *
- * Rate-limited with the `sensitive` policy because it is the endpoint that will
- * cause mail to be sent to a third party.
+ * Rate-limited with the `sensitive` policy because it is the endpoint that
+ * causes mail to be sent to a third party.
  */
 export const POST = withApi<undefined, undefined, IdParams>(
   {
