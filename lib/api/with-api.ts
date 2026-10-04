@@ -12,6 +12,7 @@ import { requireRole, requireUser, type UserRole } from "@/lib/auth/require-user
 import type { AppUser } from "@/lib/auth/ensure-app-user";
 import type { AccessGrant } from "@/lib/services/access-portal.service";
 import { getEnvGroup } from "@/lib/config/env";
+import { errorFields, supabaseClientFields } from "@/lib/observability/error-fields";
 import { requestLogger, redactPath } from "@/lib/observability/logger";
 import { safeEqual } from "@/lib/security/encryption";
 import {
@@ -238,7 +239,11 @@ export function withApi<
       const apiError = caught instanceof ApiError ? caught : mapDatabaseError(caught);
 
       if (apiError.status >= 500) {
-        log.error({ err: apiError.cause ?? caught, code: apiError.code }, "request failed");
+        const cause = apiError.cause ?? caught;
+        log.error(
+          { err: cause, code: apiError.code, ...errorFields(cause), ...supabaseClientFields() },
+          "request failed",
+        );
       } else {
         log.warn({ code: apiError.code, status: apiError.status }, "request rejected");
       }
