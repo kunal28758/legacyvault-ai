@@ -756,8 +756,8 @@ or regulatory demand.
 
 ## ADR-014 — Unified access-token model and cookie exchange
 
-**Status**: ✅ Accepted (r4) — 2026-09-18 (analysis findings I1, I3, S2, I7)
-**Revision notes**: r4 — § 6 access-link delivery policy (final-gate finding C1): deterministic per-contact idempotency, reissue-on-retry, audited resend paths.
+**Status**: ✅ Accepted (r5) — 2026-09-18 (analysis findings I1, I3, S2, I7)
+**Revision notes**: r4 — § 6 access-link delivery policy (final-gate finding C1): deterministic per-contact idempotency, reissue-on-retry, audited resend paths. r5 (2026-10-05, migration 0007) — § 7 automatic document-share links that follow the beneficiary's current shares.
 
 ### Context
 The r1 model had `BeneficiaryAccessToken` with a mandatory beneficiary FK
@@ -844,9 +844,39 @@ history.
      mints exactly one replacement; every revocation/replacement is audited
      (`access.resend_requested`, `access.token_replaced`,
      `access.token_resent`).
-   - DIRECT_SHARE tokens keep the existing owner-present flow: the plaintext
-     is returned once to the owner and emailed; a failed email is recovered by
-     the owner's resend.
+   - DIRECT_SHARE tokens issued manually from the Access Links panel keep the
+     existing owner-present flow: the plaintext is returned once to the owner
+     and emailed; a failed email is recovered by the owner's resend. Links
+     emailed by a document share are covered by § 7.
+7. **Automatic document-share links (r5 — 2026-10-05, migration 0007).**
+   Sharing a document (`POST /documents/:id/share`) records the assignment
+   through `assign_beneficiary()`, then mints a DIRECT_SHARE token through
+   `issue_document_share_token()` — the same checks as `issue_access_token()`
+   (signed-in owner, owned and non-INACTIVE beneficiary, hash-only storage,
+   expiry ≤ 30 days) — and emails it inline, through the provider that carries
+   beneficiary invitations. No owner action, copy or paste is involved.
+   - Such a token has `follows_document_shares = true`. Its documents are
+     evaluated on **every request** from the beneficiary's current DOCUMENT
+     assignments, pinned to the token's owner and beneficiary: a later share
+     appears through any live link or open session, and an unshare (or a
+     deleted document) ends access on the next request. Assets, videos and plan
+     sections are never part of it.
+   - Every other DIRECT_SHARE token keeps its fixed list, intersected with the
+     current shares: it can lose a document when it is unshared, never gain
+     one. DMS_RELEASE and EMERGENCY_ACCESS tokens keep their released scope
+     unchanged.
+   - Each share emails a fresh link; earlier links stay valid until they
+     expire or are revoked, and all of them show the same current documents.
+     The owner's resend of a following token (`resend_access_token()`) keeps
+     it following and re-validates it against the current shares.
+     Deactivating or removing the beneficiary revokes every token as before.
+   - The email draws on the owner's `sensitive` rate-limit budget (5 per
+     15 minutes, shared with invitations and manual links). Nothing is minted
+     when email is not configured or the budget is spent. A failed send or
+     audit write never undoes the share, and the response's
+     `accessEmailSent` reports only what the provider actually accepted.
+   - The Access Links panel remains for assets, videos, revocation and a
+     fresh or manual fallback link.
 
 ### Requirements preserved
 FR-D007, FR-D010, FR-D011, FR-H011–H015, FR-I005, FR-I012, FR-J001, FR-J003,
@@ -866,6 +896,14 @@ FR-J007–J010, FR-K005–K008; constitution I, III, VII, XII.
   `system_reissue_access_token()`, `system_mark_token_delivered()`;
   `ea_decide_request()` no longer takes a token hash; three audited resend
   endpoints (owner ×2, Super Admin ×1). Verified by T229, T235, T236.
+- r5: `access_tokens` gains `follows_document_shares` (default false, so
+  existing links keep their fixed scope); functions
+  `issue_document_share_token()` and `lv_current_document_scope()` (internal);
+  `resend_access_token()` preserves the flag. `POST /documents/:id/share`
+  answers `{ shares, accessEmailSent }`. Verified by
+  `tests/integration/document-share-links.test.ts`,
+  `tests/unit/access-portal-scope.test.ts` and the documents-and-access E2E
+  journey.
 
 ### Alternatives considered
 - Separate contact entities per feature: rejected (three ways to describe the

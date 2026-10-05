@@ -9,17 +9,23 @@ import { emailConfigured } from "@/lib/email/client";
 import { sendAccessLinkEmail } from "@/lib/email/send";
 import { logger } from "@/lib/observability/logger";
 import * as accessTokenRepository from "@/lib/repositories/access-token.repository";
-import { accessLinkFor, expiryFromDays, mintAccessToken } from "@/lib/security/access-token";
+import {
+  MAX_TOKEN_TTL_DAYS,
+  accessLinkFor,
+  expiryFromDays,
+  mintAccessToken,
+} from "@/lib/security/access-token";
+import { checkRateLimit } from "@/lib/security/rate-limit";
 import type { AccessTokenSummary } from "@/lib/types/access";
 import type { IssueTokenBody, ResendTokenBody } from "@/lib/validators/access.validators";
 
 /**
  * Owner-issued access links (ADR-014, FR-D011).
  *
- * The plaintext secret is created here, hashed for storage, mailed once and
- * returned once. It is never persisted, never logged and never placed in a job
- * payload — which is also why a resend mints a *new* secret instead of
- * recovering the old one.
+ * The plaintext secret is created here, hashed for storage, mailed once and —
+ * for a link the owner creates by hand — returned once. It is never persisted,
+ * never logged and never placed in a job payload — which is also why a resend
+ * mints a *new* secret instead of recovering the old one.
  *
  * `issue_access_token()` re-checks that every id in the scope is owned by the
  * caller and currently assigned to this beneficiary (422 `SCOPE_NOT_ASSIGNED`),
@@ -139,6 +145,64 @@ export async function resendToken(
   });
 }
 
+/**
+ * Mints and emails the link a document share sends by itself (migration 0007).
+ *
+ * The link follows the beneficiary's shares, so it covers every document shared
+ * with them now or later, and an unshare ends access through it at once. Mail
+ * to a third party draws on the same `sensitive` budget as an invitation or a
+ * manual link. Never throws: the share that called this is already recorded and
+ * is kept whatever happens here.
+ */
+export async function issueDocumentShareLink(
+  user: AppUser,
+  beneficiaryId: string,
+  correlationId: string,
+): Promise<{ emailSent: boolean }> {
+  let emailSent = false;
+  try {
+    // No mail, no link: a secret nobody receives is not worth minting.
+    if (!emailConfigured()) return { emailSent };
+    const budget = await checkRateLimit({ policy: "sensitive", subject: user.id });
+    if (!budget.allowed) {
+      logger.warn({ beneficiaryId, correlationId }, "document share link not sent: rate limited");
+      return { emailSent };
+    }
+
+    const db = await createUserClient();
+    const beneficiary = await beneficiaryOf(db, user.id, beneficiaryId);
+    const minted = mintAccessToken();
+    const expiresAt = expiryFromDays(MAX_TOKEN_TTL_DAYS);
+
+    const { data, error } = await db.rpc("issue_document_share_token", {
+      p_beneficiary_id: beneficiaryId,
+      p_token_hash: minted.hash,
+      p_expires_at: expiresAt,
+      p_corr: correlationId,
+    });
+    if (error) throw error;
+
+    const delivery: Delivery = {
+      tokenId: data as string,
+      beneficiaryId,
+      beneficiaryName: beneficiary.name,
+      beneficiaryEmail: beneficiary.email,
+      plaintext: minted.plaintext,
+      expiresAt,
+      correlationId,
+      action: "access.token_issued",
+    };
+    // Recorded before the audit write, so a failure there cannot turn a
+    // delivered email into "not sent".
+    emailSent = await emailLink(user, delivery, accessLinkFor(minted.plaintext));
+    await auditDelivery(user, delivery, emailSent);
+  } catch (cause) {
+    // Never the recipient's address, never the link.
+    logger.error({ err: cause, beneficiaryId, correlationId }, "document share link failed");
+  }
+  return { emailSent };
+}
+
 export async function revokeToken(
   user: AppUser,
   beneficiaryId: string,
@@ -165,41 +229,53 @@ export async function revokeToken(
  * A mail failure does not undo the token — the owner still has the link on
  * screen and can send it themselves — but it is never reported as sent.
  */
+interface Delivery {
+  tokenId: string;
+  beneficiaryId: string;
+  beneficiaryName: string;
+  beneficiaryEmail: string;
+  plaintext: string;
+  expiresAt: string;
+  correlationId: string;
+  action: string;
+}
+
 async function deliver(
   db: Awaited<ReturnType<typeof createUserClient>>,
   user: AppUser,
-  input: {
-    tokenId: string;
-    beneficiaryId: string;
-    beneficiaryName: string;
-    beneficiaryEmail: string;
-    plaintext: string;
-    expiresAt: string;
-    correlationId: string;
-    action: string;
-  },
+  input: Delivery,
 ): Promise<IssuedLink> {
   const link = accessLinkFor(input.plaintext);
-  let emailSent = false;
+  const emailSent = await emailLink(user, input, link);
+  await auditDelivery(user, input, emailSent);
 
-  if (emailConfigured()) {
-    try {
-      await sendAccessLinkEmail({
-        to: input.beneficiaryEmail,
-        beneficiaryName: input.beneficiaryName,
-        ownerName: user.name,
-        link,
-        expiresAt: input.expiresAt,
-        grantType: "DIRECT_SHARE",
-        idempotencyKey: `access-link:${input.tokenId}`,
-      });
-      emailSent = true;
-    } catch (cause) {
-      // Never the link, never the recipient's address.
-      logger.error({ err: cause, tokenId: input.tokenId }, "access link email failed");
-    }
+  const token = await accessTokenRepository.findById(db, user.id, input.tokenId);
+  if (!token) throw ApiError.internal(new Error("token missing after issue"));
+  return { token: { ...token, beneficiaryName: input.beneficiaryName }, link, emailSent };
+}
+
+/** True only when the provider accepted the message. Never throws. */
+async function emailLink(user: AppUser, input: Delivery, link: string): Promise<boolean> {
+  if (!emailConfigured()) return false;
+  try {
+    await sendAccessLinkEmail({
+      to: input.beneficiaryEmail,
+      beneficiaryName: input.beneficiaryName,
+      ownerName: user.name,
+      link,
+      expiresAt: input.expiresAt,
+      grantType: "DIRECT_SHARE",
+      idempotencyKey: `access-link:${input.tokenId}`,
+    });
+    return true;
+  } catch (cause) {
+    // Never the link, never the recipient's address.
+    logger.error({ err: cause, tokenId: input.tokenId }, "access link email failed");
+    return false;
   }
+}
 
+async function auditDelivery(user: AppUser, input: Delivery, emailSent: boolean): Promise<void> {
   await audit.log({
     actorId: user.id,
     actorRole: user.role,
@@ -210,8 +286,4 @@ async function deliver(
     metadata: { beneficiaryId: input.beneficiaryId, emailSent, expiresAt: input.expiresAt },
     correlationId: input.correlationId,
   });
-
-  const token = await accessTokenRepository.findById(db, user.id, input.tokenId);
-  if (!token) throw ApiError.internal(new Error("token missing after issue"));
-  return { token: { ...token, beneficiaryName: input.beneficiaryName }, link, emailSent };
 }

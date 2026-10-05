@@ -9,6 +9,7 @@ import { emailConfigured } from "@/lib/email/client";
 import { sendBeneficiaryInvitationEmail } from "@/lib/email/send";
 import { logger } from "@/lib/observability/logger";
 import * as beneficiaryRepository from "@/lib/repositories/beneficiary.repository";
+import { checkRateLimit } from "@/lib/security/rate-limit";
 import type {
   Beneficiary,
   BeneficiaryDetail,
@@ -96,7 +97,7 @@ export async function createBeneficiary(
   user: AppUser,
   input: BeneficiaryCreateBody,
   correlationId: string,
-): Promise<BeneficiaryWithRoles> {
+): Promise<BeneficiaryWithRoles & { invitationEmailSent: boolean }> {
   assertAccountActive(user);
   const db = await createUserClient();
 
@@ -126,7 +127,12 @@ export async function createBeneficiary(
     correlationId,
   });
 
-  return { ...created, roles: emptyRoles() };
+  const invitation = await inviteOnCreate(user, created, correlationId);
+  return {
+    ...invitation.beneficiary,
+    roles: emptyRoles(),
+    invitationEmailSent: invitation.emailSent,
+  };
 }
 
 export async function updateBeneficiary(
@@ -292,12 +298,78 @@ export async function inviteBeneficiary(
     invitedAt,
   );
 
-  const providerMessageId = await sendInvitation(user, updated, invitedAt, correlationId);
-  const emailSent = providerMessageId !== null;
+  // The key is the invitation itself: a retry of this send is deduplicated, a
+  // deliberate resend is a new message.
+  const providerMessageId = await sendInvitation(
+    user,
+    updated,
+    `beneficiary-invite:${id}:${invitedAt}`,
+    correlationId,
+  );
+  await auditInvitation(user, id, beneficiary.invitedAt, providerMessageId, correlationId);
 
-  // `beneficiaries` has no delivery columns and the email webhook tracks only
-  // the owner's own notifications, so the audit row is where this invitation
-  // is tied to the provider's record of the message.
+  return { beneficiary: updated, emailSent: providerMessageId !== null };
+}
+
+/**
+ * The invitation a new beneficiary gets without anyone asking for it.
+ *
+ * Idempotent: `invited_at` is stamped only while none is recorded, and only the
+ * request that stamped it sends; the provider key is fixed for this first
+ * invitation, so a retried send is deduplicated too. Mail to a third party
+ * draws on the same `sensitive` budget as the invite endpoint. Never throws —
+ * the beneficiary is already created and stays created; without a send the
+ * owner still has "Send invitation".
+ */
+async function inviteOnCreate(
+  user: AppUser,
+  created: Beneficiary,
+  correlationId: string,
+): Promise<{ beneficiary: Beneficiary; emailSent: boolean }> {
+  let beneficiary = created;
+  let emailSent = false;
+  try {
+    if (!emailConfigured()) return { beneficiary, emailSent };
+    const budget = await checkRateLimit({ policy: "sensitive", subject: user.id });
+    if (!budget.allowed) return { beneficiary, emailSent };
+
+    const stamped = await beneficiaryRepository.markInvitedIfUninvited(
+      createServiceClient(),
+      user.id,
+      created.id,
+      new Date().toISOString(),
+    );
+    if (!stamped) return { beneficiary, emailSent };
+    beneficiary = stamped;
+
+    const providerMessageId = await sendInvitation(
+      user,
+      stamped,
+      `beneficiary-invite:${created.id}:initial`,
+      correlationId,
+    );
+    emailSent = providerMessageId !== null;
+    await auditInvitation(user, created.id, null, providerMessageId, correlationId);
+  } catch (cause) {
+    // Whatever failed, the answer stays what actually happened to the email.
+    logger.error(
+      { err: cause, beneficiaryId: created.id, correlationId },
+      "automatic invitation failed",
+    );
+  }
+  return { beneficiary, emailSent };
+}
+
+// `beneficiaries` has no delivery columns and the email webhook tracks only the
+// owner's own notifications, so the audit row is where an invitation is tied to
+// the provider's record of the message.
+async function auditInvitation(
+  user: AppUser,
+  id: string,
+  previousInvitedAt: string | null,
+  providerMessageId: string | null,
+  correlationId: string,
+): Promise<void> {
   await audit.log({
     actorId: user.id,
     actorRole: user.role,
@@ -306,28 +378,23 @@ export async function inviteBeneficiary(
     resourceId: id,
     outcome: "SUCCESS",
     metadata: {
-      previousInvitedAt: beneficiary.invitedAt,
-      emailSent,
+      previousInvitedAt,
+      emailSent: providerMessageId !== null,
       ...(providerMessageId ? { providerMessageId } : {}),
     },
     correlationId,
   });
-
-  return { beneficiary: updated, emailSent };
 }
 
 /**
  * Sends the invitation and returns the provider's message id, or null when it
- * did not go out.
- *
- * A mail failure does not undo the recorded invitation — the owner can resend —
- * but it is never reported as sent. The key is the invitation itself: a retry
- * of this send is deduplicated, a deliberate resend is a new message.
+ * did not go out. A mail failure does not undo the recorded invitation — the
+ * owner can resend — but it is never reported as sent.
  */
 async function sendInvitation(
   user: AppUser,
   beneficiary: Beneficiary,
-  invitedAt: string,
+  idempotencyKey: string,
   correlationId: string,
 ): Promise<string | null> {
   if (!emailConfigured()) return null;
@@ -336,7 +403,7 @@ async function sendInvitation(
       to: beneficiary.email,
       beneficiaryName: beneficiary.name,
       ownerName: user.name,
-      idempotencyKey: `beneficiary-invite:${beneficiary.id}:${invitedAt}`,
+      idempotencyKey,
     });
     return sent.providerMessageId;
   } catch (cause) {

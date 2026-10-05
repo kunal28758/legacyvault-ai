@@ -18,7 +18,8 @@ import {
 } from "@/lib/email/send";
 
 /**
- * Brevo is scoped to beneficiary invitations. Every other message — access
+ * Brevo is scoped to what an owner sends a beneficiary: invitations and
+ * DIRECT_SHARE access links. Every other message — DMS and emergency access
  * links, check-in reminders, notifications, emergency codes — stays on the
  * default provider.
  */
@@ -43,20 +44,26 @@ describe("email routing", () => {
     expect(providerOfLastSend()).toBe("brevo");
   });
 
-  it("leaves every other email on the default provider", async () => {
-    const to = "someone@example.com";
-    const idempotencyKey = "key";
-
+  it.each([
+    ["DIRECT_SHARE", "brevo"],
+    ["DMS_RELEASE", undefined],
+    ["EMERGENCY_ACCESS", undefined],
+  ] as const)("sends a %s access link through %s", async (grantType, provider) => {
     await sendAccessLinkEmail({
-      to,
+      to: "asha.rao@example.com",
       beneficiaryName: "Asha Rao",
       ownerName: "Priya Sharma",
       link: "https://app.example.com/access?t=secret",
       expiresAt: "2026-10-12T00:00:00.000Z",
-      grantType: "DIRECT_SHARE",
-      idempotencyKey,
+      grantType,
+      idempotencyKey: "access-link:t1",
     });
-    expect(providerOfLastSend()).toBeUndefined();
+    expect(providerOfLastSend()).toBe(provider);
+  });
+
+  it("leaves every other email on the default provider", async () => {
+    const to = "someone@example.com";
+    const idempotencyKey = "key";
 
     await sendDmsReminderEmail({
       to,

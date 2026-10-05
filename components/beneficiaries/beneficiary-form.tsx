@@ -122,9 +122,11 @@ function BeneficiaryForm({
           description: "The change is recorded in your audit log.",
         });
       } else {
-        await create.mutateAsync(payload);
+        const created = await create.mutateAsync(payload);
         toast.success("Beneficiary added", {
-          description: "Use “Send invitation” when you are ready to share access.",
+          description: created.invitationEmailSent
+            ? "We emailed them an invitation."
+            : "The invitation email could not be sent. Use “Send invitation” to try again.",
         });
       }
       onOpenChange(false);

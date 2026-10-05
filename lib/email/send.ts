@@ -29,6 +29,8 @@ export async function sendAccessLinkEmail(input: {
     to: input.to,
     subject: `${input.ownerName} shared secure access with you`,
     idempotencyKey: input.idempotencyKey,
+    // Owner shares go with the invitations; DMS releases and emergency grants stay put.
+    ...(input.grantType === "DIRECT_SHARE" ? { provider: "brevo" as const } : {}),
     react: AccessLinkEmail({
       beneficiaryName: input.beneficiaryName,
       ownerName: input.ownerName,

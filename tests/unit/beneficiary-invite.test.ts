@@ -10,7 +10,13 @@ vi.mock("@/lib/auth/require-user", () => ({
 }));
 vi.mock("@/lib/repositories/beneficiary.repository", () => ({
   findById: vi.fn(),
+  findByEmail: vi.fn(),
+  insert: vi.fn(),
   markInvited: vi.fn(),
+  markInvitedIfUninvited: vi.fn(),
+}));
+vi.mock("@/lib/security/rate-limit", () => ({
+  checkRateLimit: vi.fn(),
 }));
 vi.mock("@/lib/audit/audit.service", () => ({
   audit: { log: vi.fn() },
@@ -35,7 +41,8 @@ import { sendBeneficiaryInvitationEmail } from "@/lib/email/send";
 import { BeneficiaryInvitationEmail } from "@/lib/email/templates/beneficiary-invitation-email";
 import { logger } from "@/lib/observability/logger";
 import * as beneficiaryRepository from "@/lib/repositories/beneficiary.repository";
-import { inviteBeneficiary } from "@/lib/services/beneficiary.service";
+import { checkRateLimit } from "@/lib/security/rate-limit";
+import { createBeneficiary, inviteBeneficiary } from "@/lib/services/beneficiary.service";
 import type { Beneficiary } from "@/lib/types/beneficiary";
 
 /**
@@ -86,6 +93,18 @@ beforeEach(() => {
   );
   vi.mocked(emailConfigured).mockReturnValue(true);
   vi.mocked(sendBeneficiaryInvitationEmail).mockResolvedValue({ providerMessageId: "msg_1" });
+  vi.mocked(audit.log).mockReset();
+  vi.mocked(beneficiaryRepository.findByEmail).mockResolvedValue(null);
+  vi.mocked(beneficiaryRepository.insert).mockResolvedValue(beneficiary());
+  vi.mocked(beneficiaryRepository.markInvitedIfUninvited).mockImplementation(
+    async (_db, _userId, _id, at) => beneficiary({ invitedAt: at }),
+  );
+  vi.mocked(checkRateLimit).mockResolvedValue({
+    allowed: true,
+    limit: 5,
+    remaining: 4,
+    retryAfterSeconds: 900,
+  });
 });
 
 afterEach(() => {
@@ -228,6 +247,99 @@ describe("inviteBeneficiary — idempotency", () => {
       BENEFICIARY_ID,
       BENEFICIARY_ID,
     ]);
+  });
+});
+
+describe("createBeneficiary — automatic invitation", () => {
+  const input = { name: "Asha Rao", relationship: "Sibling", email: ADDRESS };
+
+  it("invites a new beneficiary once, with a key fixed to that first invitation", async () => {
+    const created = await createBeneficiary(user, input, "corr");
+
+    expect(created.invitationEmailSent).toBe(true);
+    expect(created.invitedAt).not.toBeNull();
+    expect(sendBeneficiaryInvitationEmail).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(sendBeneficiaryInvitationEmail).mock.calls[0][0]).toMatchObject({
+      to: ADDRESS,
+      idempotencyKey: `beneficiary-invite:${BENEFICIARY_ID}:initial`,
+    });
+    // Stamped only while none is recorded, through the caller's own scope.
+    expect(beneficiaryRepository.markInvitedIfUninvited).toHaveBeenCalledWith(
+      serviceDb,
+      user.id,
+      BENEFICIARY_ID,
+      expect.any(String),
+    );
+    expect(checkRateLimit).toHaveBeenCalledWith({ policy: "sensitive", subject: user.id });
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "beneficiary.invited", resourceId: BENEFICIARY_ID }),
+    );
+    expect(JSON.stringify(auditMetadata())).not.toContain(ADDRESS);
+  });
+
+  it("sends nothing when another request already recorded the invitation", async () => {
+    vi.mocked(beneficiaryRepository.markInvitedIfUninvited).mockResolvedValue(null);
+
+    const created = await createBeneficiary(user, input, "corr");
+
+    expect(created.invitationEmailSent).toBe(false);
+    expect(sendBeneficiaryInvitationEmail).not.toHaveBeenCalled();
+  });
+
+  it("keeps the beneficiary when the invitation email fails", async () => {
+    vi.mocked(sendBeneficiaryInvitationEmail).mockRejectedValue(
+      new Error("email send failed: unauthorized"),
+    );
+
+    const created = await createBeneficiary(user, input, "corr");
+
+    expect(created.id).toBe(BENEFICIARY_ID);
+    expect(created.invitationEmailSent).toBe(false);
+    expect(JSON.stringify(vi.mocked(logger.error).mock.calls)).not.toContain(ADDRESS);
+  });
+
+  it("still reports a delivered invitation when only the audit write fails", async () => {
+    vi.mocked(audit.log).mockImplementation(async (entry) => {
+      if (entry.action === "beneficiary.invited") throw new Error("audit down");
+    });
+
+    const created = await createBeneficiary(user, input, "corr");
+
+    expect(created.invitationEmailSent).toBe(true);
+    expect(created.invitedAt).not.toBeNull();
+  });
+
+  it("keeps the beneficiary when recording the invitation throws", async () => {
+    vi.mocked(beneficiaryRepository.markInvitedIfUninvited).mockRejectedValue(new Error("db down"));
+
+    const created = await createBeneficiary(user, input, "corr");
+
+    expect(created.id).toBe(BENEFICIARY_ID);
+    expect(created.invitationEmailSent).toBe(false);
+    expect(sendBeneficiaryInvitationEmail).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      "the third-party email budget is spent",
+      () =>
+        vi.mocked(checkRateLimit).mockResolvedValue({
+          allowed: false,
+          limit: 5,
+          remaining: 0,
+          retryAfterSeconds: 60,
+        }),
+    ],
+    ["email is not configured", () => vi.mocked(emailConfigured).mockReturnValue(false)],
+  ])("records and sends nothing when %s", async (_, arrange) => {
+    arrange();
+
+    const created = await createBeneficiary(user, input, "corr");
+
+    expect(created.invitationEmailSent).toBe(false);
+    expect(created.invitedAt).toBeNull();
+    expect(beneficiaryRepository.markInvitedIfUninvited).not.toHaveBeenCalled();
+    expect(sendBeneficiaryInvitationEmail).not.toHaveBeenCalled();
   });
 });
 

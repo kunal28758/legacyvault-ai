@@ -41,7 +41,15 @@ expressed by relations, not flags: trusted contact = linked through
 - Contact-field edits are direct (allow-list); name/email changes require
   `confirmed: true` (FR-D008); every change is audited with previous/new
   values (FR-D009).
-- Invitation email (`POST /beneficiaries/:id/invite`) sets `invitedAt`.
+- **Invitation.** Creating a beneficiary sends the invitation email
+  automatically — a notification only, with no access link. It is
+  idempotent: `invitedAt` is stamped only while it is unset, only the request
+  that stamped it sends, and the provider key is fixed for that first
+  invitation (`beneficiary-invite:<id>:initial`). It draws on the owner's
+  `sensitive` rate-limit budget, and creation succeeds even when the email
+  does not go out (the response's `invitationEmailSent` says which).
+  `POST /beneficiaries/:id/invite` re-sends it as a new message and stamps
+  `invitedAt` again. (Updated 2026-10-05, ADR-014 § 7.)
 - **Removal** (`DELETE /beneficiaries/:id` with `confirmed: true`) runs
   `remove_beneficiary()` which, in one transaction, deletes the
   beneficiary's assignments, revokes their access tokens, removes their Dead
@@ -69,8 +77,10 @@ expressed by relations, not flags: trusted contact = linked through
 ## 4. Documents and videos for recipients
 
 - Sharing a document = an assignment with resource type DOCUMENT
-  (FR-H013); revoking the share removes it. Temporary access is bounded by
-  the access token's expiry (FR-H014).
+  (FR-H013); revoking the share removes it. Sharing also emails the
+  beneficiary a link that follows their shares (§ 5), so the owner never
+  issues, copies or sends a link for documents. Temporary access is bounded
+  by the access token's expiry (FR-H014).
 - Video messages carry a **delivery condition** (IMMEDIATE, DEAD_MAN_SWITCH,
   EMERGENCY_ACCESS — FR-K006) that is enforced on every access with a strict
   grant-type mapping (`data-model.md` § 11): IMMEDIATE → any grant that
@@ -80,7 +90,16 @@ expressed by relations, not flags: trusted contact = linked through
 
 ## 5. Scoped access: tokens and the access cookie (FR-D011, FR-H009, FR-K008; ADR-014)
 
-1. The owner issues a **DIRECT_SHARE** token for a beneficiary
+0. **Documents (automatic).** Sharing a document issues and emails a
+   DIRECT_SHARE token by itself (`issue_document_share_token()`, ADR-014 § 7).
+   That token follows the beneficiary's shares: its documents are whatever is
+   shared with them at the moment of each request, so a document shared later
+   appears in the same portal and an unshared one is refused on the next
+   request. Each share emails a fresh link; earlier links stay valid until
+   they expire or are revoked. The email draws on the `sensitive` budget; a
+   failed email never undoes the share.
+1. The owner can also issue a **DIRECT_SHARE** token manually from the Access
+   Links panel — for assets, videos, or a fresh fallback link
    (`POST /beneficiaries/:id/tokens` with a scope of documents, assets,
    and/or videos, TTL ≤ 30 days) → `issue_access_token()` validates that
    every scoped id belongs to the owner **and is currently assigned to that
@@ -96,14 +115,18 @@ expressed by relations, not flags: trusted contact = linked through
 3. Resource endpoints (`/access/resources`, `/access/documents/:id[/download]`,
    `/access/assets/:type/:id`, `/access/videos/:id`,
    `/access/plan-sections/:section`) re-check revocation, expiry, scope and
-   beneficiary status on every request; asset views never include encrypted
+   beneficiary status on every request. For DIRECT_SHARE tokens, documents are
+   checked against the current shares: a following token (step 0) shows every
+   document shared now; a manual token keeps its fixed list minus anything
+   since unshared, and never gains a document. Asset views never include encrypted
    fields; downloads use 15-minute signed URLs; every access is audited with
    the beneficiary as actor.
 4. The owner can list, revoke and **resend** tokens at any time
    (`POST /beneficiaries/:id/tokens/:tokenId/resend` → `resend_access_token()`
    revokes the current token with `RESENT` and mints exactly one replacement,
-   audited — ADR-014 § 6); deactivating or removing the beneficiary revokes
-   them; housekeeping expires them.
+   audited — ADR-014 § 6; a following token's replacement keeps following);
+   deactivating or removing the beneficiary revokes them; housekeeping expires
+   them.
 
 The same mechanism delivers Dead Man Switch releases (grant type
 DMS_RELEASE — see the Dead Man Switch workflow) and emergency grants
@@ -149,7 +172,10 @@ every event is audited (FR-J007, J009, J010). Request states are listed in
   functions too.
 - Tokens never appear in request paths or logs; cookies are httpOnly,
   Secure, SameSite=Strict, path-scoped.
-- Rate limits: `publicEmergency`, `accessExchange`, `tokenAccess` (ADR-007).
+- Rate limits: `publicEmergency`, `accessExchange`, `tokenAccess` (ADR-007);
+  every email an owner causes to be sent to a beneficiary — invitation,
+  manual link, automatic document-share link — draws on that owner's
+  `sensitive` budget (5 per 15 minutes).
 
 ## 8. Verification
 

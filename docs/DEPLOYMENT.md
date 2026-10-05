@@ -164,7 +164,7 @@ Attack protection, Integrations, Webhooks, Customization.
 | 5 | Session lifetime 24 h inactivity (FR-A008) — **verify the plan supports inactivity timeout and session-token customization** | ⏳ | ⏳ |
 | 6 | Attack protection: lockout after 5 failed attempts for 30 min; bot protection on (FR-A012/A013) | ⏳ | ⏳ |
 | 7 | Reverification enabled (`strict`, `multi_factor`) (FR-A018) | ⏳ | ⏳ |
-| 8 | Supabase third-party auth integration enabled (adds `role: authenticated`) (ADR-004) | ⏳ | ⏳ |
+| 8 | Supabase third-party auth integration enabled (adds `role: authenticated`) (ADR-004) — Clerk Dashboard → [Connect with Supabase](https://dashboard.clerk.com/setup/supabase) | ✅ 2026-10-05: a session token minted for a synthetic test user carries `role: authenticated`, issuer `https://needed-turkey-5633.clerk.accounts.dev`, RS256 with `kid` | ⏳ no production instance yet — the deployed app uses the development instance |
 | 9 | Webhook endpoint `/api/webhooks/clerk` (Svix) with `user.created\|updated\|deleted`, `session.created\|ended\|removed\|revoked`; signing secret stored as `CLERK_WEBHOOK_SIGNING_SECRET` (T198) | ⏳ | ⏳ |
 | 10 | Branded emails (verification, reset, MFA) | ⏳ | ⏳ |
 | 11 | Event coverage for failed sign-in attempts (FR-A014) — outcome of **T203** recorded here | ⏳ | ⏳ |
@@ -177,7 +177,7 @@ Code that depends on this checklist: `proxy.ts` (T192), `app/layout.tsx`
 
 | # | Setting (source) | Local stack | Staging | Production |
 |---|---|---|---|---|
-| 1 | Clerk added as third-party auth provider (ADR-004 r2) | ✅ `[auth.third_party.clerk] enabled = true` with the development Frontend API domain in `config.toml` | ⏳ | ⏳ |
+| 1 | Clerk added as third-party auth provider (ADR-004 r2) — Supabase Dashboard → [Authentication → Third-party auth](https://supabase.com/dashboard/project/_/auth/third-party) → Clerk, with the instance domain | ✅ `[auth.third_party.clerk] enabled = true` with the development Frontend API domain in `config.toml` | ⏳ | ✅ 2026-10-05 (project `zlgmthrdoxyfkldeaxyl`): read-only probe — hosted PostgREST accepted a Clerk session token from `needed-turkey-5633` and returned only the caller's own `users` row (was `PGRST301` on 2026-10-04, before the provider was registered). Re-register with the production instance domain when one exists |
 | 2 | Private buckets `documents`, `videos` (ADR-005; the retired `quarantine` bucket also exists, private and unused) | ✅ created by `supabase/migrations/0004_storage_buckets.sql` and verified private | ⏳ apply the migration | ⏳ apply the migration |
 | 3 | Global file-size limit ≥ 500 MB (FR-K002) — **Pro plan or higher** | 🔧 `file_size_limit = "500MiB"` | ⏳ | ⏳ |
 | 4 | Automated backups on; **PITR add-on** for production (NFR-DR-001) | n/a | ⏳ | ⏳ |

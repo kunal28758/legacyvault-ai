@@ -196,6 +196,30 @@ export async function markInvited(
   return toBeneficiary(data);
 }
 
+/**
+ * Stamps `invited_at` only while none is recorded, and returns null when another
+ * request got there first — the guard that makes the automatic invitation
+ * idempotent. Same ownership precondition as `markInvited`.
+ */
+export async function markInvitedIfUninvited(
+  serviceDb: TypedSupabaseClient,
+  userId: string,
+  id: string,
+  at: string,
+): Promise<Beneficiary | null> {
+  const { data, error } = await serviceDb
+    .from("beneficiaries")
+    .update({ invited_at: at })
+    .eq("id", id)
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .is("invited_at", null)
+    .select("*")
+    .maybeSingle();
+  if (error) throw error;
+  return data ? toBeneficiary(data) : null;
+}
+
 /* ── Assignments and contact roles ────────────────────────────────────────── */
 
 export async function listAssignments(

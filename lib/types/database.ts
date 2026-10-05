@@ -43,6 +43,7 @@ export type Database = {
           delivery_provider_message_id: string | null
           emergency_request_id: string | null
           expires_at: string
+          follows_document_shares: boolean
           grant_type: Database["public"]["Enums"]["access_grant_type"]
           id: string
           last_used_at: string | null
@@ -64,6 +65,7 @@ export type Database = {
           delivery_provider_message_id?: string | null
           emergency_request_id?: string | null
           expires_at: string
+          follows_document_shares?: boolean
           grant_type: Database["public"]["Enums"]["access_grant_type"]
           id?: string
           last_used_at?: string | null
@@ -85,6 +87,7 @@ export type Database = {
           delivery_provider_message_id?: string | null
           emergency_request_id?: string | null
           expires_at?: string
+          follows_document_shares?: boolean
           grant_type?: Database["public"]["Enums"]["access_grant_type"]
           id?: string
           last_used_at?: string | null
@@ -1821,6 +1824,15 @@ export type Database = {
         }
         Returns: string
       }
+      issue_document_share_token: {
+        Args: {
+          p_beneficiary_id: string
+          p_corr?: string
+          p_expires_at: string
+          p_token_hash: string
+        }
+        Returns: string
+      }
       lv_audit: {
         Args: {
           p_action: string
@@ -1832,6 +1844,10 @@ export type Database = {
           p_resource_type: string
         }
         Returns: string
+      }
+      lv_current_document_scope: {
+        Args: { p_beneficiary: string; p_owner: string }
+        Returns: Json
       }
       lv_dms_event: {
         Args: {

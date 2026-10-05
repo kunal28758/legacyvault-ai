@@ -80,7 +80,9 @@ export function useCreateBeneficiary() {
   const invalidate = useInvalidateBeneficiaries();
   return useMutation({
     mutationFn: async (values: BeneficiaryFormValues) => {
-      const { data } = await apiClient.post<BeneficiaryWithRoles>("/beneficiaries", values);
+      const { data } = await apiClient.post<
+        BeneficiaryWithRoles & { invitationEmailSent: boolean }
+      >("/beneficiaries", values);
       return data;
     },
     onSuccess: invalidate,

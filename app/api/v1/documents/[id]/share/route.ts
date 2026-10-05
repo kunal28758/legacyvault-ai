@@ -14,6 +14,10 @@ type IdParams = { id: string };
  * A share is a `beneficiary_assignments` row with `resourceType = DOCUMENT`, so
  * it goes through `assign_beneficiary()` and inherits its ownership and
  * beneficiary-status checks. Documents carry no allocation percentage.
+ *
+ * The share then emails the beneficiary a link that follows their shares
+ * (migration 0007); `accessEmailSent` reports whether it went out. A failed
+ * email never undoes the share.
  */
 export const POST = withApi<DocumentShareBody, undefined, IdParams>(
   {

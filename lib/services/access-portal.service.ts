@@ -62,6 +62,7 @@ interface TokenRow {
   expires_at: string;
   revoked_at: string | null;
   used_at: string | null;
+  follows_document_shares: boolean;
 }
 
 function asScope(value: unknown): AccessScope {
@@ -87,7 +88,9 @@ function refused(): ApiError {
 async function loadGrant(db: TypedSupabaseClient, tokenId: string): Promise<AccessGrant> {
   const { data: token, error } = await db
     .from("access_tokens")
-    .select("id, owner_user_id, beneficiary_id, grant_type, scope, expires_at, revoked_at, used_at")
+    .select(
+      "id, owner_user_id, beneficiary_id, grant_type, scope, expires_at, revoked_at, used_at, follows_document_shares",
+    )
     .eq("id", tokenId)
     .maybeSingle<TokenRow>();
   if (error) throw error;
@@ -109,6 +112,11 @@ async function loadGrant(db: TypedSupabaseClient, tokenId: string): Promise<Acce
   if (ownerError) throw ownerError;
   if (!owner || owner.deleted_at) throw refused();
 
+  const scope = asScope(token.scope);
+  if (token.grant_type === "DIRECT_SHARE") {
+    scope.documents = await sharedDocuments(db, token, scope.documents);
+  }
+
   return {
     tokenId: token.id,
     ownerUserId: token.owner_user_id,
@@ -116,9 +124,33 @@ async function loadGrant(db: TypedSupabaseClient, tokenId: string): Promise<Acce
     beneficiaryId: beneficiary.id,
     beneficiaryName: beneficiary.name,
     grantType: token.grant_type,
-    scope: asScope(token.scope),
+    scope,
     expiresAt: token.expires_at,
   };
+}
+
+/**
+ * A DIRECT_SHARE link opens only documents shared with its beneficiary right
+ * now. A link minted by sharing (`follows_document_shares`) shows all of them;
+ * any other keeps its fixed list minus whatever has since been unshared — it
+ * can lose documents, never gain them. DMS and emergency grants keep their
+ * released scope.
+ */
+async function sharedDocuments(
+  db: TypedSupabaseClient,
+  token: TokenRow,
+  issued: string[],
+): Promise<string[]> {
+  if (!token.follows_document_shares && issued.length === 0) return [];
+  const { data, error } = await db
+    .from("beneficiary_assignments")
+    .select("resource_id")
+    .eq("user_id", token.owner_user_id)
+    .eq("beneficiary_id", token.beneficiary_id)
+    .eq("resource_type", "DOCUMENT");
+  if (error) throw error;
+  const shared = (data ?? []).map((row) => row.resource_id);
+  return token.follows_document_shares ? shared : issued.filter((id) => shared.includes(id));
 }
 
 function summarize(grant: AccessGrant): AccessSummary {

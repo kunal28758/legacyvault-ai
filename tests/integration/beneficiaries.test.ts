@@ -145,6 +145,28 @@ describe.skipIf(!available)("beneficiaries — Class A writes", () => {
     expect(invited.invitedAt).not.toBeNull();
     expect(invited.status).toBe("PENDING");
   });
+
+  it("records the first invitation once, however many requests race for it", async () => {
+    const created = await beneficiaryRepository.insert(alice, aliceId, seed());
+    const service = createServiceScopedClient() as unknown as TypedSupabaseClient;
+    const at = new Date().toISOString();
+
+    const attempts = await Promise.all(
+      [1, 2, 3].map(() =>
+        beneficiaryRepository.markInvitedIfUninvited(service, aliceId, created.id, at),
+      ),
+    );
+
+    // Exactly one request stamps it — and only that one goes on to send.
+    expect(attempts.filter(Boolean)).toHaveLength(1);
+    await expect(
+      beneficiaryRepository.markInvitedIfUninvited(service, aliceId, created.id, at),
+    ).resolves.toBeNull();
+    // Never through somebody else's scope.
+    await expect(
+      beneficiaryRepository.markInvitedIfUninvited(service, bobId, created.id, at),
+    ).resolves.toBeNull();
+  });
 });
 
 describe.skipIf(!available)("beneficiaries — isolation", () => {

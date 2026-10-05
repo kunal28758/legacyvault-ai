@@ -107,7 +107,7 @@ Application-owned auth-adjacent endpoints: `POST /api/webhooks/clerk`
 | Method | Endpoint | Auth | Description |
 |--------|----------|:----:|-------------|
 | GET | `/beneficiaries` | ✅ | List (status filter; includes roles: assignedResources count, isTrustedContact, isEmergencyContact) |
-| POST | `/beneficiaries` | ✅ | Create (status PENDING) |
+| POST | `/beneficiaries` | ✅ | Create (status PENDING); sends the invitation automatically (ADR-014 § 7) → beneficiary + `invitationEmailSent` |
 | GET | `/beneficiaries/:id` | ✅ | Details, assignments, tokens, DMS/EA roles |
 | PATCH | `/beneficiaries/:id` | ✅ | Update contact fields (`confirmed: true` required for name/email changes — FR-D008) |
 | POST | `/beneficiaries/:id/status` | ✅ | `{ status: ACTIVE|INACTIVE, confirmed: true }` → `set_beneficiary_status()`; INACTIVE revokes tokens |
@@ -168,7 +168,7 @@ GET; `/decrypt` requires reverification. Ownership enforced (403).
 | PATCH | `/documents/:id` | ✅ | name / folderId / metadata (Class A allow-list) |
 | DELETE | `/documents/:id` | ✅ | `delete_document()` — soft delete, object-removal job, shares/attachments removed, audit retained |
 | GET | `/documents/:id/versions` | ✅ | Version history |
-| POST | `/documents/:id/share` | ✅ | `{ beneficiaryId, confirmed: true }` → assignment (resourceType DOCUMENT) |
+| POST | `/documents/:id/share` | ✅ | `{ beneficiaryId, confirmed: true }` → assignment (resourceType DOCUMENT), then emails a link that follows the beneficiary's shares (ADR-014 § 7) → `{ shares, accessEmailSent }` |
 | DELETE | `/documents/:id/share/:beneficiaryId` | ✅ | Revoke share |
 | **Folders** | | | |
 | GET / POST | `/documents/folders` | ✅ | List tree / create |

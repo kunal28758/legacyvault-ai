@@ -7,6 +7,7 @@ import { assertAccountActive } from "@/lib/auth/require-user";
 import { createUserClient } from "@/lib/db/server";
 import * as documentRepository from "@/lib/repositories/document.repository";
 import * as folderRepository from "@/lib/repositories/folder.repository";
+import * as accessService from "@/lib/services/access.service";
 import { BUCKETS, createSignedDownloadUrl, type BucketName } from "@/lib/storage/storage";
 import type {
   DocumentDetail,
@@ -231,7 +232,7 @@ export async function shareDocument(
   id: string,
   beneficiaryId: string,
   correlationId: string,
-): Promise<DocumentShare[]> {
+): Promise<{ shares: DocumentShare[]; accessEmailSent: boolean }> {
   assertAccountActive(user);
   const db = await createUserClient();
 
@@ -263,7 +264,14 @@ export async function shareDocument(
   });
   if (error) throw error;
 
-  return listShares(db, user.id, id);
+  // The share is recorded; the beneficiary's link is emailed after it and its
+  // failure never undoes the share.
+  const { emailSent } = await accessService.issueDocumentShareLink(
+    user,
+    beneficiaryId,
+    correlationId,
+  );
+  return { shares: await listShares(db, user.id, id), accessEmailSent: emailSent };
 }
 
 export async function unshareDocument(

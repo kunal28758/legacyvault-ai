@@ -40,8 +40,9 @@ interface ShareDocumentDialogProps {
  *
  * A share is a `beneficiary_assignments` row, so it runs through
  * `assign_beneficiary()` and inherits its checks: both sides must belong to the
- * caller and an INACTIVE beneficiary is refused. Sharing does **not** hand out
- * a link — it makes the document eligible to appear in the scope of one.
+ * caller and an INACTIVE beneficiary is refused. The server then emails the
+ * beneficiary a link that follows their shares, so this document — and any
+ * shared later — appears in it, and unsharing removes it at once.
  */
 export function ShareDocumentDialog({ open, onOpenChange, documentId }: ShareDocumentDialogProps) {
   return (
@@ -78,9 +79,11 @@ function ShareForm({
       return;
     }
     try {
-      await share.mutateAsync({ id: documentId, beneficiaryId: selected });
+      const result = await share.mutateAsync({ id: documentId, beneficiaryId: selected });
       toast.success("Document shared", {
-        description: "They can open it through a scoped access link you issue.",
+        description: result.accessEmailSent
+          ? "We emailed them a secure link to everything you have shared with them."
+          : "The email could not be sent. Any link they already have shows it; otherwise send one from their Access links.",
       });
       onOpenChange(false);
     } catch (caught) {
@@ -93,8 +96,8 @@ function ShareForm({
       <DialogHeader>
         <DialogTitle>Share document</DialogTitle>
         <DialogDescription>
-          Sharing makes this document eligible for a beneficiary&rsquo;s access link. It does not
-          send anything on its own.
+          We email them a secure link to everything you have shared with them. Unsharing removes
+          access straight away.
         </DialogDescription>
       </DialogHeader>
       <div className="space-y-4">

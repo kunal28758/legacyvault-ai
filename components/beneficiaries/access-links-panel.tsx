@@ -151,6 +151,10 @@ export function AccessLinksPanel({
         A link covers only what this person is assigned, expires within 30 days and is exchanged
         once for a secure session. Only its hash is stored — it cannot be shown again later.
       </p>
+      <p className="text-xs leading-5 text-muted-foreground">
+        Sharing a document emails them a link automatically. Create one here only for assets,
+        videos, or to send a fresh link.
+      </p>
 
       {issued && (
         <div className="space-y-2 rounded-lg border border-success/40 bg-success/5 p-3">
