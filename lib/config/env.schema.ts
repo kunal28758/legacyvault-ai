@@ -154,6 +154,13 @@ export const serverEnvGroups = {
   emailWebhook: {
     EMAIL_WEBHOOK_SECRET: z.string().min(1),
   },
+  // Brevo carries the messages that opt into it (beneficiary invitations).
+  // Optional: without both variables those messages go through Resend like
+  // the rest. Brevo has its own verified sender; EMAIL_FROM stays Resend's.
+  brevo: {
+    BREVO_API_KEY: optionalSecret,
+    BREVO_EMAIL_FROM: blankAsUnset(z.string().min(3).optional()),
+  },
   // Observability (ADR-010) — optional locally, required in production below
   observability: {
     SENTRY_DSN: z.url().optional(),
@@ -185,6 +192,7 @@ export const serverEnvShape = {
   ...serverEnvGroups.ai,
   ...serverEnvGroups.email,
   ...serverEnvGroups.emailWebhook,
+  ...serverEnvGroups.brevo,
   ...serverEnvGroups.observability,
   ...serverEnvGroups.cron,
   ...serverEnvGroups.operations,

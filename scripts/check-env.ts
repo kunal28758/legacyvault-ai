@@ -62,6 +62,12 @@ const OPTIONAL_LOCALLY: {
     without: "links and reminders are created but reported as `emailSent: false`",
   },
   {
+    group: "brevo",
+    feature: "Brevo for beneficiary invitations",
+    without: "invitations are sent through Resend",
+    configured: (values) => Boolean(values.BREVO_API_KEY && values.BREVO_EMAIL_FROM),
+  },
+  {
     group: "emailWebhook",
     feature: "the email delivery webhook",
     without: "sent mail stays SENT; bounces and deliveries are not recorded",

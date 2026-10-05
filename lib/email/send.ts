@@ -50,6 +50,7 @@ export async function sendBeneficiaryInvitationEmail(input: {
     to: input.to,
     subject: `${input.ownerName} named you a beneficiary`,
     idempotencyKey: input.idempotencyKey,
+    provider: "brevo",
     react: BeneficiaryInvitationEmail({
       beneficiaryName: input.beneficiaryName,
       ownerName: input.ownerName,

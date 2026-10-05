@@ -133,6 +133,22 @@ describe("inviteBeneficiary — delivery", () => {
     expect(audited).not.toContain("Asha Rao");
   });
 
+  it("records a Brevo message id unchanged and keeps the response shape", async () => {
+    const brevoId = "<202610050900.1234567890@smtp-relay.mailin.fr>";
+    vi.mocked(sendBeneficiaryInvitationEmail).mockResolvedValue({ providerMessageId: brevoId });
+
+    const result = await inviteBeneficiary(user, BENEFICIARY_ID, "corr");
+
+    expect(Object.keys(result).sort()).toEqual(["beneficiary", "emailSent"]);
+    expect(result.emailSent).toBe(true);
+    expect(auditMetadata()).toEqual({
+      previousInvitedAt: null,
+      emailSent: true,
+      providerMessageId: brevoId,
+    });
+    expect(JSON.stringify(auditMetadata())).not.toContain(ADDRESS);
+  });
+
   it("records the invitation but reports emailSent false when email is not configured", async () => {
     vi.mocked(emailConfigured).mockReturnValue(false);
 
