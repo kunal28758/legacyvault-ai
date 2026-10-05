@@ -3,6 +3,11 @@
 import { useState } from "react";
 import { toast } from "sonner";
 
+import {
+  BeneficiaryChoiceNotice,
+  beneficiaryChoice,
+  beneficiaryChoicePlaceholder,
+} from "@/components/beneficiaries/beneficiary-choice";
 import { FormField } from "@/components/shared/form-field";
 import { Button } from "@/components/ui/button";
 import {
@@ -64,9 +69,8 @@ function ShareForm({
   const [error, setError] = useState<string | null>(null);
 
   const alreadyShared = new Set((documentQuery.data?.shares ?? []).map((s) => s.beneficiaryId));
-  const beneficiaries = (beneficiariesQuery.data?.items ?? []).filter(
-    (beneficiary) => beneficiary.status !== "INACTIVE" && !alreadyShared.has(beneficiary.id),
-  );
+  const choice = beneficiaryChoice(beneficiariesQuery, alreadyShared);
+  const beneficiaries = choice.state === "ready" ? choice.options : [];
 
   const submit = async () => {
     if (!selected) {
@@ -105,15 +109,7 @@ function ShareForm({
               items={beneficiaries.map((b) => ({ value: b.id, label: b.name }))}
             >
               <SelectTrigger id={props.id} className="w-full">
-                <SelectValue
-                  placeholder={
-                    beneficiariesQuery.isPending
-                      ? "Loading beneficiaries…"
-                      : beneficiaries.length === 0
-                        ? "No eligible beneficiaries"
-                        : "Choose a beneficiary"
-                  }
-                />
+                <SelectValue placeholder={beneficiaryChoicePlaceholder(choice)} />
               </SelectTrigger>
               <SelectContent>
                 {beneficiaries.map((b) => (
@@ -125,6 +121,12 @@ function ShareForm({
             </Select>
           )}
         </FormField>
+        <BeneficiaryChoiceNotice
+          choice={choice}
+          resource="document"
+          onRetry={() => void beneficiariesQuery.refetch()}
+          retrying={beneficiariesQuery.isFetching}
+        />
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={() => onOpenChange(false)}>

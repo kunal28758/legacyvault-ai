@@ -4,6 +4,11 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { AllocationBar } from "@/components/beneficiaries/allocation-bar";
+import {
+  BeneficiaryChoiceNotice,
+  beneficiaryChoice,
+  beneficiaryChoicePlaceholder,
+} from "@/components/beneficiaries/beneficiary-choice";
 import { FormField } from "@/components/shared/form-field";
 import { Button } from "@/components/ui/button";
 import {
@@ -71,9 +76,8 @@ function AssignForm({
 
   // Already-assigned people cannot be assigned twice (409 ALREADY_ASSIGNED).
   const assignedIds = new Set(assignments.map((assignment) => assignment.beneficiaryId));
-  const beneficiaries = (beneficiariesQuery.data?.items ?? []).filter(
-    (beneficiary) => beneficiary.status !== "INACTIVE" && !assignedIds.has(beneficiary.id),
-  );
+  const choice = beneficiaryChoice(beneficiariesQuery, assignedIds);
+  const beneficiaries = choice.state === "ready" ? choice.options : [];
 
   const submit = async () => {
     if (!assetId) return;
@@ -124,15 +128,7 @@ function AssignForm({
               items={beneficiaries.map((b) => ({ value: b.id, label: b.name }))}
             >
               <SelectTrigger id={props.id} className="w-full">
-                <SelectValue
-                  placeholder={
-                    beneficiariesQuery.isPending
-                      ? "Loading beneficiaries…"
-                      : beneficiaries.length === 0
-                        ? "No eligible beneficiaries"
-                        : "Choose a beneficiary"
-                  }
-                />
+                <SelectValue placeholder={beneficiaryChoicePlaceholder(choice)} />
               </SelectTrigger>
               <SelectContent>
                 {beneficiaries.map((b) => (
@@ -144,6 +140,12 @@ function AssignForm({
             </Select>
           )}
         </FormField>
+        <BeneficiaryChoiceNotice
+          choice={choice}
+          resource="asset"
+          onRetry={() => void beneficiariesQuery.refetch()}
+          retrying={beneficiariesQuery.isFetching}
+        />
 
         {assignments.length > 0 && (
           <div className="space-y-2 rounded-lg border border-border p-3">
