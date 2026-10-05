@@ -27,7 +27,9 @@ export function ProgressLine({
   return (
     <Progress value={value} aria-label={label} className={className}>
       <ProgressTrack className="h-1.5">
-        <ProgressIndicator className="bg-gradient-brand data-[indeterminate]:w-full data-[indeterminate]:animate-pulse motion-reduce:data-[indeterminate]:animate-none" />
+        {/* Indeterminate: a third of the track sliding across — never a full bar,
+            which would read as finished. Reduced motion: still, and faded. */}
+        <ProgressIndicator className="bg-gradient-brand data-[indeterminate]:w-1/3 data-[indeterminate]:animate-progress-indeterminate data-[indeterminate]:transition-none motion-reduce:data-[indeterminate]:w-full motion-reduce:data-[indeterminate]:animate-none motion-reduce:data-[indeterminate]:opacity-40" />
       </ProgressTrack>
     </Progress>
   );

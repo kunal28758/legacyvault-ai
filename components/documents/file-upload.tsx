@@ -233,6 +233,17 @@ export function UploadItemCard({ item, onCancel, onRetry, onRemove }: UploadItem
   const busy = item.stage === "validating" || item.stage === "uploading" || item.stage === "saving";
   const showSteps =
     item.stage !== "ready" && item.stage !== "invalid" && item.stage !== "cancelled";
+  // A number only once real bytes are reported moving — a fast upload often
+  // finishes before the first progress event, and "0%" over an empty bar reads
+  // as nothing happening. Held below 100 until storage confirms the transfer.
+  const percent =
+    item.stage === "uploading" && item.progress > 0 ? Math.min(item.progress, 99) : null;
+  const headline =
+    item.stage === "saving"
+      ? "Checking and saving…"
+      : percent === null
+        ? "Preparing upload…"
+        : "Uploading…";
 
   return (
     <li
@@ -271,6 +282,22 @@ export function UploadItemCard({ item, onCancel, onRetry, onRemove }: UploadItem
         ) : null}
       </div>
 
+      {/* Bytes in transit have a real percentage; the work before and after
+          them does not, so that shows activity without a number. */}
+      {busy && (
+        <div className="space-y-2 rounded-xl border border-brand-cyan/20 bg-background/50 p-3">
+          <div className="flex items-baseline justify-between gap-3 text-sm">
+            <span className="font-medium">{headline}</span>
+            {percent !== null && (
+              <span className="font-semibold text-brand-cyan tabular-nums" aria-hidden>
+                {percent}%
+              </span>
+            )}
+          </div>
+          <ProgressLine label={`${headline.replace("…", "")} ${item.file.name}`} value={percent} />
+        </div>
+      )}
+
       {showSteps && (
         <ol className="space-y-1.5" aria-label={`Progress for ${item.file.name}`}>
           <li className="flex items-center gap-2 text-sm">
@@ -280,11 +307,6 @@ export function UploadItemCard({ item, onCancel, onRetry, onRemove }: UploadItem
           <li className="flex items-center gap-2 text-sm">
             <StepIcon state={steps.upload} />
             <span>Uploaded to private storage</span>
-            {steps.upload === "active" && (
-              <span className="ml-auto text-xs text-muted-foreground tabular-nums">
-                {item.progress}%
-              </span>
-            )}
           </li>
           <li className="flex items-center gap-2 text-sm">
             <StepIcon state={steps.check} />
@@ -303,22 +325,6 @@ export function UploadItemCard({ item, onCancel, onRetry, onRemove }: UploadItem
             <span>Added to your private vault</span>
           </li>
         </ol>
-      )}
-
-      {/* Bytes in transit have a real percentage; the checks before and after
-          them do not, so those show activity without a number — and the bar
-          never reads 100% before the file is actually stored. */}
-      {item.stage === "uploading" && (
-        <ProgressLine label={`Uploading ${item.file.name}`} value={item.progress} />
-      )}
-      {(item.stage === "validating" || item.stage === "saving") && (
-        <ProgressLine
-          label={
-            item.stage === "validating"
-              ? `Validating ${item.file.name}`
-              : `Checking and saving ${item.file.name}`
-          }
-        />
       )}
 
       {item.stage === "done" && (

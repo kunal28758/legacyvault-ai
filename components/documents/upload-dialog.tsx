@@ -294,7 +294,8 @@ function UploadForm({
       </DialogHeader>
 
       <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1">
-        {(multiple || items.length === 0) && (
+        {/* Hidden while uploading so the file in progress is in view, not below the fold. */}
+        {(multiple || items.length === 0) && !running && (
           <FileDropZone kind={kind} multiple={multiple} disabled={running} onSelect={select} />
         )}
 

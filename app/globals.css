@@ -88,6 +88,18 @@
   --shadow-glow-blue: 0 0 40px -10px var(--brand-blue);
   --shadow-glow-purple: 0 0 40px -10px var(--brand-purple);
   --shadow-glass: 0 8px 32px -12px oklch(0 0 0 / 0.55);
+
+  /* Motion: an indeterminate bar slides, so it never reads as a full one */
+  --animate-progress-indeterminate: progress-indeterminate 1.4s ease-in-out infinite;
+
+  @keyframes progress-indeterminate {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(300%);
+    }
+  }
 }
 
 /* ── Dark (default) ─────────────────────────────────────────────────────────── */

@@ -85,9 +85,23 @@ describe("UploadItemCard progress", () => {
       </ul>,
     );
 
-  it("reports the real byte percentage while uploading, with cancel", () => {
+  it.each([
+    ["while the upload is being validated", { stage: "validating" as const, progress: 0 }],
+    ["before the first progress event", { stage: "uploading" as const, progress: 0 }],
+  ])("shows a visible preparing state %s — never 0%% over an empty bar", (_, patch) => {
+    card(patch);
+
+    expect(screen.getByText("Preparing upload…")).toBeVisible();
+    const bar = screen.getByRole("progressbar", { name: "Preparing upload will.pdf" });
+    expect(bar).not.toHaveAttribute("aria-valuenow");
+    expect(screen.queryByText(/\d+%/)).not.toBeInTheDocument();
+  });
+
+  it("shows the real byte percentage, prominently, while bytes move", () => {
     card({ stage: "uploading", progress: 68 });
 
+    expect(screen.getByText("Uploading…")).toBeVisible();
+    expect(screen.getByText("68%")).toBeVisible();
     expect(screen.getByRole("progressbar", { name: "Uploading will.pdf" })).toHaveAttribute(
       "aria-valuenow",
       "68",
@@ -97,11 +111,26 @@ describe("UploadItemCard progress", () => {
     expect(screen.getAllByRole("status")).toHaveLength(1);
   });
 
+  it("does not claim 100% before storage confirms the transfer", () => {
+    card({ stage: "uploading", progress: 100 });
+
+    expect(screen.getByText("99%")).toBeVisible();
+    expect(screen.queryByText("100%")).not.toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "Uploading will.pdf" })).toHaveAttribute(
+      "aria-valuenow",
+      "99",
+    );
+  });
+
   it("shows processing as indeterminate after the transfer — never 100% early", () => {
     card({ stage: "saving", progress: 100, uploaded: true });
 
+    expect(
+      screen.getByText("Checking and saving…", { selector: "span.font-medium" }),
+    ).toBeVisible();
     const bar = screen.getByRole("progressbar", { name: "Checking and saving will.pdf" });
     expect(bar).not.toHaveAttribute("aria-valuenow");
+    expect(screen.queryByText(/\d+%/)).not.toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("Checking and saving…");
   });
 
