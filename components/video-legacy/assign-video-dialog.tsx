@@ -9,6 +9,7 @@ import {
   beneficiaryChoicePlaceholder,
 } from "@/components/beneficiaries/beneficiary-choice";
 import { FormField } from "@/components/shared/form-field";
+import { OperationProgress } from "@/components/shared/operation-progress";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -85,6 +86,7 @@ function AssignForm({
   const beneficiaries = choice.state === "ready" ? choice.options : [];
 
   const submit = async () => {
+    if (assign.isPending) return;
     if (!selected) {
       setError("Choose a beneficiary");
       return;
@@ -117,6 +119,7 @@ function AssignForm({
                 setError(null);
               }}
               items={beneficiaries.map((b) => ({ value: b.id, label: b.name }))}
+              disabled={assign.isPending}
             >
               <SelectTrigger id={props.id} className="w-full">
                 <SelectValue placeholder={beneficiaryChoicePlaceholder(choice)} />
@@ -137,6 +140,7 @@ function AssignForm({
           onRetry={() => void beneficiariesQuery.refetch()}
           retrying={beneficiariesQuery.isFetching}
         />
+        {assign.isPending && <OperationProgress label="Adding the recipient…" />}
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={() => onOpenChange(false)}>

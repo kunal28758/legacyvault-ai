@@ -9,6 +9,7 @@ import {
   beneficiaryChoicePlaceholder,
 } from "@/components/beneficiaries/beneficiary-choice";
 import { FormField } from "@/components/shared/form-field";
+import { OperationProgress } from "@/components/shared/operation-progress";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -68,16 +69,19 @@ function ShareForm({
   const share = useShareDocument();
   const [selected, setSelected] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
 
   const alreadyShared = new Set((documentQuery.data?.shares ?? []).map((s) => s.beneficiaryId));
   const choice = beneficiaryChoice(beneficiariesQuery, alreadyShared);
   const beneficiaries = choice.state === "ready" ? choice.options : [];
 
   const submit = async () => {
+    if (share.isPending) return;
     if (!selected) {
       setError("Choose a beneficiary");
       return;
     }
+    setFailure(null);
     try {
       const result = await share.mutateAsync({ id: documentId, beneficiaryId: selected });
       toast.success("Document shared", {
@@ -87,7 +91,7 @@ function ShareForm({
       });
       onOpenChange(false);
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : "Could not share this document.");
+      setFailure(caught instanceof ApiError ? caught.message : "Could not share this document.");
     }
   };
 
@@ -110,6 +114,7 @@ function ShareForm({
                 setError(null);
               }}
               items={beneficiaries.map((b) => ({ value: b.id, label: b.name }))}
+              disabled={share.isPending}
             >
               <SelectTrigger id={props.id} className="w-full">
                 <SelectValue placeholder={beneficiaryChoicePlaceholder(choice)} />
@@ -130,6 +135,19 @@ function ShareForm({
           onRetry={() => void beneficiariesQuery.refetch()}
           retrying={beneficiariesQuery.isFetching}
         />
+        {/* One request records the share, issues the link and sends the email;
+            the browser only learns the outcome, so no stage is invented. */}
+        {share.isPending && (
+          <OperationProgress label="Sharing securely — recording the share and emailing a secure link…" />
+        )}
+        {failure && !share.isPending && (
+          <OperationProgress
+            state="error"
+            label="The document was not shared."
+            error={failure}
+            onRetry={() => void submit()}
+          />
+        )}
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={() => onOpenChange(false)}>

@@ -218,7 +218,13 @@ function BeneficiaryForm({
           Cancel
         </Button>
         <Button type="submit" disabled={busy}>
-          {busy ? "Saving…" : editing ? "Save changes" : "Add beneficiary"}
+          {busy
+            ? editing
+              ? "Saving…"
+              : "Adding and inviting…"
+            : editing
+              ? "Save changes"
+              : "Add beneficiary"}
         </Button>
       </SheetFooter>
     </form>

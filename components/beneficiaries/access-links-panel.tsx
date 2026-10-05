@@ -226,7 +226,7 @@ export function AccessLinksPanel({
               onClick={() => void onIssue()}
             >
               <Send data-icon="inline-start" />
-              Create and email the link
+              {issue.isPending ? "Creating and emailing…" : "Create and email the link"}
             </Button>
           </div>
           {!canIssue && (
@@ -270,7 +270,9 @@ export function AccessLinksPanel({
                     onClick={() => void onResend(token.id)}
                   >
                     <RotateCcw data-icon="inline-start" />
-                    Resend
+                    {resend.isPending && resend.variables?.tokenId === token.id
+                      ? "Resending…"
+                      : "Resend"}
                   </Button>
                   <Button
                     variant="ghost"
@@ -279,7 +281,9 @@ export function AccessLinksPanel({
                     onClick={() => void onRevoke(token.id)}
                   >
                     <Trash2 data-icon="inline-start" />
-                    Revoke
+                    {revoke.isPending && revoke.variables?.tokenId === token.id
+                      ? "Revoking…"
+                      : "Revoke"}
                   </Button>
                 </div>
               )}

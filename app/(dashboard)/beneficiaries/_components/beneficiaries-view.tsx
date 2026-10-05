@@ -127,30 +127,40 @@ export function BeneficiariesView() {
     if (searchParams.get("new") === "1") router.replace("/beneficiaries");
   };
 
+  // The menu closes on click, so a toast carries the work in progress; it is
+  // replaced by the outcome rather than stacked under it.
   const changeStatus = async (b: BeneficiaryWithRoles, status: "ACTIVE" | "INACTIVE") => {
+    if (setStatus.isPending) return;
+    const id = toast.loading(
+      status === "ACTIVE" ? `Reactivating ${b.name}…` : `Deactivating ${b.name}…`,
+    );
     try {
       await setStatus.mutateAsync({ id: b.id, status });
       toast.success(status === "ACTIVE" ? `${b.name} reactivated` : `${b.name} deactivated`, {
+        id,
         description:
           status === "INACTIVE"
             ? "Access links revoked; no new assignments."
             : "They can be assigned resources again.",
       });
     } catch (error) {
-      toast.error(messageFor(error, "Could not change the status."));
+      toast.error(messageFor(error, "Could not change the status."), { id });
     }
   };
 
   const sendInvitation = async (b: BeneficiaryWithRoles) => {
+    if (invite.isPending) return;
+    const id = toast.loading(`Sending the invitation to ${b.name}…`);
     try {
       const result = await invite.mutateAsync(b.id);
       toast.success(`Invitation recorded for ${b.name}`, {
+        id,
         description: result.emailSent
           ? "The invitation email has been sent."
           : "The invitation email could not be sent. You can resend it later.",
       });
     } catch (error) {
-      toast.error(messageFor(error, "Could not record the invitation."));
+      toast.error(messageFor(error, "Could not record the invitation."), { id });
     }
   };
 
@@ -497,7 +507,9 @@ export function BeneficiariesView() {
                                   }
                                 }}
                               >
-                                Remove
+                                {unassign.isPending && unassign.variables?.assignmentId === a.id
+                                  ? "Removing…"
+                                  : "Remove"}
                               </Button>
                             </div>
                             {peers.length > 0 && (

@@ -13,6 +13,7 @@ import {
   XCircle,
 } from "lucide-react";
 
+import { ProgressLine } from "@/components/shared/operation-progress";
 import { Button } from "@/components/ui/button";
 import { formatBytes } from "@/lib/format";
 import {
@@ -304,20 +305,20 @@ export function UploadItemCard({ item, onCancel, onRetry, onRemove }: UploadItem
         </ol>
       )}
 
+      {/* Bytes in transit have a real percentage; the checks before and after
+          them do not, so those show activity without a number — and the bar
+          never reads 100% before the file is actually stored. */}
       {item.stage === "uploading" && (
-        <div
-          className="h-1.5 overflow-hidden rounded-full bg-muted"
-          role="progressbar"
-          aria-label={`Uploading ${item.file.name}`}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={item.progress}
-        >
-          <div
-            className="h-full rounded-full bg-gradient-brand transition-[width] duration-200"
-            style={{ width: `${item.progress}%` }}
-          />
-        </div>
+        <ProgressLine label={`Uploading ${item.file.name}`} value={item.progress} />
+      )}
+      {(item.stage === "validating" || item.stage === "saving") && (
+        <ProgressLine
+          label={
+            item.stage === "validating"
+              ? `Validating ${item.file.name}`
+              : `Checking and saving ${item.file.name}`
+          }
+        />
       )}
 
       {item.stage === "done" && (
