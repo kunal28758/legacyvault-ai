@@ -90,7 +90,7 @@ export function OnboardingForm({ name }: { name: string }) {
         </p>
 
         <div className="flex flex-wrap gap-2">
-          <Button className="flex-1 shadow-glow-blue" disabled={busy} onClick={() => void finish()}>
+          <Button className="flex-1" disabled={busy} onClick={() => void finish()}>
             {busy ? "Saving…" : "Start building my vault"}
           </Button>
           <Button variant="ghost" disabled={busy} onClick={() => void finish()}>

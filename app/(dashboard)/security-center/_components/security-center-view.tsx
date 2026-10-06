@@ -107,7 +107,11 @@ export function SecurityCenterView() {
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="glass-highlight glass-strong lg:col-span-1">
           <CardContent className="flex items-center gap-6 p-6">
-            <ProgressRing value={score} label="Security score" />
+            <ProgressRing
+              value={score}
+              label="Security score"
+              tone={score >= 80 ? "success" : score >= 60 ? "warning" : "danger"}
+            />
             <div className="space-y-2">
               <p className="text-lg font-semibold">
                 {score >= 80

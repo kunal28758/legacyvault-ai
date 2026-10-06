@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
-  Bot,
   CheckCircle2,
   Coins,
   FileLock2,
@@ -16,6 +15,7 @@ import {
   Server,
   ShieldCheck,
   Siren,
+  Sparkles,
   TimerReset,
   Users,
   Video,
@@ -47,7 +47,7 @@ export function TrustStrip() {
       <ul className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-center gap-x-8 gap-y-3 px-6 py-5 text-sm text-muted-foreground">
         {items.map(({ icon: Icon, label }) => (
           <li key={label} className="flex items-center gap-2">
-            <Icon className="size-4 text-brand-cyan" aria-hidden />
+            <Icon className="size-4 text-success" aria-hidden />
             {label}
           </li>
         ))}
@@ -102,7 +102,8 @@ const capabilities = [
       "Personal messages delivered on the condition you choose — immediately, on release, or in an emergency.",
   },
   {
-    icon: Bot,
+    icon: Sparkles,
+    ai: true,
     title: "AI assistance, clearly labelled",
     description:
       "Organize, review and draft with an assistant that flags uncertainty and never saves anything without you.",
@@ -113,7 +114,7 @@ export function Capabilities() {
   return (
     <section id="capabilities" className="mx-auto w-full max-w-6xl scroll-mt-24 px-6 py-20">
       <Reveal className="mx-auto max-w-2xl text-center">
-        <p className="text-xs font-medium tracking-[0.2em] text-brand-cyan uppercase">
+        <p className="text-xs font-semibold tracking-[0.2em] text-primary uppercase">
           Key capabilities
         </p>
         <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
@@ -125,11 +126,21 @@ export function Capabilities() {
         </p>
       </Reveal>
       <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {capabilities.map(({ icon: Icon, title, description }, index) => (
+        {capabilities.map(({ icon: Icon, title, description, ...rest }, index) => (
           <Reveal key={title} delay={index * 0.05}>
-            <Card className="motion-safe-transition glass-highlight h-full glass hover:-translate-y-1 hover:shadow-glow-purple">
+            <Card
+              className={cn(
+                "group glass-highlight h-full surface-interactive glass",
+                "ai" in rest && "border-gradient-ai",
+              )}
+            >
               <CardHeader>
-                <span className="mb-2 flex size-10 items-center justify-center rounded-xl bg-accent text-accent-foreground">
+                <span
+                  className={cn(
+                    "mb-2 icon-tile size-11 rounded-xl transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:scale-105",
+                    "ai" in rest ? "text-brand-purple" : "text-primary",
+                  )}
+                >
                   <Icon className="size-5" aria-hidden />
                 </span>
                 <CardTitle className="text-base">{title}</CardTitle>
@@ -147,24 +158,34 @@ export function Capabilities() {
 
 const steps = [
   {
-    title: "Organize",
+    icon: Lock,
+    title: "Secure your information",
     description:
-      "Record beneficiaries, assets and documents once. Sensitive fields are encrypted before they are stored.",
+      "Upload documents to private storage and record assets. Sensitive fields are encrypted before they are stored.",
   },
   {
-    title: "Plan",
+    icon: ScrollText,
+    title: "Organize your legacy",
     description:
-      "Walk through the eleven-step legacy plan. Review completeness, acknowledge gaps and finalize on your terms.",
+      "Walk through the eleven-step plan with auto-save. Review completeness and finalize on your terms.",
   },
   {
-    title: "Protect",
+    icon: Users,
+    title: "Assign beneficiaries",
     description:
-      "Enable the Dead Man’s Switch and emergency access. Choose exactly which resources each contact may reach.",
+      "Choose who receives what. Documents shared with a beneficiary reach them only through scoped links.",
   },
   {
-    title: "Hand over",
+    icon: ShieldCheck,
+    title: "Protect access",
     description:
-      "When your conditions are met, scoped access links are delivered — time-limited, revocable and fully audited.",
+      "Enable the Dead Man’s Switch and emergency access, with re-verification for every sensitive action.",
+  },
+  {
+    icon: HeartHandshake,
+    title: "Leave your legacy safely",
+    description:
+      "When your conditions are met, time-limited, revocable access links are delivered — and every step is audited.",
   },
 ];
 
@@ -176,30 +197,29 @@ export function HowItWorks() {
     >
       <div className="mx-auto w-full max-w-6xl px-6">
         <Reveal className="max-w-2xl">
-          <p className="text-xs font-medium tracking-[0.2em] text-brand-cyan uppercase">
+          <p className="text-xs font-semibold tracking-[0.2em] text-primary uppercase">
             How LegacyVault works
           </p>
           <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
-            Four steps from scattered information to a protected legacy
+            Five steps from scattered information to a protected legacy
           </h2>
         </Reveal>
-        <ol className="mt-12 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <ol className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           {steps.map((step, index) => (
             <Reveal key={step.title} delay={index * 0.08}>
-              <li className="relative flex h-full flex-col gap-4 rounded-2xl border border-glass-border bg-background/40 p-6">
-                <span className="flex size-10 items-center justify-center rounded-full bg-gradient-brand text-sm font-semibold text-primary-foreground shadow-glow-blue">
-                  {index + 1}
-                </span>
+              <li className="group relative flex h-full flex-col gap-4 rounded-2xl border border-glass-border bg-background/40 p-5 transition-colors duration-300 hover:border-primary/35">
+                <div className="flex items-center justify-between">
+                  <span className="relative flex size-11 items-center justify-center rounded-xl bg-gradient-brand text-primary-foreground shadow-cta transition-transform duration-300 group-hover:scale-105">
+                    <step.icon className="size-5" aria-hidden />
+                  </span>
+                  <span className="font-heading text-3xl font-semibold text-foreground/10 tabular-nums">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                </div>
                 <div>
-                  <h3 className="text-lg font-semibold">{step.title}</h3>
+                  <h3 className="text-base font-semibold">{step.title}</h3>
                   <p className="mt-2 text-sm leading-6 text-muted-foreground">{step.description}</p>
                 </div>
-                {index < steps.length - 1 && (
-                  <ArrowRight
-                    className="absolute top-8 -right-4 hidden size-5 text-muted-foreground/50 lg:block"
-                    aria-hidden
-                  />
-                )}
               </li>
             </Reveal>
           ))}
@@ -325,7 +345,7 @@ function VaultPreview() {
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium">Secure Document Vault</p>
         <span className="flex items-center gap-1 text-xs text-muted-foreground">
-          <Lock className="size-3.5 text-brand-cyan" aria-hidden /> Private bucket
+          <Lock className="size-3.5 text-success" aria-hidden /> Private bucket
         </span>
       </div>
       <ul className="space-y-2">
@@ -335,7 +355,7 @@ function VaultPreview() {
             className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5"
           >
             <div className="flex min-w-0 items-center gap-3">
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-accent text-accent-foreground">
+              <span className="icon-tile size-8 rounded-md text-primary">
                 <FileLock2 className="size-4" aria-hidden />
               </span>
               <div className="min-w-0">
@@ -387,7 +407,7 @@ export function FeatureShowcase() {
   return (
     <section id="showcase" className="mx-auto w-full max-w-6xl scroll-mt-24 px-6 py-20">
       <Reveal className="max-w-2xl">
-        <p className="text-xs font-medium tracking-[0.2em] text-brand-cyan uppercase">
+        <p className="text-xs font-semibold tracking-[0.2em] text-primary uppercase">
           Feature showcase
         </p>
         <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
@@ -476,7 +496,7 @@ export function SecurityLayers() {
     >
       <div className="mx-auto grid w-full max-w-6xl gap-12 px-6 lg:grid-cols-2 lg:items-center">
         <Reveal>
-          <p className="text-xs font-medium tracking-[0.2em] text-brand-cyan uppercase">
+          <p className="text-xs font-semibold tracking-[0.2em] text-primary uppercase">
             Security & trust
           </p>
           <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
@@ -490,7 +510,7 @@ export function SecurityLayers() {
           <ul className="mt-8 space-y-4">
             {layers.map((layer, index) => (
               <li key={layer.title} className="flex gap-4">
-                <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border border-brand-cyan/40 text-xs font-semibold text-brand-cyan">
+                <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border border-primary/40 bg-primary/10 text-xs font-semibold text-primary">
                   {index + 1}
                 </span>
                 <div>
@@ -502,7 +522,7 @@ export function SecurityLayers() {
           </ul>
         </Reveal>
         <Reveal delay={0.1} className="relative mx-auto aspect-square w-full max-w-md">
-          <div aria-hidden className="absolute inset-0 rounded-full bg-brand-purple/10 blur-3xl" />
+          <div aria-hidden className="absolute inset-0 rounded-full bg-brand-blue/10 blur-3xl" />
           <svg
             viewBox="0 0 400 400"
             className="relative size-full"
@@ -516,13 +536,7 @@ export function SecurityLayers() {
                   cy="200"
                   r={r}
                   fill="none"
-                  stroke={
-                    index % 3 === 0
-                      ? "var(--brand-blue)"
-                      : index % 3 === 1
-                        ? "var(--brand-purple)"
-                        : "var(--brand-cyan)"
-                  }
+                  stroke={index % 2 === 0 ? "var(--brand-blue)" : "var(--brand-cyan)"}
                   strokeOpacity={0.35 + index * 0.1}
                   strokeWidth={index === 4 ? 2 : 1.25}
                   strokeDasharray={index % 2 === 0 ? "6 8" : undefined}
@@ -550,7 +564,7 @@ export function SecurityLayers() {
               cy="200"
               r="34"
               fill="var(--card)"
-              stroke="var(--brand-cyan)"
+              stroke="var(--success)"
               strokeWidth="1.5"
             />
             <g transform="translate(184 184)">
@@ -564,7 +578,7 @@ export function SecurityLayers() {
               <path
                 d="m12 16 3 3 5-6"
                 fill="none"
-                stroke="var(--brand-cyan)"
+                stroke="var(--success)"
                 strokeWidth="1.8"
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -626,7 +640,7 @@ export function CtaSection() {
                   key={item}
                   className="flex items-center gap-2 rounded-lg border border-glass-border bg-background/40 px-4 py-3"
                 >
-                  <HeartHandshake className="size-4 text-brand-purple" aria-hidden />
+                  <CheckCircle2 className="size-4 shrink-0 text-success" aria-hidden />
                   {item}
                 </li>
               ))}

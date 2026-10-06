@@ -20,7 +20,7 @@ const toneDot: Record<NonNullable<TimelineItem["tone"]>, string> = {
   success: "bg-success",
   warning: "bg-warning",
   danger: "bg-destructive",
-  info: "bg-brand-cyan",
+  info: "bg-primary",
 };
 
 const toneRing: Record<NonNullable<TimelineItem["tone"]>, string> = {
@@ -28,7 +28,7 @@ const toneRing: Record<NonNullable<TimelineItem["tone"]>, string> = {
   success: "ring-success/25",
   warning: "ring-warning/25",
   danger: "ring-destructive/25",
-  info: "ring-brand-cyan/25",
+  info: "ring-primary/25",
 };
 
 /** Vertical timeline with tone-coded markers; timestamps show relative + absolute. */
@@ -54,7 +54,10 @@ export function Timeline({
             className={cn("relative flex gap-4", dense ? "pb-4" : "pb-6", last && "pb-0")}
           >
             {!last && (
-              <span aria-hidden className="absolute top-8 bottom-0 left-[15px] w-px bg-border" />
+              <span
+                aria-hidden
+                className="absolute top-9 bottom-1 left-[15.5px] w-px bg-gradient-to-b from-border to-transparent"
+              />
             )}
             <span
               className={cn(

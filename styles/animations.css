@@ -103,6 +103,69 @@
   animation: lv-gradient-drift 12s ease-in-out infinite;
 }
 
+/* Skeleton shimmer: a soft blue-tinted light passing over the placeholder. */
+@utility skeleton-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklch, var(--brand-blue) 10%, oklch(1 0 0 / 0.06)) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: lv-shimmer 1.8s ease-in-out infinite;
+}
+
+/* AI presence: a slow breathing halo around the assistant mark. */
+@keyframes lv-ai-breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.04);
+  }
+}
+
+@utility animate-ai-breathe {
+  animation: lv-ai-breathe 3.2s ease-in-out infinite;
+}
+
+/* Typing indicator: three dots rising in sequence. */
+@keyframes lv-typing {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+
+@utility animate-typing {
+  animation: lv-typing 1.2s ease-in-out infinite;
+}
+
+/* Shield glow for security visuals: a gentle pulse of the drop-shadow. */
+@keyframes lv-shield-glow {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 6px color-mix(in oklch, var(--brand-blue) 35%, transparent));
+  }
+  50% {
+    filter: drop-shadow(0 0 14px color-mix(in oklch, var(--brand-blue) 60%, transparent));
+  }
+}
+
+@utility animate-shield-glow {
+  animation: lv-shield-glow 4s ease-in-out infinite;
+}
+
 /* Staggered entrance helpers */
 .stagger > * {
   animation: lv-fade-up 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -143,7 +206,14 @@
   .animate-shimmer,
   .animate-status-halo,
   .animate-sweep,
-  .animate-gradient-drift {
+  .animate-gradient-drift,
+  .skeleton-shimmer,
+  .animate-ai-breathe,
+  .animate-typing,
+  .animate-shield-glow {
     animation: none !important;
+  }
+  .surface-interactive:hover {
+    transform: none;
   }
 }

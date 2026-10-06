@@ -65,18 +65,14 @@ export function AssetsOverview() {
         title="Assets"
         description="Everything you own in one inventory — assigned to beneficiaries and referenced by your legacy plan."
         actions={
-          <Button
-            className="shadow-glow-blue"
-            nativeButton={false}
-            render={<Link href="/assets/financial?new=1" />}
-          >
+          <Button nativeButton={false} render={<Link href="/assets/financial?new=1" />}>
             <Plus data-icon="inline-start" />
             Add asset
           </Button>
         }
       />
 
-      <StaggerGrid className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <StaggerGrid className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <StaggerItem>
           <StatCard
             label="Estimated total"
@@ -90,7 +86,7 @@ export function AssetsOverview() {
             label="Assets recorded"
             value={assets.length}
             hint={`${distribution.map((d) => `${d.count} ${ASSET_KIND_META[d.kind].label.toLowerCase()}`).join(" · ")}`}
-            accent="purple"
+            accent="blue"
           />
         </StaggerItem>
         <StaggerItem>

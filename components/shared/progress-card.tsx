@@ -36,7 +36,9 @@ export function ProgressCard({
       <CardContent className="space-y-5">
         <div className="space-y-2">
           <div className="flex items-baseline justify-between">
-            <span className="text-3xl font-semibold tabular-nums">{Math.round(value)}%</span>
+            <span className="font-heading text-3xl font-semibold tabular-nums">
+              {Math.round(value)}%
+            </span>
             {label && <span className="text-sm text-muted-foreground">{label}</span>}
           </div>
           <Progress value={value} aria-label={`${title}: ${Math.round(value)}%`}>
@@ -73,19 +75,33 @@ export function ProgressCard({
 }
 
 /** SVG ring meter — the number is the message; the ring is a secondary cue. */
+const RING_STOPS = {
+  brand: ["var(--brand-blue)", "var(--brand-cyan)"],
+  success: ["var(--success)", "color-mix(in oklch, var(--success) 60%, var(--brand-cyan))"],
+  warning: ["var(--warning)", "color-mix(in oklch, var(--warning) 70%, var(--success))"],
+  danger: ["var(--destructive)", "var(--warning)"],
+} as const;
+
 export function ProgressRing({
   value,
   size = 128,
   stroke = 10,
   label,
+  tone = "brand",
+  caption = "/ 100",
   className,
 }: {
   value: number;
   size?: number;
   stroke?: number;
   label?: string;
+  /** "brand" for progress; the health tones for scores (never colour alone: the number leads). */
+  tone?: keyof typeof RING_STOPS;
+  caption?: string;
   className?: string;
 }) {
+  const gradientId = `lv-ring-${tone}`;
+  const [from, to] = RING_STOPS[tone];
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
   const clamped = Math.max(0, Math.min(100, value));
@@ -108,10 +124,9 @@ export function ProgressRing({
         aria-hidden
       >
         <defs>
-          <linearGradient id="lv-ring-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="var(--brand-blue)" />
-            <stop offset="55%" stopColor="var(--brand-purple)" />
-            <stop offset="100%" stopColor="var(--brand-cyan)" />
+          <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor={from} />
+            <stop offset="100%" stopColor={to} />
           </linearGradient>
         </defs>
         <circle
@@ -119,7 +134,7 @@ export function ProgressRing({
           cy={size / 2}
           r={radius}
           fill="none"
-          stroke="var(--muted)"
+          stroke="color-mix(in oklch, var(--muted) 85%, transparent)"
           strokeWidth={stroke}
         />
         <circle
@@ -127,18 +142,21 @@ export function ProgressRing({
           cy={size / 2}
           r={radius}
           fill="none"
-          stroke="url(#lv-ring-gradient)"
+          stroke={`url(#${gradientId})`}
           strokeWidth={stroke}
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={offset}
-          className="transition-[stroke-dashoffset] duration-700 ease-out motion-reduce:transition-none"
+          style={{ filter: `drop-shadow(0 0 6px color-mix(in oklch, ${from} 45%, transparent))` }}
+          className="transition-[stroke-dashoffset] duration-1000 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-3xl font-semibold tabular-nums">{Math.round(clamped)}</span>
+        <span className="font-heading text-3xl font-semibold tracking-tight tabular-nums">
+          {Math.round(clamped)}
+        </span>
         <span className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-          / 100
+          {caption}
         </span>
       </div>
     </div>

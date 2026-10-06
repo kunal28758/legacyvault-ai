@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { UploadCloud } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -89,7 +90,7 @@ export function UploadDialog({ open, onOpenChange, ...props }: UploadDialogProps
         onOpenChange(next);
       }}
     >
-      <DialogContent className="glass-strong sm:max-w-lg">
+      <DialogContent className="glass-strong sm:max-w-xl">
         {open && <UploadForm {...props} onOpenChange={onOpenChange} onBusyChange={setBusy} />}
       </DialogContent>
     </Dialog>
@@ -283,10 +284,15 @@ function UploadForm({
 
   return (
     <>
-      <DialogHeader>
-        <DialogTitle>
-          {dialogTitle ?? (kind === "document" ? "Upload documents" : "Upload video message")}
-        </DialogTitle>
+      <DialogHeader className="pr-8">
+        <div className="flex items-center gap-3">
+          <span className="icon-tile size-10 rounded-xl text-primary">
+            <UploadCloud className="size-5" aria-hidden />
+          </span>
+          <DialogTitle className="text-lg font-semibold">
+            {dialogTitle ?? (kind === "document" ? "Upload documents" : "Upload video message")}
+          </DialogTitle>
+        </div>
         <DialogDescription>
           {dialogDescription ??
             "Files are checked for type and size, uploaded directly to private storage and then added to your vault."}
@@ -387,6 +393,7 @@ function UploadForm({
             onClick={() => void startAll()}
             disabled={running || (kind === "video" && !videoTitle.trim())}
           >
+            <UploadCloud data-icon="inline-start" />
             {ready.length > 1 ? `Upload ${ready.length} files` : "Upload"}
           </Button>
         )}

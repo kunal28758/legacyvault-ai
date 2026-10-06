@@ -16,7 +16,11 @@ interface SidebarNavProps {
   badges?: Record<string, number>;
 }
 
-/** Grouped navigation list shared by the desktop sidebar and the mobile sheet. */
+/**
+ * Grouped navigation list shared by the desktop sidebar and the mobile sheet.
+ * The active item gets a tinted surface, a glowing indicator rail and a bright
+ * icon; the surface glides between items (shared layout) unless motion is reduced.
+ */
 export function SidebarNav({ collapsed = false, onNavigate, badges = {} }: SidebarNavProps) {
   const pathname = usePathname();
   const reduced = useReducedMotion();
@@ -27,16 +31,16 @@ export function SidebarNav({ collapsed = false, onNavigate, badges = {} }: Sideb
     profile.data?.role === "SUPER_ADMIN" ? [...NAV_GROUPS, ADMIN_NAV_GROUP] : NAV_GROUPS;
 
   return (
-    <nav aria-label="Primary" className="flex flex-col gap-5">
+    <nav aria-label="Primary" className="flex flex-col gap-6">
       {groups.map((group) => (
         <div key={group.label ?? "root"} className="space-y-1">
           {group.label && !collapsed && (
-            <p className="px-3 pb-1 text-[11px] font-semibold tracking-[0.14em] text-muted-foreground/80 uppercase">
+            <p className="px-3 pb-1.5 text-[10.5px] font-semibold tracking-[0.16em] text-muted-foreground/70 uppercase">
               {group.label}
             </p>
           )}
           {group.label && collapsed && (
-            <div className="mx-3 my-1 h-px bg-sidebar-border" aria-hidden />
+            <div className="mx-3 mb-2 h-px bg-sidebar-border" aria-hidden />
           )}
           <ul className="space-y-0.5">
             {group.items.map((item) => {
@@ -48,11 +52,11 @@ export function SidebarNav({ collapsed = false, onNavigate, badges = {} }: Sideb
                   onClick={onNavigate}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "group relative flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors outline-none",
-                    "focus-visible:ring-2 focus-visible:ring-sidebar-ring",
+                    "group relative flex h-9 items-center gap-3 rounded-lg px-2.5 text-[13.5px] font-medium transition-colors duration-150 outline-none",
+                    "focus-visible:ring-3 focus-visible:ring-sidebar-ring/50",
                     active
                       ? "text-sidebar-foreground"
-                      : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                      : "text-muted-foreground hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground",
                     collapsed && "justify-center px-0",
                   )}
                 >
@@ -61,27 +65,44 @@ export function SidebarNav({ collapsed = false, onNavigate, badges = {} }: Sideb
                       layoutId="sidebar-active"
                       aria-hidden
                       transition={
-                        reduced ? { duration: 0 } : { type: "spring", stiffness: 420, damping: 36 }
+                        reduced ? { duration: 0 } : { type: "spring", stiffness: 480, damping: 38 }
                       }
-                      className="absolute inset-0 rounded-lg border border-glass-border bg-sidebar-accent shadow-glow-blue/40"
-                    />
+                      className={cn(
+                        "absolute inset-0 rounded-lg border",
+                        item.ai
+                          ? "border-brand-purple/25 bg-brand-purple/10"
+                          : "border-primary/25 bg-primary/10 shadow-[0_0_24px_-10px_var(--brand-blue)]",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "absolute top-2 bottom-2 -left-px w-[3px] rounded-full",
+                          item.ai
+                            ? "bg-brand-purple shadow-glow-purple"
+                            : "bg-primary shadow-glow-blue",
+                        )}
+                      />
+                    </motion.span>
                   )}
-                  <span
+                  <item.icon
                     className={cn(
-                      "relative flex size-7 shrink-0 items-center justify-center rounded-md transition-colors",
+                      "relative size-[18px] shrink-0 transition-[color,transform] duration-200 group-hover:scale-105",
                       active
-                        ? "bg-gradient-brand text-primary-foreground"
-                        : "bg-transparent group-hover:bg-background/40",
+                        ? item.ai
+                          ? "text-brand-purple"
+                          : "text-primary"
+                        : item.ai
+                          ? "text-brand-purple/80"
+                          : "text-muted-foreground group-hover:text-foreground",
                     )}
-                  >
-                    <item.icon className="size-4" aria-hidden />
-                  </span>
+                    aria-hidden
+                  />
                   {!collapsed && <span className="relative flex-1 truncate">{item.label}</span>}
                   {badge ? (
                     <span
                       className={cn(
-                        "relative flex h-5 min-w-5 items-center justify-center rounded-full bg-brand-cyan px-1.5 text-[11px] font-semibold text-primary-foreground",
-                        collapsed && "absolute top-1 right-1 h-4 min-w-4 px-1 text-[10px]",
+                        "relative flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground",
+                        collapsed && "absolute top-0.5 right-1 h-4 min-w-4 px-1 text-[10px]",
                       )}
                       aria-label={`${badge} unread`}
                     >

@@ -24,6 +24,7 @@ import {
 import { toast } from "sonner";
 
 import { UploadDialog } from "@/components/documents/upload-dialog";
+import { EmptyState } from "@/components/shared/empty-state";
 import { FormField } from "@/components/shared/form-field";
 import {
   ScopePicker,
@@ -180,7 +181,7 @@ export function DeadManSwitchView() {
               {dms.status === "INACTIVE" ? "Enable" : "Configure"}
             </Button>
             <Button
-              className="shadow-glow-blue"
+              variant="success"
               disabled={!canCheckIn}
               onClick={() =>
                 void run(() => checkInMutation.mutateAsync(), "Check-in recorded — thank you")
@@ -194,14 +195,49 @@ export function DeadManSwitchView() {
       />
 
       {/* State machine */}
-      <Card className="glass-highlight glass-strong">
-        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0">
-          <div className="flex items-center gap-3">
-            <span className="flex size-11 items-center justify-center rounded-xl bg-brand-purple/15 text-brand-purple">
-              <TimerReset className="size-5" aria-hidden />
+      <Card className="glass-highlight relative overflow-hidden glass-strong">
+        <span
+          aria-hidden
+          className={cn(
+            "pointer-events-none absolute -top-20 -left-20 size-64 rounded-full blur-3xl",
+            view.tone === "success"
+              ? "bg-success/12"
+              : view.tone === "danger"
+                ? "bg-destructive/12"
+                : view.tone === "warning"
+                  ? "bg-warning/10"
+                  : "bg-primary/8",
+          )}
+        />
+        <CardHeader className="relative flex flex-row flex-wrap items-start justify-between gap-3 space-y-0">
+          <div className="flex items-center gap-4">
+            <span
+              className={cn(
+                "icon-tile size-14 rounded-2xl",
+                view.tone === "success"
+                  ? "text-success shadow-glow-success"
+                  : view.tone === "danger"
+                    ? "text-destructive"
+                    : view.tone === "warning"
+                      ? "text-warning"
+                      : "text-muted-foreground",
+              )}
+            >
+              <TimerReset className="size-7" aria-hidden />
             </span>
             <div>
-              <CardTitle className="text-lg">Current state</CardTitle>
+              <p className="text-[11px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
+                Current state
+              </p>
+              <CardTitle className="font-heading text-2xl font-semibold tracking-tight">
+                {escalated
+                  ? view.label
+                  : monitoring
+                    ? "Active"
+                    : dms.status === "PAUSED"
+                      ? "Paused"
+                      : "Inactive"}
+              </CardTitle>
               <p className="text-sm text-muted-foreground">
                 {dms.status === "INACTIVE"
                   ? "The switch is disabled — nothing is monitored."
@@ -221,7 +257,7 @@ export function DeadManSwitchView() {
             {view.label}
           </StatusBadge>
         </CardHeader>
-        <CardContent className="space-y-6">
+        <CardContent className="relative space-y-6">
           <ol
             className="relative grid grid-cols-3 gap-y-6 sm:grid-cols-6 sm:gap-y-0"
             aria-label="Escalation stages"
@@ -281,12 +317,12 @@ export function DeadManSwitchView() {
           </ol>
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-xl border border-border p-4">
+            <div className="rounded-xl border border-border/70 bg-surface/40 p-4">
               <p className="text-xs text-muted-foreground">Last check-in</p>
               <p className="mt-1 font-medium">{formatRelative(dms.lastCheckInAt, now)}</p>
               <p className="text-xs text-muted-foreground">{formatDateTime(dms.lastCheckInAt)}</p>
             </div>
-            <div className="rounded-xl border border-border p-4">
+            <div className="rounded-xl border border-border/70 bg-surface/40 p-4">
               <p className="text-xs text-muted-foreground">Next check-in</p>
               <p className="mt-1 font-medium">
                 {dms.nextCheckInAt && monitoring ? formatRelative(dms.nextCheckInAt, now) : "—"}
@@ -303,14 +339,14 @@ export function DeadManSwitchView() {
                 </div>
               )}
             </div>
-            <div className="rounded-xl border border-border p-4">
+            <div className="rounded-xl border border-border/70 bg-surface/40 p-4">
               <p className="text-xs text-muted-foreground">Inactivity threshold</p>
               <p className="mt-1 font-medium">{dms.inactivityPeriodDays} days</p>
               <p className="text-xs text-muted-foreground">
                 Check-in every {dms.checkInFrequencyDays} days
               </p>
             </div>
-            <div className="rounded-xl border border-border p-4">
+            <div className="rounded-xl border border-border/70 bg-surface/40 p-4">
               <p className="text-xs text-muted-foreground">Escalation</p>
               <p className="mt-1 font-medium">
                 {escalated ? `Step ${dms.currentEscalationStep}` : "Not escalating"}
@@ -399,7 +435,7 @@ export function DeadManSwitchView() {
                     key={contact.beneficiaryId}
                     className="flex items-center gap-3 rounded-lg border border-border px-3 py-2.5"
                   >
-                    <span className="flex size-7 items-center justify-center rounded-full bg-brand-purple/15 text-xs font-semibold text-brand-purple">
+                    <span className="flex size-7 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary ring-1 ring-primary/25">
                       {index + 1}
                     </span>
                     <div className="min-w-0 flex-1">
@@ -444,7 +480,7 @@ export function DeadManSwitchView() {
                 key={label}
                 className="flex items-start gap-3 rounded-lg border border-border px-3 py-2.5"
               >
-                <Icon className="mt-0.5 size-4 shrink-0 text-brand-cyan" aria-hidden />
+                <Icon className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium">
                     {label} <span className="text-muted-foreground">· {items.length}</span>
@@ -472,25 +508,34 @@ export function DeadManSwitchView() {
           title="Activity"
           description="Every transition is recorded with its previous and new state."
         />
-        <Card className="glass">
-          <CardContent className="p-5">
-            <Timeline
-              items={dms.events.slice(0, 12).map((event) => ({
-                id: event.id,
-                title: eventLabel[event.eventType],
-                description: `${event.previousState.replace(/_/g, " ").toLowerCase()} → ${event.newState.replace(/_/g, " ").toLowerCase()}${typeof event.metadata.note === "string" ? ` · ${event.metadata.note}` : ""}`,
-                timestamp: event.createdAt,
-                tone: eventTone[event.eventType],
-                icon:
-                  event.eventType === "CHECK_IN"
-                    ? CheckCircle2
-                    : event.eventType === "MISSED_CHECK_IN"
-                      ? Clock
-                      : undefined,
-              }))}
-            />
-          </CardContent>
-        </Card>
+        {dms.events.length === 0 ? (
+          <EmptyState
+            compact
+            icon={TimerReset}
+            title="No switch activity yet"
+            description="Check-ins, reminders, pauses and every state change will be listed here."
+          />
+        ) : (
+          <Card className="glass">
+            <CardContent className="p-5">
+              <Timeline
+                items={dms.events.slice(0, 12).map((event) => ({
+                  id: event.id,
+                  title: eventLabel[event.eventType],
+                  description: `${event.previousState.replace(/_/g, " ").toLowerCase()} → ${event.newState.replace(/_/g, " ").toLowerCase()}${typeof event.metadata.note === "string" ? ` · ${event.metadata.note}` : ""}`,
+                  timestamp: event.createdAt,
+                  tone: eventTone[event.eventType],
+                  icon:
+                    event.eventType === "CHECK_IN"
+                      ? CheckCircle2
+                      : event.eventType === "MISSED_CHECK_IN"
+                        ? Clock
+                        : undefined,
+                }))}
+              />
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Configure sheet */}

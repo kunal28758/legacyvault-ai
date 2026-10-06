@@ -131,7 +131,9 @@ export function WizardStep({
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
           {eyebrow && (
-            <p className="text-xs font-medium tracking-wide text-brand-cyan uppercase">{eyebrow}</p>
+            <p className="text-[11px] font-semibold tracking-[0.14em] text-primary uppercase">
+              {eyebrow}
+            </p>
           )}
           <h2 className="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h2>
           {description && (
@@ -231,7 +233,7 @@ export function WizardNavigation({
           </Button>
         )}
         {onNext && (
-          <Button onClick={onNext} disabled={nextDisabled || busy} className="shadow-glow-blue">
+          <Button onClick={onNext} disabled={nextDisabled || busy}>
             {busy ? (
               <Loader2
                 data-icon="inline-start"

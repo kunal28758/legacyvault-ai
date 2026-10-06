@@ -4,7 +4,13 @@
 
 /* LegacyVault AI design foundation (tasks T010/T011, constitution XIII/XIV, UX-002).
    Dark-first: `:root` holds the dark palette; `[data-theme="light"]` overrides it.
-   Colour tokens use oklch; brand accents are blue / purple / cyan. */
+   Colour tokens use oklch, and every colour has one job:
+     blue   (#0EA5FF) primary technology / action, the dominant brand accent
+     green  (#14D38F) safe / active / verified / success
+     violet (#9D7CFF) AI and premium features only
+     amber  pending / warning      red  error / destructive
+   Neon stays an accent: surfaces are deep navy, and glow is reserved for the
+   primary CTA, the active nav item and selected cards. */
 @import "../styles/glass.css";
 @import "../styles/gradients.css";
 @import "../styles/animations.css";
@@ -56,8 +62,11 @@
   --color-brand-blue: var(--brand-blue);
   --color-brand-purple: var(--brand-purple);
   --color-brand-cyan: var(--brand-cyan);
+  --color-brand-blue-strong: var(--brand-blue-strong);
+  --color-brand-purple-strong: var(--brand-purple-strong);
   --color-success: var(--success);
   --color-warning: var(--warning);
+  --color-info: var(--info);
 
   /* Surfaces */
   --color-surface: var(--surface);
@@ -65,10 +74,12 @@
   --color-glass: var(--glass);
   --color-glass-border: var(--glass-border);
 
-  /* Typography (Geist via next/font in app/layout.tsx) */
+  /* Typography (next/font in app/layout.tsx): Space Grotesk for display
+     headings and headline numbers, Geist for reading, Geist Mono for data. */
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
-  --font-heading: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-heading:
+    var(--font-space-grotesk), var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 
   /* Radii */
   --radius-sm: calc(var(--radius) * 0.6);
@@ -84,10 +95,19 @@
   --spacing-22: 5.5rem;
   --spacing-30: 7.5rem;
 
-  /* Elevation */
-  --shadow-glow-blue: 0 0 40px -10px var(--brand-blue);
-  --shadow-glow-purple: 0 0 40px -10px var(--brand-purple);
-  --shadow-glass: 0 8px 32px -12px oklch(0 0 0 / 0.55);
+  /* Elevation. Glow is a state cue (primary CTA, active nav, selection),
+     never a resting decoration on every card. */
+  --shadow-glow-blue: 0 0 32px -8px color-mix(in oklch, var(--brand-blue) 70%, transparent);
+  --shadow-glow-purple: 0 0 32px -8px color-mix(in oklch, var(--brand-purple) 70%, transparent);
+  --shadow-glow-success: 0 0 28px -8px color-mix(in oklch, var(--success) 65%, transparent);
+  --shadow-glass: var(--elevation-glass);
+  --shadow-elevated: var(--elevation-raised);
+  --shadow-cta:
+    inset 0 1px 0 0 oklch(1 0 0 / 0.28),
+    0 8px 24px -10px color-mix(in oklch, var(--brand-blue) 85%, transparent);
+
+  /* Motion presets: expo-out entrances; exits run faster than entrances. */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
 
   /* Motion: an indeterminate bar slides, so it never reads as a full one */
   --animate-progress-indeterminate: progress-indeterminate 1.4s ease-in-out infinite;
@@ -107,53 +127,59 @@
 [data-theme="dark"] {
   color-scheme: dark;
 
-  --brand-blue: oklch(0.72 0.17 255);
-  --brand-purple: oklch(0.7 0.19 300);
-  --brand-cyan: oklch(0.82 0.13 205);
-  --success: oklch(0.76 0.16 160);
-  --warning: oklch(0.82 0.16 80);
+  --brand-blue: oklch(0.697 0.171 244.6); /* #0EA5FF electric blue */
+  --brand-blue-strong: oklch(0.546 0.215 262.9); /* #2563EB */
+  --brand-purple: oklch(0.678 0.187 292.3); /* #9D7CFF AI violet */
+  --brand-purple-strong: oklch(0.541 0.247 293); /* #7C3AED */
+  --brand-cyan: oklch(0.797 0.134 211.5); /* #22D3EE */
+  --success: oklch(0.767 0.168 160.8); /* #14D38F emerald */
+  --warning: oklch(0.813 0.145 78); /* #F5B544 amber */
+  --info: var(--brand-blue);
 
-  --background: oklch(0.15 0.025 270);
-  --foreground: oklch(0.96 0.01 260);
-  --surface: oklch(0.19 0.028 268);
-  --surface-raised: oklch(0.23 0.03 268);
-  --glass: oklch(0.99 0.005 260 / 0.06);
-  --glass-border: oklch(0.99 0.005 260 / 0.12);
+  --background: oklch(0.159 0.03 260.6); /* #060D1A deep navy */
+  --foreground: oklch(0.956 0.015 257.2); /* #EAF1FB */
+  --surface: oklch(0.185 0.035 261);
+  --surface-raised: oklch(0.223 0.045 261); /* #0F1B30 */
+  --glass: oklch(0.24 0.05 258 / 0.4);
+  --glass-border: oklch(0.78 0.06 250 / 0.13);
 
-  --card: oklch(0.2 0.028 268);
-  --card-foreground: oklch(0.96 0.01 260);
-  --popover: oklch(0.21 0.028 268);
-  --popover-foreground: oklch(0.96 0.01 260);
+  --card: oklch(0.201 0.039 261.5); /* #0C1628 */
+  --card-foreground: var(--foreground);
+  --popover: oklch(0.21 0.042 261);
+  --popover-foreground: var(--foreground);
   --primary: var(--brand-blue);
-  --primary-foreground: oklch(0.13 0.03 265);
-  --secondary: oklch(0.27 0.03 268);
-  --secondary-foreground: oklch(0.96 0.01 260);
-  --muted: oklch(0.25 0.025 268);
-  --muted-foreground: oklch(0.72 0.02 260);
-  --accent: oklch(0.3 0.06 285);
-  --accent-foreground: oklch(0.97 0.01 260);
-  --destructive: oklch(0.68 0.2 25);
-  --border: oklch(1 0 0 / 0.1);
-  --input: oklch(1 0 0 / 0.14);
-  --ring: var(--brand-cyan);
+  --primary-foreground: oklch(0.177 0.034 246.5); /* #04121F, 7:1 on primary */
+  --secondary: oklch(0.249 0.052 261.3); /* #13213A */
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(0.24 0.045 261);
+  --muted-foreground: oklch(0.71 0.047 256.8); /* #8FA3BF, 7.5:1 on background */
+  --accent: oklch(0.27 0.06 252);
+  --accent-foreground: oklch(0.97 0.012 255);
+  --destructive: oklch(0.663 0.193 22.3); /* #F2555A */
+  --border: oklch(0.78 0.06 250 / 0.11);
+  --input: oklch(0.78 0.06 250 / 0.16);
+  --ring: var(--brand-blue);
 
   --chart-1: var(--brand-blue);
   --chart-2: var(--brand-purple);
   --chart-3: var(--brand-cyan);
   --chart-4: var(--success);
   --chart-5: var(--warning);
-  --viz-1: oklch(0.6 0.17 255);
+  --viz-1: oklch(0.6 0.17 250);
   --viz-2: oklch(0.66 0.13 195);
-  --viz-3: oklch(0.58 0.19 305);
+  --viz-3: oklch(0.58 0.19 300);
 
-  --sidebar: oklch(0.17 0.026 268);
-  --sidebar-foreground: oklch(0.94 0.01 260);
+  --sidebar: oklch(0.145 0.026 261.8); /* #050A15 */
+  --sidebar-foreground: oklch(0.94 0.015 257);
   --sidebar-primary: var(--brand-blue);
-  --sidebar-primary-foreground: oklch(0.13 0.03 265);
-  --sidebar-accent: oklch(0.25 0.03 268);
-  --sidebar-accent-foreground: oklch(0.96 0.01 260);
-  --sidebar-border: oklch(1 0 0 / 0.08);
-  --sidebar-ring: var(--brand-cyan);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: oklch(0.22 0.045 258);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: oklch(0.78 0.06 250 / 0.09);
+  --sidebar-ring: var(--brand-blue);
+
+  --elevation-glass: inset 0 1px 0 0 oklch(1 0 0 / 0.04), 0 12px 32px -16px oklch(0 0 0 / 0.6);
+  --elevation-raised: inset 0 1px 0 0 oklch(1 0 0 / 0.05), 0 24px 48px -20px oklch(0 0 0 / 0.7);
 
   --radius: 0.75rem;
 }
@@ -162,47 +188,55 @@
 [data-theme="light"] {
   color-scheme: light;
 
-  --brand-blue: oklch(0.55 0.19 258);
-  --brand-purple: oklch(0.55 0.2 300);
-  --brand-cyan: oklch(0.62 0.13 210);
-  --success: oklch(0.6 0.16 160);
-  --warning: oklch(0.7 0.16 75);
+  --brand-blue: oklch(0.546 0.18 252); /* white text 5.2:1 */
+  --brand-blue-strong: oklch(0.49 0.2 262);
+  --brand-purple: oklch(0.52 0.22 293);
+  --brand-purple-strong: oklch(0.47 0.24 293);
+  --brand-cyan: oklch(0.58 0.12 215);
+  --success: oklch(0.56 0.14 162);
+  --warning: oklch(0.62 0.15 65);
+  --info: var(--brand-blue);
 
-  --background: oklch(0.985 0.005 260);
-  --foreground: oklch(0.18 0.02 268);
+  --background: oklch(0.982 0.006 255);
+  --foreground: oklch(0.2 0.035 262);
   --surface: oklch(1 0 0);
-  --surface-raised: oklch(0.97 0.008 260);
-  --glass: oklch(1 0 0 / 0.65);
-  --glass-border: oklch(0.2 0.02 268 / 0.1);
+  --surface-raised: oklch(0.97 0.008 255);
+  --glass: oklch(1 0 0 / 0.72);
+  --glass-border: oklch(0.3 0.04 262 / 0.1);
 
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.18 0.02 268);
+  --card-foreground: oklch(0.2 0.035 262);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.18 0.02 268);
+  --popover-foreground: oklch(0.2 0.035 262);
   --primary: var(--brand-blue);
   --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.95 0.01 260);
-  --secondary-foreground: oklch(0.22 0.02 268);
-  --muted: oklch(0.95 0.01 260);
-  --muted-foreground: oklch(0.48 0.02 265);
-  --accent: oklch(0.93 0.03 285);
-  --accent-foreground: oklch(0.22 0.03 275);
-  --destructive: oklch(0.58 0.22 27);
-  --border: oklch(0.2 0.02 268 / 0.1);
-  --input: oklch(0.2 0.02 268 / 0.14);
+  --secondary: oklch(0.95 0.01 255);
+  --secondary-foreground: oklch(0.24 0.035 262);
+  --muted: oklch(0.95 0.01 255);
+  --muted-foreground: oklch(0.47 0.03 260);
+  --accent: oklch(0.94 0.025 250);
+  --accent-foreground: oklch(0.24 0.04 262);
+  --destructive: oklch(0.56 0.21 27);
+  --border: oklch(0.3 0.04 262 / 0.11);
+  --input: oklch(0.3 0.04 262 / 0.16);
   --ring: var(--brand-blue);
-  --viz-1: oklch(0.55 0.19 258);
-  --viz-2: oklch(0.62 0.13 210);
-  --viz-3: oklch(0.55 0.2 300);
+  --viz-1: oklch(0.55 0.18 252);
+  --viz-2: oklch(0.6 0.12 210);
+  --viz-3: oklch(0.52 0.22 293);
 
-  --sidebar: oklch(0.975 0.006 260);
-  --sidebar-foreground: oklch(0.2 0.02 268);
+  --sidebar: oklch(0.975 0.007 255);
+  --sidebar-foreground: oklch(0.22 0.035 262);
   --sidebar-primary: var(--brand-blue);
   --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(0.94 0.01 260);
-  --sidebar-accent-foreground: oklch(0.2 0.02 268);
-  --sidebar-border: oklch(0.2 0.02 268 / 0.08);
+  --sidebar-accent: oklch(0.935 0.02 250);
+  --sidebar-accent-foreground: oklch(0.22 0.035 262);
+  --sidebar-border: oklch(0.3 0.04 262 / 0.08);
   --sidebar-ring: var(--brand-blue);
+
+  --elevation-glass:
+    0 1px 2px oklch(0.3 0.04 262 / 0.06), 0 8px 24px -12px oklch(0.3 0.04 262 / 0.12);
+  --elevation-raised:
+    0 2px 4px oklch(0.3 0.04 262 / 0.06), 0 20px 40px -18px oklch(0.3 0.04 262 / 0.2);
 }
 
 @layer base {
@@ -246,6 +280,18 @@
   }
 
   ::selection {
-    background: color-mix(in oklch, var(--brand-purple) 45%, transparent);
+    background: color-mix(in oklch, var(--brand-blue) 40%, transparent);
+  }
+
+  /* Interactive elements announce themselves to the pointer. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  summary {
+    cursor: pointer;
+  }
+
+  /* Thin, quiet scrollbars that sit on the navy surfaces. */
+  html {
+    scrollbar-color: color-mix(in oklch, var(--muted-foreground) 35%, transparent) transparent;
   }
 }

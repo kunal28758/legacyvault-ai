@@ -4,6 +4,7 @@ import {
   CircleDashed,
   Info,
   PauseCircle,
+  Sparkles,
   XCircle,
   type LucideIcon,
 } from "lucide-react";
@@ -11,14 +12,16 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-export type StatusTone = "neutral" | "success" | "warning" | "danger" | "info";
+/** `ai` marks AI-produced or AI-related state only (violet is reserved for it). */
+export type StatusTone = "neutral" | "success" | "warning" | "danger" | "info" | "ai";
 
 const toneClasses: Record<StatusTone, string> = {
   neutral: "border-border bg-muted/60 text-muted-foreground",
   success: "border-success/30 bg-success/10 text-success",
   warning: "border-warning/30 bg-warning/10 text-warning",
   danger: "border-destructive/30 bg-destructive/10 text-destructive",
-  info: "border-brand-cyan/30 bg-brand-cyan/10 text-brand-cyan",
+  info: "border-primary/30 bg-primary/10 text-primary",
+  ai: "border-brand-purple/30 bg-brand-purple/10 text-brand-purple",
 };
 
 const toneIcons: Record<StatusTone, LucideIcon> = {
@@ -27,6 +30,7 @@ const toneIcons: Record<StatusTone, LucideIcon> = {
   warning: AlertTriangle,
   danger: XCircle,
   info: Info,
+  ai: Sparkles,
 };
 
 interface StatusBadgeProps {

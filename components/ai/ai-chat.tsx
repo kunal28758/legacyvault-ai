@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertCircle,
   ArrowUp,
-  Bot,
+  Sparkles,
   Copy,
   Paperclip,
   RotateCcw,
@@ -84,8 +84,8 @@ function TypingDots({ reading }: { reading: boolean }) {
         {[0, 1, 2].map((dot) => (
           <span
             key={dot}
-            className="size-1.5 animate-bounce rounded-full bg-brand-cyan motion-reduce:animate-none"
-            style={{ animationDelay: `${dot * 120}ms` }}
+            className="size-1.5 animate-typing rounded-full bg-brand-purple motion-reduce:animate-none"
+            style={{ animationDelay: `${dot * 150}ms` }}
           />
         ))}
       </span>
@@ -288,23 +288,33 @@ export function AIChat({
         aria-busy={streaming}
       >
         {messages.length === 0 ? (
-          <div className="flex flex-col items-center gap-4 px-2 py-8 text-center">
-            <span className="flex size-12 items-center justify-center rounded-2xl bg-gradient-brand text-primary-foreground shadow-glow-purple">
-              <Bot className="size-6" aria-hidden />
+          <div className="flex min-h-full flex-col items-center justify-center gap-4 px-2 py-4 text-center">
+            <span className="relative flex size-16 items-center justify-center">
+              <span
+                aria-hidden
+                className="absolute inset-0 animate-ai-breathe rounded-3xl bg-gradient-ai opacity-60 blur-xl"
+              />
+              <span className="relative flex size-14 items-center justify-center rounded-2xl bg-gradient-ai text-white shadow-glow-purple ring-1 ring-white/20">
+                <Sparkles className="size-7" aria-hidden />
+              </span>
             </span>
-            <div className="space-y-1">
-              <p className="font-medium">{emptyTitle}</p>
+            <div className="space-y-1.5">
+              <p className="font-heading text-lg font-semibold tracking-tight">{emptyTitle}</p>
               <p className="mx-auto max-w-md text-sm text-muted-foreground">{emptyDescription}</p>
             </div>
-            <div className="flex max-w-xl flex-wrap justify-center gap-2">
+            <div className="grid w-full max-w-2xl gap-2 sm:grid-cols-2">
               {suggestions.map((suggestion) => (
                 <button
                   key={suggestion}
                   type="button"
                   disabled={disabled || working || failed}
                   onClick={() => void send(suggestion, messages)}
-                  className="rounded-full border border-border bg-background/60 px-3 py-1.5 text-xs transition-colors outline-none hover:border-primary/50 hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+                  className="group/suggestion flex items-center gap-2 rounded-xl border border-border bg-surface/60 px-3.5 py-2.5 text-left text-xs transition-[border-color,background-color,transform] duration-200 outline-none hover:-translate-y-px hover:border-brand-purple/45 hover:bg-brand-purple/10 focus-visible:ring-3 focus-visible:ring-brand-purple/35 disabled:pointer-events-none disabled:opacity-50"
                 >
+                  <Sparkles
+                    className="size-3.5 shrink-0 text-brand-purple opacity-70 transition-opacity group-hover/suggestion:opacity-100"
+                    aria-hidden
+                  />
                   {suggestion}
                 </button>
               ))}
@@ -324,23 +334,23 @@ export function AIChat({
                   className={cn(
                     "flex size-8 shrink-0 items-center justify-center rounded-xl",
                     message.role === "user"
-                      ? "bg-muted text-muted-foreground"
-                      : "bg-gradient-brand text-primary-foreground",
+                      ? "border border-border bg-muted text-muted-foreground"
+                      : "bg-gradient-ai text-white shadow-[0_6px_18px_-8px_var(--brand-purple)]",
                   )}
                   aria-hidden
                 >
                   {message.role === "user" ? (
                     <UserRound className="size-4" />
                   ) : (
-                    <Bot className="size-4" />
+                    <Sparkles className="size-4" />
                   )}
                 </span>
                 <div
                   className={cn(
                     "max-w-[85%] min-w-0 rounded-2xl px-4 py-3",
                     message.role === "user"
-                      ? "bg-primary text-primary-foreground"
-                      : "border border-border bg-background/70",
+                      ? "rounded-tr-md bg-primary text-primary-foreground shadow-cta"
+                      : "rounded-tl-md border border-brand-purple/20 bg-surface/80 shadow-glass",
                   )}
                 >
                   <span className="sr-only">
@@ -506,7 +516,7 @@ export function AIChat({
             <Button
               type="submit"
               size="icon-sm"
-              className="absolute right-2 bottom-2 shadow-glow-blue"
+              className="absolute right-2 bottom-2"
               aria-label="Send"
               disabled={!canSend}
             >

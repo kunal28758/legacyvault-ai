@@ -52,7 +52,7 @@ function ReleaseSummary() {
     <Card className="glass">
       <CardContent className="space-y-3 p-5">
         <p className="flex items-center gap-2 text-sm font-medium">
-          <ShieldCheck className="size-4 text-brand-cyan" aria-hidden />
+          <ShieldCheck className="size-4 text-success" aria-hidden />
           Release &amp; security
         </p>
         {dms.isPending || emergency.isPending ? (
@@ -244,7 +244,6 @@ export function ReviewStep() {
         extra={
           !readOnly && (
             <Button
-              className="shadow-glow-blue"
               disabled={personalMissing || busy || review.isPending}
               onClick={() => setOpen(true)}
             >
@@ -393,7 +392,7 @@ export function ConfirmationStep() {
             Ask AI to review the plan
           </Button>
           <Button
-            className="w-full justify-start shadow-glow-blue"
+            className="w-full justify-start"
             disabled={busy}
             onClick={async () => {
               if (await createNewDraft())

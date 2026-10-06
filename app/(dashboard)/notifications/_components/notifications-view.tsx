@@ -38,7 +38,7 @@ const categoryMeta: Record<Category, { label: string; icon: LucideIcon; classNam
   protection: {
     label: "Protection",
     icon: TimerReset,
-    className: "bg-brand-purple/15 text-brand-purple",
+    className: "bg-warning/12 text-warning",
   },
   legacy: { label: "Legacy", icon: ScrollText, className: "bg-brand-blue/15 text-brand-blue" },
   system: { label: "System", icon: Bell, className: "bg-muted text-muted-foreground" },
@@ -194,7 +194,10 @@ export function NotificationsView() {
                     </time>
                   </span>
                   {unreadItem && (
-                    <span className="mt-2 size-2 shrink-0 rounded-full bg-brand-cyan" aria-hidden />
+                    <span
+                      className="mt-2 size-2 shrink-0 rounded-full bg-primary shadow-glow-blue"
+                      aria-hidden
+                    />
                   )}
                 </button>
               );

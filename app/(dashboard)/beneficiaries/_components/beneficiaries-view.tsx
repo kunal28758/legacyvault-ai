@@ -84,7 +84,7 @@ export function BeneficiariesView() {
   const searchParams = useSearchParams();
   const now = useNow();
 
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(() => searchParams.get("q") ?? "");
   const [filter, setFilter] = useState<Filter>("all");
   const [formOpen, setFormOpen] = useState(() => searchParams.get("new") === "1");
   const [editing, setEditing] = useState<BeneficiaryWithRoles | null>(null);
@@ -209,10 +209,10 @@ export function BeneficiariesView() {
         <button
           type="button"
           onClick={() => setDetailId(b.id)}
-          className="flex items-center gap-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="group/row flex items-center gap-3 rounded-md text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         >
           <Avatar>
-            <AvatarFallback className="bg-gradient-brand text-primary-foreground">
+            <AvatarFallback className="bg-primary/15 font-semibold text-primary ring-1 ring-primary/25 transition-colors group-hover/row:bg-primary/25">
               {initials(b.name)}
             </AvatarFallback>
           </Avatar>
@@ -275,14 +275,14 @@ export function BeneficiariesView() {
         title="Beneficiaries"
         description="Everyone who inherits, receives documents or acts as a trusted or emergency contact. Recipients never need an account."
         actions={
-          <Button className="shadow-glow-blue" onClick={() => openForm(null)}>
+          <Button onClick={() => openForm(null)}>
             <Plus data-icon="inline-start" />
             Add beneficiary
           </Button>
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <StatCard label="Total" value={ready ? stats.total : "—"} icon={Users} accent="blue" />
         <StatCard
           label="Active"
@@ -302,7 +302,8 @@ export function BeneficiariesView() {
           label="With assignments"
           value={ready ? stats.withAssignments : "—"}
           icon={KeyRound}
-          accent="purple"
+          accent="blue"
+          hint="Assets or documents assigned"
         />
       </div>
 
@@ -411,7 +412,7 @@ export function BeneficiariesView() {
               <SheetHeader className="pr-10">
                 <div className="flex items-center gap-3">
                   <Avatar size="lg">
-                    <AvatarFallback className="bg-gradient-brand text-primary-foreground">
+                    <AvatarFallback className="bg-primary/15 text-base font-semibold text-primary ring-1 ring-primary/25">
                       {initials(detailData.name)}
                     </AvatarFallback>
                   </Avatar>

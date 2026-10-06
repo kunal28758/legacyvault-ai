@@ -213,7 +213,9 @@ describe("authenticated views", () => {
     expect(screen.getByText(/Legacy readiness/i)).toBeInTheDocument();
     expect(screen.getByRole("meter", { name: /legacy readiness score/i })).toBeInTheDocument();
     expect(screen.getAllByText(/Dead Man’s Switch/).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("link", { name: /Continue Will/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("link", { name: /(Continue|Create) Will/i }).length).toBeGreaterThan(
+      0,
+    );
   });
 
   it("renders the will wizard on the saved step with the stepper", async () => {

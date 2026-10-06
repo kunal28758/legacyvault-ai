@@ -94,7 +94,7 @@ export function MaskedField({
           {label}
         </p>
         <p className="flex items-center gap-1.5 font-mono text-sm">
-          <Lock className="size-3.5 text-brand-cyan" aria-hidden />
+          <Lock className="size-3.5 text-success" aria-hidden />
           {present ? (
             (hint ?? "••••••••••")
           ) : (
@@ -112,7 +112,7 @@ export function MaskedField({
         <DialogContent className="glass-strong">
           <DialogHeader>
             <div className="flex items-start gap-3">
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-cyan/15 text-brand-cyan">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-success/12 text-success">
                 <ShieldCheck className="size-5" aria-hidden />
               </span>
               <div className="space-y-1.5">

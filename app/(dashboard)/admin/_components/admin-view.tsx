@@ -79,7 +79,7 @@ export function AdminView() {
         description="Accounts, the audit trail, platform analytics and the operational queues. Nothing here exposes the contents of anyone's vault."
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <StatCard
           icon={Users}
           label="Accounts"

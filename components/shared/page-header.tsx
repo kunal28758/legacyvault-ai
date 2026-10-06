@@ -20,21 +20,26 @@ export function PageHeader({
 }: PageHeaderProps) {
   return (
     <header className={cn("flex flex-col gap-4", className)}>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
-        <div className="min-w-0 flex-1 space-y-1.5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
+        <div className="min-w-0 flex-1 space-y-2">
           {eyebrow && (
-            <div className="text-xs font-medium tracking-wide text-brand-cyan uppercase">
+            <div className="flex items-center gap-2 text-[11px] font-semibold tracking-[0.14em] text-primary uppercase">
+              <span aria-hidden className="h-px w-5 bg-gradient-to-r from-primary to-transparent" />
               {eyebrow}
             </div>
           )}
-          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{title}</h1>
+          <h1 className="text-[1.65rem] leading-tight font-semibold tracking-tight sm:text-[2rem]">
+            {title}
+          </h1>
           {description && (
-            <p className="max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
+            <p className="max-w-2xl text-sm leading-6 text-muted-foreground sm:text-[15px]">
               {description}
             </p>
           )}
         </div>
-        {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
+        {actions && (
+          <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">{actions}</div>
+        )}
       </div>
       {children}
     </header>

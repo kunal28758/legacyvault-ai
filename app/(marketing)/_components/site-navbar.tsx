@@ -33,7 +33,7 @@ function SignedOutActions() {
       <Link href="/sign-in" className={buttonVariants({ variant: "ghost" })}>
         Sign in
       </Link>
-      <Link href="/sign-up" className={cn(buttonVariants(), "shadow-glow-blue")}>
+      <Link href="/sign-up" className={buttonVariants()}>
         Create account
         <ArrowRight className="size-4" aria-hidden />
       </Link>
@@ -51,7 +51,7 @@ function ClerkAccountActions() {
   const { isLoaded, isSignedIn } = useAuth();
   if (!isLoaded || !isSignedIn) return <SignedOutActions />;
   return (
-    <Link href="/dashboard" className={cn(buttonVariants(), "shadow-glow-blue")}>
+    <Link href="/dashboard" className={buttonVariants()}>
       Open dashboard
       <ArrowRight className="size-4" aria-hidden />
     </Link>

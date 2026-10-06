@@ -22,7 +22,7 @@ export function RoleChips({ roles, className }: { roles: BeneficiaryRoles; class
         <Tooltip>
           <TooltipTrigger
             render={
-              <span className="inline-flex items-center gap-1 rounded-full bg-brand-purple/15 px-2 py-0.5 text-[11px] font-medium text-brand-purple" />
+              <span className="inline-flex items-center gap-1 rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary" />
             }
           >
             <TimerReset className="size-3" aria-hidden /> Trusted contact
@@ -36,7 +36,7 @@ export function RoleChips({ roles, className }: { roles: BeneficiaryRoles; class
         <Tooltip>
           <TooltipTrigger
             render={
-              <span className="inline-flex items-center gap-1 rounded-full bg-brand-cyan/15 px-2 py-0.5 text-[11px] font-medium text-brand-cyan" />
+              <span className="inline-flex items-center gap-1 rounded-full border border-brand-cyan/25 bg-brand-cyan/10 px-2 py-0.5 text-[11px] font-medium text-brand-cyan" />
             }
           >
             <Siren className="size-3" aria-hidden /> Emergency contact
@@ -61,11 +61,11 @@ interface BeneficiaryCardProps {
 export function BeneficiaryCard({ beneficiary, roles, onOpen, onMenu }: BeneficiaryCardProps) {
   const status = toneForBeneficiaryStatus(beneficiary.status);
   return (
-    <Card className="motion-safe-transition glass-highlight glass hover:-translate-y-0.5">
+    <Card className="glass-highlight surface-interactive py-0 glass">
       <CardContent className="space-y-3 p-4">
         <div className="flex items-start gap-3">
           <Avatar size="lg">
-            <AvatarFallback className="bg-gradient-brand text-primary-foreground">
+            <AvatarFallback className="bg-primary/15 font-semibold text-primary ring-1 ring-primary/25">
               {initials(beneficiary.name)}
             </AvatarFallback>
           </Avatar>

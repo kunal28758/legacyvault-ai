@@ -81,11 +81,7 @@ export function LegacyPlanView() {
           title="You haven’t started a legacy plan yet"
           description="The first draft takes about ten minutes. It auto-saves and stays a draft until you explicitly finalize it."
           action={
-            <Button
-              className="shadow-glow-blue"
-              nativeButton={false}
-              render={<Link href="/legacy-plan/wizard" />}
-            >
+            <Button nativeButton={false} render={<Link href="/legacy-plan/wizard" />}>
               Create your will
               <ArrowRight data-icon="inline-end" />
             </Button>
@@ -123,7 +119,6 @@ export function LegacyPlanView() {
         actions={
           finalized ? (
             <Button
-              className="shadow-glow-blue"
               disabled={newDraft.isPending}
               onClick={async () => {
                 try {
@@ -141,7 +136,6 @@ export function LegacyPlanView() {
             </Button>
           ) : (
             <Button
-              className="shadow-glow-blue"
               nativeButton={false}
               render={<Link href={`/legacy-plan/wizard?step=${plan.currentStep}`} />}
             >

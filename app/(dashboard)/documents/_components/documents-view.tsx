@@ -26,7 +26,12 @@ import {
 import { toast } from "sonner";
 
 import { DocumentAIViewer } from "@/components/ai/document-ai-viewer";
-import { DocumentIcon, VaultCard, documentKind } from "@/components/documents/vault-card";
+import {
+  DocumentIcon,
+  SharingChip,
+  VaultCard,
+  documentKind,
+} from "@/components/documents/vault-card";
 import { ShareDocumentDialog } from "@/components/documents/share-document-dialog";
 import { FormField } from "@/components/shared/form-field";
 import { UploadDialog } from "@/components/documents/upload-dialog";
@@ -93,14 +98,34 @@ import { cn } from "@/lib/utils";
  * are promoted by the server once checked, downloads are short-lived signed links minted
  * after an ownership check, and deletion runs `delete_document()`.
  */
+type DocumentFilter = "all" | "shared" | "private" | "pdf" | "image" | "office";
+
+const DOCUMENT_FILTERS: Record<
+  DocumentFilter,
+  { label: string; test: (doc: DocumentSummary) => boolean }
+> = {
+  all: { label: "All", test: () => true },
+  shared: { label: "Shared", test: (doc) => doc.shareCount > 0 },
+  private: { label: "Private", test: (doc) => doc.shareCount === 0 },
+  pdf: { label: "PDF", test: (doc) => doc.mimeType === "application/pdf" },
+  image: { label: "Images", test: (doc) => doc.mimeType.startsWith("image/") },
+  office: {
+    label: "Office & text",
+    test: (doc) =>
+      doc.mimeType.startsWith("text/") ||
+      /word|sheet|excel|presentation|powerpoint|officedocument/.test(doc.mimeType),
+  },
+};
+
 export function DocumentsView() {
   const now = useNow();
   const router = useRouter();
   const searchParams = useSearchParams();
 
   const [folderId, setFolderId] = useState<string | "all">("all");
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(() => searchParams.get("q") ?? "");
   const [view, setView] = useState<"grid" | "list">("grid");
+  const [filter, setFilter] = useState<DocumentFilter>("all");
   const openUpload = searchParams.get("upload") === "1";
   const [uploadOpen, setUploadOpen] = useState(openUpload);
   const [folderOpen, setFolderOpen] = useState(false);
@@ -142,8 +167,9 @@ export function DocumentsView() {
   // The root filter is the one case the API cannot express, so it is applied here.
   const rows = useMemo(() => {
     const items = listQuery.data?.items ?? [];
-    return folderId === "root" ? items.filter((d) => d.folderId === null) : items;
-  }, [listQuery.data, folderId]);
+    const inFolder = folderId === "root" ? items.filter((d) => d.folderId === null) : items;
+    return inFolder.filter(DOCUMENT_FILTERS[filter].test);
+  }, [listQuery.data, folderId, filter]);
 
   const detail = detailQuery.data ?? null;
   const totalBytes = allDocuments.reduce((s, d) => s + d.sizeBytes, 0);
@@ -212,7 +238,7 @@ export function DocumentsView() {
             onClick={() => setDetailId(doc.id)}
             className="flex items-center gap-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <span className="flex size-9 items-center justify-center rounded-lg bg-accent text-accent-foreground">
+            <span className="icon-tile size-9 text-primary">
               <DocumentIcon mimeType={doc.mimeType} className="size-4" />
             </span>
             <span className="min-w-0">
@@ -240,9 +266,9 @@ export function DocumentsView() {
     },
     {
       id: "shared",
-      header: "Shared",
+      header: "Sharing",
       hideBelowLg: true,
-      cell: (doc) => <span className="text-sm">{sharedCount(doc) || "—"}</span>,
+      cell: (doc) => <SharingChip count={sharedCount(doc)} />,
     },
     {
       id: "updated",
@@ -272,7 +298,7 @@ export function DocumentsView() {
               <FolderPlus data-icon="inline-start" />
               New folder
             </Button>
-            <Button className="shadow-glow-blue" onClick={() => setUploadOpen(true)}>
+            <Button onClick={() => setUploadOpen(true)}>
               <Upload data-icon="inline-start" />
               Upload
             </Button>
@@ -280,7 +306,7 @@ export function DocumentsView() {
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <StatCard
           label="Documents"
           value={ready ? (everything.data?.total ?? allDocuments.length) : "—"}
@@ -292,22 +318,22 @@ export function DocumentsView() {
           label="Storage used"
           value={ready ? formatBytes(totalBytes) : "—"}
           icon={HardDrive}
-          accent="purple"
+          accent="cyan"
           hint="Provider-encrypted at rest"
         />
         <StatCard
           label="Versions"
           value={ready ? versions : "—"}
           icon={History}
-          accent="success"
+          accent="blue"
           hint="Earlier versions are kept"
         />
         <StatCard
           label="Shared"
           value={ready ? shared : "—"}
           icon={Share2}
-          accent="cyan"
-          hint="Via scoped access links"
+          accent="success"
+          hint="Shared securely via scoped access links"
         />
       </div>
 
@@ -337,14 +363,14 @@ export function DocumentsView() {
                 onClick={() => setFolderId(folder.id)}
                 aria-pressed={active}
                 className={cn(
-                  "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-sm transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
                   active
-                    ? "bg-sidebar-accent font-medium text-foreground"
-                    : "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
+                    ? "border-primary/25 bg-primary/10 font-medium text-foreground"
+                    : "border-transparent text-muted-foreground hover:bg-muted/40 hover:text-foreground",
                 )}
               >
                 {active ? (
-                  <FolderOpen className="size-4 text-brand-cyan" aria-hidden />
+                  <FolderOpen className="size-4 text-primary" aria-hidden />
                 ) : (
                   <Folder className="size-4" aria-hidden />
                 )}
@@ -371,7 +397,7 @@ export function DocumentsView() {
               />
             </div>
             <div
-              className="flex items-center gap-1 rounded-lg bg-muted p-0.5"
+              className="flex items-center gap-1 self-end rounded-lg border border-border bg-surface/60 p-0.5 sm:self-auto"
               role="group"
               aria-label="View"
             >
@@ -396,6 +422,29 @@ export function DocumentsView() {
             </div>
           </div>
 
+          <div
+            role="group"
+            aria-label="Filter documents"
+            className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1"
+          >
+            {(Object.keys(DOCUMENT_FILTERS) as DocumentFilter[]).map((key) => (
+              <button
+                key={key}
+                type="button"
+                aria-pressed={filter === key}
+                onClick={() => setFilter(key)}
+                className={cn(
+                  "h-8 shrink-0 rounded-full border px-3 text-xs font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                  filter === key
+                    ? "border-primary/40 bg-primary/15 text-foreground"
+                    : "border-border text-muted-foreground hover:border-primary/30 hover:text-foreground",
+                )}
+              >
+                {DOCUMENT_FILTERS[key].label}
+              </button>
+            ))}
+          </div>
+
           {!ready ? (
             <GridSkeleton />
           ) : rows.length === 0 ? (
@@ -416,7 +465,7 @@ export function DocumentsView() {
                 compact
                 icon={Search}
                 title="No documents here"
-                description="Try another folder or search term."
+                description="Try another folder, filter or search term."
               />
             )
           ) : view === "grid" ? (
@@ -594,7 +643,7 @@ export function DocumentsView() {
                 <div className="flex flex-wrap gap-2">
                   <Button
                     size="sm"
-                    className="shadow-glow-blue"
+
                     onClick={() => {
                       setAiFor(detail);
                       setDetailId(null);

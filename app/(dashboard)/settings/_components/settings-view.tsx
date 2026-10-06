@@ -302,7 +302,7 @@ export function SettingsView({
                       className={cn(
                         "flex size-10 items-center justify-center rounded-lg",
                         option.value === "dark"
-                          ? "bg-[oklch(0.15_0.025_270)] text-brand-cyan"
+                          ? "bg-[oklch(0.159_0.03_260.6)] text-primary"
                           : "bg-[oklch(0.985_0.005_260)] text-[oklch(0.55_0.19_258)]",
                       )}
                     >

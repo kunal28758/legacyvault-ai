@@ -145,7 +145,7 @@ export function AccessLinksPanel({
   return (
     <div className="space-y-3 rounded-lg border border-border p-3 text-sm">
       <p className="flex items-center gap-2 font-medium">
-        <KeyRound className="size-4 text-brand-cyan" aria-hidden /> Access links
+        <KeyRound className="size-4 text-primary" aria-hidden /> Access links
       </p>
       <p className="text-xs leading-5 text-muted-foreground">
         A link covers only what this person is assigned, expires within 30 days and is exchanged

@@ -76,10 +76,10 @@ export function ConfirmDialog({
           <div className="flex items-start gap-3">
             <span
               className={cn(
-                "flex size-10 shrink-0 items-center justify-center rounded-xl",
+                "icon-tile size-10 rounded-xl",
                 variant === "destructive"
                   ? "bg-destructive/10 text-destructive"
-                  : "bg-brand-purple/15 text-brand-purple",
+                  : "bg-primary/12 text-primary",
               )}
             >
               <Icon className="size-5" aria-hidden />
@@ -92,7 +92,7 @@ export function ConfirmDialog({
         </DialogHeader>
         {children}
         {requiresReverification && (
-          <p className="rounded-lg border border-brand-cyan/20 bg-brand-cyan/5 px-3 py-2 text-xs leading-5 text-muted-foreground">
+          <p className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs leading-5 text-muted-foreground">
             In the live application this step asks you to re-verify with Clerk before it takes
             effect, and the action is written to your audit log.
           </p>
@@ -114,7 +114,8 @@ export function ConfirmDialog({
           <Button
             variant={variant === "destructive" ? "destructive" : "default"}
             onClick={handleConfirm}
-            disabled={busy || (Boolean(acknowledgement) && !acknowledged)}
+            loading={busy}
+            disabled={Boolean(acknowledgement) && !acknowledged}
           >
             {busy ? "Working…" : confirmLabel}
           </Button>

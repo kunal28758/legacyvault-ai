@@ -1,11 +1,11 @@
 "use client";
 
-import { FileImage, FileText, Lock, MoreHorizontal, Share2 } from "lucide-react";
+import { FileImage, FileText, Lock, MoreHorizontal, ShieldCheck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import type { DocumentSummary } from "@/lib/types/document";
-import { formatBytes, formatDate } from "@/lib/format";
+import { formatBytes, formatDate, pluralize } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /** Renders the type icon for a MIME type (image vs. document). */
@@ -26,6 +26,34 @@ export function documentKind(mimeType: string): string {
   return "FILE";
 }
 
+/**
+ * Sharing state of a document, never by colour alone: green "Shared securely"
+ * with the beneficiary count, or a neutral "Private" lock.
+ */
+export function SharingChip({ count, className }: { count: number; className?: string }) {
+  return count > 0 ? (
+    <span
+      className={cn(
+        "inline-flex h-6 items-center gap-1.5 rounded-full border border-success/25 bg-success/10 px-2.5 text-[11px] font-medium text-success",
+        className,
+      )}
+    >
+      <ShieldCheck className="size-3.5" aria-hidden />
+      Shared securely · {pluralize(count, "beneficiary", "beneficiaries")}
+    </span>
+  ) : (
+    <span
+      className={cn(
+        "inline-flex h-6 items-center gap-1.5 rounded-full border border-border bg-muted/40 px-2.5 text-[11px] font-medium text-muted-foreground",
+        className,
+      )}
+    >
+      <Lock className="size-3" aria-hidden />
+      Private
+    </span>
+  );
+}
+
 interface VaultCardProps {
   document: DocumentSummary;
   folderName: string;
@@ -35,7 +63,7 @@ interface VaultCardProps {
   className?: string;
 }
 
-/** Document tile for the vault grid: type, size, sharing and privacy indicator. */
+/** Document tile for the vault grid: type, size, version, sharing state. */
 export function VaultCard({
   document,
   folderName,
@@ -45,24 +73,22 @@ export function VaultCard({
   className,
 }: VaultCardProps) {
   return (
-    <Card
-      className={cn(
-        "motion-safe-transition glass-highlight h-full glass hover:-translate-y-0.5",
-        className,
-      )}
-    >
-      <CardContent className="flex h-full flex-col gap-3 p-4">
+    <Card className={cn("group glass-highlight h-full surface-interactive py-0 glass", className)}>
+      <CardContent className="flex h-full flex-col gap-4 p-4">
         <div className="flex items-start gap-3">
-          <span className="relative flex size-11 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-foreground">
-            <DocumentIcon mimeType={document.mimeType} className="size-5" />
-            <span className="absolute -right-1 -bottom-1 rounded-md bg-background px-1 text-[9px] font-semibold tracking-wide text-muted-foreground ring-1 ring-border">
+          <span className="relative icon-tile size-11 rounded-xl text-primary">
+            <DocumentIcon
+              mimeType={document.mimeType}
+              className="size-5 transition-transform duration-300 group-hover:scale-110"
+            />
+            <span className="absolute -right-1.5 -bottom-1.5 rounded-md bg-background px-1 text-[9px] font-semibold tracking-wide text-muted-foreground ring-1 ring-border">
               {documentKind(document.mimeType)}
             </span>
           </span>
           <button
             type="button"
             onClick={onOpen}
-            className="min-w-0 flex-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="min-w-0 flex-1 rounded-md text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             <p className="truncate text-sm font-medium">{document.name}</p>
             <p className="truncate text-xs text-muted-foreground">
@@ -80,21 +106,12 @@ export function VaultCard({
             </Button>
           )}
         </div>
-        <div className="mt-auto flex flex-wrap items-center gap-2">
-          <span className="ml-auto flex items-center gap-2 text-[11px] text-muted-foreground">
-            {sharedCount > 0 && (
-              <span className="flex items-center gap-1">
-                <Share2 className="size-3" aria-hidden /> {sharedCount}
-              </span>
-            )}
-            <span className="flex items-center gap-1">
-              <Lock className="size-3 text-brand-cyan" aria-hidden /> Private
-            </span>
-          </span>
+        <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-3">
+          <SharingChip count={sharedCount} />
+          <p className="text-[11px] text-muted-foreground">
+            Updated {formatDate(document.updatedAt)}
+          </p>
         </div>
-        <p className="text-[11px] text-muted-foreground">
-          Updated {formatDate(document.updatedAt)}
-        </p>
       </CardContent>
     </Card>
   );

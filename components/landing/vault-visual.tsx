@@ -21,22 +21,22 @@ export function VaultFallback({ className }: { className?: string }) {
     <div className={cn("relative flex items-center justify-center", className)} aria-hidden>
       <svg
         viewBox="0 0 400 400"
-        className="h-[88%] w-[88%] drop-shadow-[0_0_40px_rgba(79,141,255,0.35)]"
+        className="h-[88%] w-[88%] drop-shadow-[0_0_40px_rgba(14,165,255,0.35)]"
       >
         <defs>
           <radialGradient id="lv-glow" cx="50%" cy="48%" r="50%">
-            <stop offset="0%" stopColor="#9b6bff" stopOpacity="0.45" />
-            <stop offset="60%" stopColor="#4f8dff" stopOpacity="0.12" />
-            <stop offset="100%" stopColor="#4f8dff" stopOpacity="0" />
+            <stop offset="0%" stopColor="#0ea5ff" stopOpacity="0.4" />
+            <stop offset="60%" stopColor="#2563eb" stopOpacity="0.12" />
+            <stop offset="100%" stopColor="#2563eb" stopOpacity="0" />
           </radialGradient>
           <linearGradient id="lv-shield" x1="0" y1="0" x2="1" y2="1">
             <stop offset="0%" stopColor="#1b2d63" />
             <stop offset="55%" stopColor="#0b1633" />
-            <stop offset="100%" stopColor="#1a1245" />
+            <stop offset="100%" stopColor="#0a1a3a" />
           </linearGradient>
           <linearGradient id="lv-edge" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#35e0f0" />
-            <stop offset="100%" stopColor="#9b6bff" />
+            <stop offset="0%" stopColor="#22d3ee" />
+            <stop offset="100%" stopColor="#2563eb" />
           </linearGradient>
         </defs>
         <circle cx="200" cy="200" r="190" fill="url(#lv-glow)" />
@@ -46,7 +46,7 @@ export function VaultFallback({ className }: { className?: string }) {
           cy="200"
           r="180"
           fill="none"
-          stroke="#35e0f0"
+          stroke="#22d3ee"
           strokeOpacity="0.5"
           strokeWidth="2"
           strokeDasharray="2 12"
@@ -61,22 +61,22 @@ export function VaultFallback({ className }: { className?: string }) {
           d="M140 110 Q200 118 260 110 L260 170 C260 226 234 262 200 286 C166 262 140 226 140 170 Z"
           fill="#101d42"
           fillOpacity="0.7"
-          stroke="#4f8dff"
+          stroke="#0ea5ff"
           strokeOpacity="0.35"
         />
-        <circle cx="200" cy="186" r="38" fill="none" stroke="#4f8dff" strokeWidth="4" />
+        <circle cx="200" cy="186" r="38" fill="none" stroke="#0ea5ff" strokeWidth="4" />
         <circle
           cx="200"
           cy="186"
           r="48"
           fill="none"
-          stroke="#9b6bff"
+          stroke="#6b5cff"
           strokeOpacity="0.7"
           strokeWidth="3"
           strokeDasharray="3 7"
         />
-        <circle cx="200" cy="178" r="14" fill="#35e0f0" />
-        <polygon points="194,186 206,186 211,212 189,212" fill="#35e0f0" />
+        <circle cx="200" cy="178" r="14" fill="#22d3ee" />
+        <polygon points="194,186 206,186 211,212 189,212" fill="#22d3ee" />
       </svg>
     </div>
   );

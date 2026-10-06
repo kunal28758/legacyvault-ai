@@ -1,6 +1,6 @@
 import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Space_Grotesk } from "next/font/google";
 import { headers } from "next/headers";
 import type { ReactNode } from "react";
 
@@ -12,6 +12,14 @@ import "./globals.css";
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
+  display: "swap",
+});
+
+// Display face for headings and headline numbers (docs/ui/DESIGN_SYSTEM.md § 2).
+const spaceGrotesk = Space_Grotesk({
+  variable: "--font-space-grotesk",
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
   display: "swap",
 });
 
@@ -35,8 +43,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: dark)", color: "#12131f" },
-    { media: "(prefers-color-scheme: light)", color: "#fafafc" },
+    { media: "(prefers-color-scheme: dark)", color: "#060d1a" },
+    { media: "(prefers-color-scheme: light)", color: "#f8fafd" },
   ],
   colorScheme: "dark light",
   width: "device-width",
@@ -58,7 +66,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       lang="en"
       data-theme="dark"
       data-scroll-behavior="smooth"
-      className={`${geistSans.variable} ${geistMono.variable} h-full`}
+      className={`${geistSans.variable} ${geistMono.variable} ${spaceGrotesk.variable} h-full`}
       suppressHydrationWarning
     >
       <body className="flex min-h-full flex-col bg-background text-foreground">
@@ -80,12 +88,12 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       dynamic
       appearance={{
         variables: {
-          colorPrimary: "#6d8dff",
-          colorBackground: "#1a1c2e",
-          colorForeground: "#f2f3fa",
-          colorInput: "#22243a",
-          colorInputForeground: "#f2f3fa",
-          colorBorder: "rgba(255, 255, 255, 0.1)",
+          colorPrimary: "#0ea5ff",
+          colorBackground: "#0c1628",
+          colorForeground: "#eaf1fb",
+          colorInput: "#0f1b30",
+          colorInputForeground: "#eaf1fb",
+          colorBorder: "rgba(160, 190, 230, 0.14)",
           borderRadius: "0.75rem",
         },
       }}

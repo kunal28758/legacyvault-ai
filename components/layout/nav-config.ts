@@ -1,20 +1,19 @@
 import {
+  Activity,
   Bell,
-  Bot,
   Building2,
-  Coins,
   FileText,
-  Gem,
-  Globe,
   HeartHandshake,
   LayoutDashboard,
   ScrollText,
   Settings,
+  ShieldAlert,
   ShieldCheck,
   Siren,
-  TimerReset,
+  Sparkles,
   Users,
   Video,
+  Wallet,
   type LucideIcon,
 } from "lucide-react";
 
@@ -24,6 +23,8 @@ export interface NavItem {
   icon: LucideIcon;
   /** Extra hrefs that should also highlight this item. */
   matches?: string[];
+  /** AI feature: rendered with the violet AI accent. */
+  ai?: boolean;
 }
 
 export interface NavGroup {
@@ -31,53 +32,44 @@ export interface NavGroup {
   items: NavItem[];
 }
 
-/** Grouped product navigation (single source for the sidebar, mobile nav and breadcrumbs). */
+/**
+ * Grouped product navigation (single source for the sidebar, mobile nav,
+ * breadcrumbs and global search). Every route of the product stays reachable;
+ * the asset classes live under one "Assets" entry with in-page tabs.
+ */
 export const NAV_GROUPS: NavGroup[] = [
   {
-    label: null,
+    label: "Overview",
     items: [{ label: "Dashboard", href: "/dashboard", icon: LayoutDashboard }],
-  },
-  {
-    label: "Legacy",
-    items: [
-      { label: "Create / Continue Will", href: "/legacy-plan/wizard", icon: ScrollText },
-      { label: "Legacy Plan", href: "/legacy-plan", icon: FileText },
-    ],
-  },
-  {
-    label: "People",
-    items: [{ label: "Beneficiaries", href: "/beneficiaries", icon: Users }],
-  },
-  {
-    label: "Assets",
-    items: [
-      { label: "Financial Assets", href: "/assets/financial", icon: Coins },
-      { label: "Physical Assets", href: "/assets/physical", icon: Gem },
-      { label: "Digital Assets", href: "/assets/digital", icon: Globe },
-    ],
   },
   {
     label: "Vault",
     items: [
       { label: "Documents", href: "/documents", icon: FileText },
+      { label: "Assets", href: "/assets", icon: Wallet },
       { label: "Video Legacy", href: "/video-legacy", icon: Video },
     ],
   },
   {
-    label: "Protection",
+    label: "Legacy",
     items: [
-      { label: "Dead Man's Switch", href: "/dead-man-switch", icon: TimerReset },
+      { label: "My Will", href: "/legacy-plan", icon: ScrollText },
+      { label: "Beneficiaries", href: "/beneficiaries", icon: Users },
+      { label: "Dead Man's Switch", href: "/dead-man-switch", icon: ShieldAlert },
       { label: "Emergency Access", href: "/emergency-access", icon: Siren },
-      { label: "Security Center", href: "/security-center", icon: ShieldCheck },
     ],
   },
   {
-    label: "AI",
-    items: [{ label: "AI Assistant", href: "/ai", icon: Bot }],
+    label: "Intelligence",
+    items: [
+      { label: "AI Assistant", href: "/ai", icon: Sparkles, ai: true },
+      { label: "Activity Log", href: "/activity", icon: Activity },
+    ],
   },
   {
     label: "System",
     items: [
+      { label: "Security", href: "/security-center", icon: ShieldCheck },
       { label: "Notifications", href: "/notifications", icon: Bell },
       { label: "Settings", href: "/settings", icon: Settings },
     ],
@@ -97,7 +89,7 @@ export const ADMIN_NAV_GROUP: NavGroup = {
 
 export const PAGE_TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
-  "/legacy-plan": "Legacy Plan",
+  "/legacy-plan": "My Will",
   "/legacy-plan/wizard": "Create Will",
   "/beneficiaries": "Beneficiaries",
   "/assets": "Assets",
@@ -110,13 +102,13 @@ export const PAGE_TITLES: Record<string, string> = {
   "/emergency-access": "Emergency Access",
   "/security-center": "Security Center",
   "/ai": "AI Assistant",
+  "/activity": "Activity Log",
   "/notifications": "Notifications",
   "/settings": "Settings",
   "/admin": "Administration",
 };
 
 export function isActivePath(pathname: string, href: string): boolean {
-  if (href === "/legacy-plan") return pathname === "/legacy-plan";
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 

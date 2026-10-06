@@ -89,7 +89,7 @@ export function AssetCard({ asset, allocation, onOpen, menu, className }: AssetC
               : "No value set"}
           </span>
           {hasSensitiveFields(asset) && (
-            <span className="flex items-center gap-1 text-[11px] font-medium text-brand-cyan">
+            <span className="flex items-center gap-1 text-[11px] font-medium text-success">
               <Lock className="size-3" aria-hidden /> Encrypted fields
             </span>
           )}

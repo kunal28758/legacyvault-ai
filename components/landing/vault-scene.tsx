@@ -15,10 +15,10 @@ import * as THREE from "three";
  * `animate={false}` renders one still frame (reduced motion); `active={false}`
  * stops the render loop while the hero is off screen.
  */
-const NAVY = new THREE.Color("#0b1633");
-const BLUE = new THREE.Color("#4f8dff");
-const VIOLET = new THREE.Color("#9b6bff");
-const CYAN = new THREE.Color("#35e0f0");
+const NAVY = new THREE.Color("#071229");
+const BLUE = new THREE.Color("#0ea5ff");
+const VIOLET = new THREE.Color("#6b5cff");
+const CYAN = new THREE.Color("#22d3ee");
 
 function shieldShape(scale = 1): THREE.Shape {
   const w = 1.1 * scale;

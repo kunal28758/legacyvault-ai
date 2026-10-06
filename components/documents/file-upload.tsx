@@ -130,23 +130,41 @@ export function FileDropZone({
         if (!disabled) handleFiles(event.dataTransfer.files);
       }}
       className={cn(
-        "group flex cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed px-6 py-8 text-center transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "group relative flex cursor-pointer flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl border-2 border-dashed px-6 py-9 text-center transition-[border-color,background-color,box-shadow,transform] duration-200 outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
         dragging
-          ? "border-primary bg-primary/5"
-          : "border-border hover:border-primary/50 hover:bg-muted/30",
+          ? "scale-[1.01] border-primary bg-primary/10 shadow-glow-blue"
+          : "border-glass-border bg-surface/40 hover:border-primary/50 hover:bg-primary/5",
         disabled && "cursor-not-allowed opacity-60 hover:border-border hover:bg-transparent",
         className,
       )}
     >
-      <span className="flex size-12 items-center justify-center rounded-2xl bg-gradient-brand text-primary-foreground shadow-glow-blue transition-transform group-hover:scale-105 motion-reduce:transition-none">
-        <UploadCloud className="size-6" aria-hidden />
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-[radial-gradient(50%_100%_at_50%_0%,color-mix(in_oklch,var(--brand-blue)_14%,transparent),transparent)]"
+      />
+      <span className="relative flex size-14 items-center justify-center rounded-2xl bg-gradient-brand text-primary-foreground shadow-cta transition-transform duration-300 ease-out group-hover:-translate-y-0.5 group-hover:scale-105 motion-reduce:transition-none">
+        <UploadCloud
+          className={cn("size-7 transition-transform duration-300", dragging && "-translate-y-0.5")}
+          aria-hidden
+        />
       </span>
-      <div>
+      <div className="relative">
         <p className="text-sm font-medium">
-          Drop {multiple ? `${kind}s` : `a ${kind}`} here, or click to browse
+          {dragging ? (
+            "Release to add to your vault"
+          ) : (
+            <>
+              Drop {multiple ? `${kind}s` : `a ${kind}`} here, or{" "}
+              <span className="text-primary underline-offset-4 group-hover:underline">
+                click to browse
+              </span>
+            </>
+          )}
         </p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {describeAcceptedTypes(accepted)} · up to {formatBytes(maxBytesFor(accepted))}
+        <p className="mt-1.5 flex flex-wrap items-center justify-center gap-x-1.5 text-xs text-muted-foreground">
+          <Lock className="size-3 text-success" aria-hidden />
+          Private storage · {describeAcceptedTypes(accepted)} · up to{" "}
+          {formatBytes(maxBytesFor(accepted))}
           {multiple ? " each" : ""}
         </p>
       </div>
@@ -195,12 +213,12 @@ function StepIcon({ state }: { state: StepState }) {
   if (state === "active") {
     return (
       <Loader2
-        className="size-4 animate-spin text-brand-cyan motion-reduce:animate-none"
+        className="size-4 animate-spin text-primary motion-reduce:animate-none"
         aria-hidden
       />
     );
   }
-  return <span className="size-4 rounded-full border border-border" aria-hidden />;
+  return <span className="size-4 rounded-full border border-muted-foreground/40" aria-hidden />;
 }
 
 interface UploadItemCardProps {
@@ -248,17 +266,31 @@ export function UploadItemCard({ item, onCancel, onRetry, onRemove }: UploadItem
   return (
     <li
       className={cn(
-        "space-y-3 rounded-2xl border p-4 transition-colors",
+        "animate-in space-y-3 rounded-2xl border p-4 transition-colors duration-300 fade-in-0 slide-in-from-bottom-1",
         item.stage === "done" && "border-success/30 bg-success/5",
         (item.stage === "failed" || item.stage === "rejected" || item.stage === "invalid") &&
           "border-destructive/30 bg-destructive/5",
-        !["done", "failed", "rejected", "invalid"].includes(item.stage) && "border-border",
+        !["done", "failed", "rejected", "invalid"].includes(item.stage) &&
+          "border-glass-border bg-surface/40",
       )}
       aria-busy={busy}
     >
       <div className="flex items-start gap-3">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-foreground">
-          <FileUp className="size-5" aria-hidden />
+        <span
+          className={cn(
+            "icon-tile size-10 rounded-xl transition-colors duration-300",
+            item.stage === "done"
+              ? "text-success"
+              : item.stage === "failed" || item.stage === "rejected" || item.stage === "invalid"
+                ? "text-destructive"
+                : "text-primary",
+          )}
+        >
+          {item.stage === "done" ? (
+            <CheckCircle2 className="size-5 animate-in duration-300 zoom-in-50" aria-hidden />
+          ) : (
+            <FileUp className="size-5" aria-hidden />
+          )}
         </span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{item.file.name}</p>
@@ -285,11 +317,11 @@ export function UploadItemCard({ item, onCancel, onRetry, onRemove }: UploadItem
       {/* Bytes in transit have a real percentage; the work before and after
           them does not, so that shows activity without a number. */}
       {busy && (
-        <div className="space-y-2 rounded-xl border border-brand-cyan/20 bg-background/50 p-3">
+        <div className="space-y-2 rounded-xl border border-primary/20 bg-primary/5 p-3">
           <div className="flex items-baseline justify-between gap-3 text-sm">
             <span className="font-medium">{headline}</span>
             {percent !== null && (
-              <span className="font-semibold text-brand-cyan tabular-nums" aria-hidden>
+              <span className="font-heading font-semibold text-primary tabular-nums" aria-hidden>
                 {percent}%
               </span>
             )}
@@ -299,7 +331,10 @@ export function UploadItemCard({ item, onCancel, onRetry, onRemove }: UploadItem
       )}
 
       {showSteps && (
-        <ol className="space-y-1.5" aria-label={`Progress for ${item.file.name}`}>
+        <ol
+          className="grid gap-1.5 rounded-xl border border-border/60 bg-background/30 p-3 sm:grid-cols-2"
+          aria-label={`Progress for ${item.file.name}`}
+        >
           <li className="flex items-center gap-2 text-sm">
             <StepIcon state={steps.validate} />
             <span>Validated</span>
@@ -329,7 +364,7 @@ export function UploadItemCard({ item, onCancel, onRetry, onRemove }: UploadItem
 
       {item.stage === "done" && (
         <p className="flex items-start gap-2 text-xs leading-5 text-muted-foreground">
-          <Lock className="mt-0.5 size-3.5 shrink-0 text-brand-cyan" aria-hidden />
+          <Lock className="mt-0.5 size-3.5 shrink-0 text-success" aria-hidden />
           Stored privately. It opens only through short-lived signed links.
         </p>
       )}

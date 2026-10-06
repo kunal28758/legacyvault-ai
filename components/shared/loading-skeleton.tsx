@@ -19,7 +19,12 @@ export function PageSkeleton({ stats = 4, className }: { stats?: number; classNa
         <Skeleton className="h-4 w-96 max-w-full" />
       </div>
       {stats > 0 && (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div
+          className={cn(
+            "grid gap-4 sm:grid-cols-2",
+            stats >= 5 ? "lg:grid-cols-3 xl:grid-cols-5" : "xl:grid-cols-4",
+          )}
+        >
           {Array.from({ length: stats }).map((_, i) => (
             <StatCardSkeleton key={i} />
           ))}
@@ -104,7 +109,7 @@ export function GridSkeleton({ items = 6, className }: { items?: number; classNa
       className={cn("grid gap-4 sm:grid-cols-2 xl:grid-cols-3", className)}
     >
       {Array.from({ length: items }).map((_, i) => (
-        <Card key={i} className="glass" aria-hidden>
+        <Card key={i} className="py-0 glass" aria-hidden>
           <CardContent className="space-y-4 p-5">
             <div className="flex items-center gap-3">
               <Skeleton className="size-10 rounded-xl" />

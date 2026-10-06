@@ -129,7 +129,7 @@ export function VideoLegacyView() {
         title="Video legacy"
         description="Personal messages for the people you love, delivered exactly when you decide. Recording in the browser arrives later — upload is available today."
         actions={
-          <Button className="shadow-glow-blue" onClick={() => setUploadOpen(true)}>
+          <Button onClick={() => setUploadOpen(true)}>
             <Upload data-icon="inline-start" />
             Upload video
           </Button>
@@ -141,7 +141,7 @@ export function VideoLegacyView() {
           label="Messages"
           value={ready ? (videosQuery.data?.total ?? videos.length) : "—"}
           icon={Video}
-          accent="purple"
+          accent="blue"
         />
         <StatCard
           label="Storage"
@@ -188,7 +188,7 @@ export function VideoLegacyView() {
                   >
                     <span
                       aria-hidden
-                      className="absolute inset-0 bg-[radial-gradient(60%_60%_at_50%_40%,color-mix(in_oklch,var(--brand-purple)_35%,transparent),transparent)]"
+                      className="absolute inset-0 bg-[radial-gradient(60%_60%_at_50%_40%,color-mix(in_oklch,var(--brand-blue)_30%,transparent),transparent)]"
                     />
                     <span
                       aria-hidden

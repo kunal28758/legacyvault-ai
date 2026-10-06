@@ -143,7 +143,6 @@ export function EmergencyAccessView() {
         description="Designated contacts can request access in an emergency. They verify with a one-time code sent to their email; you approve or deny — or set a timeout rule for when you cannot respond."
         actions={
           <Button
-            className="shadow-glow-blue"
             onClick={() => {
               setEditing(null);
               setSheetOpen(true);
@@ -225,10 +224,7 @@ export function EmergencyAccessView() {
                           <X data-icon="inline-start" />
                           Deny
                         </Button>
-                        <Button
-                          className="shadow-glow-blue"
-                          onClick={() => setDecision({ request, kind: "APPROVE" })}
-                        >
+                        <Button onClick={() => setDecision({ request, kind: "APPROVE" })}>
                           <Check data-icon="inline-start" />
                           Approve
                         </Button>

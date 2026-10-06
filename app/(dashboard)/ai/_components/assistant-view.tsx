@@ -73,10 +73,10 @@ export function AssistantView() {
       <PageHeader
         eyebrow="AI assistant"
         title="Ask LegacyVault AI"
-        description="Plain-language help with your legacy plan, beneficiaries, assets, documents and the Dead Man’s Switch — and general questions too."
+        description="Your intelligent legacy planning companion — plain-language help with your plan, beneficiaries, assets, documents and the Dead Man’s Switch."
         actions={
           availability.isPending ? null : configured ? (
-            <StatusBadge tone="success" icon={Bot}>
+            <StatusBadge tone="ai" icon={Sparkles}>
               {PROVIDER_LABEL[availability.data?.provider ?? ""] ?? "AI"} connected
               {availability.data?.fallbacks?.length
                 ? ` · fallback: ${availability.data.fallbacks.map((name) => PROVIDER_LABEL[name]).join(", ")}`
@@ -91,8 +91,12 @@ export function AssistantView() {
       />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <Card className="glass-strong">
-          <CardContent className="flex h-[min(72vh,44rem)] flex-col p-4 sm:p-5">
+        <Card className="relative overflow-hidden shadow-elevated border-gradient-ai">
+          <span
+            aria-hidden
+            className="pointer-events-none absolute -top-24 left-1/2 h-48 w-2/3 -translate-x-1/2 rounded-full bg-brand-purple/15 blur-3xl"
+          />
+          <CardContent className="relative flex h-[min(72vh,44rem)] flex-col p-4 sm:p-5">
             <AIChat
               className="min-h-0 flex-1"
               endpoint="/ai/assistant/message"
@@ -115,7 +119,7 @@ export function AssistantView() {
           <Card className="glass">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-sm">
-                <FileText className="size-4 text-brand-cyan" aria-hidden />
+                <FileText className="size-4 text-primary" aria-hidden />
                 Work with a document
               </CardTitle>
             </CardHeader>
@@ -134,7 +138,7 @@ export function AssistantView() {
                       <button
                         type="button"
                         onClick={() => setViewing(document)}
-                        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                        className="group flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors outline-none hover:bg-brand-purple/10 focus-visible:ring-3 focus-visible:ring-brand-purple/35"
                       >
                         <Sparkles className="size-3.5 shrink-0 text-brand-purple" aria-hidden />
                         <span className="truncate">{document.name}</span>
@@ -182,11 +186,11 @@ export function AssistantView() {
           <Card className="glass">
             <CardContent className="space-y-2 p-4 text-xs leading-5 text-muted-foreground">
               <p className="flex items-start gap-2">
-                <Lock className="mt-0.5 size-3.5 shrink-0 text-brand-cyan" aria-hidden />
+                <Lock className="mt-0.5 size-3.5 shrink-0 text-success" aria-hidden />
                 Conversations stay in this browser tab and are gone when you leave.
               </p>
               <p className="flex items-start gap-2">
-                <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-brand-cyan" aria-hidden />
+                <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-success" aria-hidden />
                 The assistant never sees passwords, account numbers or documents unless you attach a
                 file or open a document and ask about it. Attached files are kept in your private
                 vault.

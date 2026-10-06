@@ -1,18 +1,24 @@
-/* Glassmorphism surfaces (task T011, constitution XIII). Consumed via app/globals.css. */
+/* Glass surfaces (task T011, constitution XIII). Consumed via app/globals.css.
+   Readability first: the fill stays mostly opaque navy, the blur is modest, and
+   `prefers-reduced-transparency` falls back to a solid surface. */
 @utility glass {
-  background: var(--glass);
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklch, var(--surface-raised) 72%, transparent),
+    color-mix(in oklch, var(--card) 64%, transparent)
+  );
   border: 1px solid var(--glass-border);
-  box-shadow: var(--shadow-glass);
-  backdrop-filter: blur(18px) saturate(140%);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: var(--elevation-glass);
+  backdrop-filter: blur(14px) saturate(130%);
+  -webkit-backdrop-filter: blur(14px) saturate(130%);
 }
 
 @utility glass-strong {
-  background: color-mix(in oklch, var(--surface-raised) 82%, transparent);
+  background: color-mix(in oklch, var(--popover) 92%, transparent);
   border: 1px solid var(--glass-border);
-  box-shadow: var(--shadow-glass);
-  backdrop-filter: blur(24px) saturate(160%);
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  box-shadow: var(--elevation-raised);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
 }
 
 @utility glass-border {
@@ -29,8 +35,50 @@
   inset: 0 0 auto 0;
   height: 1px;
   border-radius: inherit;
-  background: linear-gradient(90deg, transparent, oklch(1 0 0 / 0.35), transparent);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklch, var(--brand-blue) 45%, oklch(1 0 0 / 0.4)),
+    transparent
+  );
+  opacity: 0.55;
   pointer-events: none;
+}
+
+/* Interactive card: lifts slightly and its border picks up the brand blue.
+   Only transform/box-shadow/border-colour animate (no layout shift). */
+@utility surface-interactive {
+  transition:
+    transform 200ms var(--ease-out-expo),
+    box-shadow 200ms var(--ease-out-expo),
+    border-color 200ms ease;
+  &:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in oklch, var(--brand-blue) 35%, var(--glass-border));
+    box-shadow: var(--elevation-raised);
+  }
+  &:active {
+    transform: translateY(0);
+  }
+}
+
+/* Selected card: blue border plus a restrained glow. */
+@utility surface-selected {
+  border-color: color-mix(in oklch, var(--brand-blue) 60%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--brand-blue) 35%, transparent),
+    var(--shadow-glow-blue);
+}
+
+/* Icon medallion: a tinted square that carries a semantic accent colour. */
+@utility icon-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: calc(var(--radius) * 0.85);
+  border: 1px solid color-mix(in oklch, currentColor 22%, transparent);
+  background: color-mix(in oklch, currentColor 12%, transparent);
 }
 
 @media (prefers-reduced-transparency: reduce) {

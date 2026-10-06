@@ -17,12 +17,11 @@ interface QuickActionProps {
 }
 
 const accentClasses = {
-  blue: "bg-brand-blue/15 text-brand-blue group-hover:bg-brand-blue group-hover:text-primary-foreground",
-  purple:
-    "bg-brand-purple/15 text-brand-purple group-hover:bg-brand-purple group-hover:text-primary-foreground",
-  cyan: "bg-brand-cyan/15 text-brand-cyan group-hover:bg-brand-cyan group-hover:text-primary-foreground",
-  success: "bg-success/15 text-success group-hover:bg-success group-hover:text-primary-foreground",
-  warning: "bg-warning/15 text-warning group-hover:bg-warning group-hover:text-primary-foreground",
+  blue: "text-primary group-hover:border-primary/50 group-hover:bg-primary/20",
+  purple: "text-brand-purple group-hover:border-brand-purple/50 group-hover:bg-brand-purple/20",
+  cyan: "text-brand-cyan group-hover:border-brand-cyan/50 group-hover:bg-brand-cyan/20",
+  success: "text-success group-hover:border-success/50 group-hover:bg-success/20",
+  warning: "text-warning group-hover:border-warning/50 group-hover:bg-warning/20",
 };
 
 /** Compact action tile used on the dashboard and in empty states. */
@@ -39,10 +38,7 @@ export function QuickAction({
   const content = (
     <>
       <span
-        className={cn(
-          "flex size-10 shrink-0 items-center justify-center rounded-xl transition-colors",
-          accentClasses[accent],
-        )}
+        className={cn("icon-tile size-10 transition-colors duration-200", accentClasses[accent])}
       >
         <Icon className="size-5" aria-hidden />
       </span>
@@ -53,13 +49,13 @@ export function QuickAction({
         )}
       </span>
       <ArrowRight
-        className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+        className="size-4 shrink-0 text-muted-foreground transition-[transform,color] duration-200 group-hover:translate-x-0.5 group-hover:text-primary"
         aria-hidden
       />
     </>
   );
   const classes = cn(
-    "group glass-highlight flex w-full items-center gap-3 rounded-xl p-3 text-left glass motion-safe-transition outline-none hover:-translate-y-0.5 hover:shadow-glow-purple focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
+    "group glass-highlight surface-interactive flex w-full items-center gap-3 rounded-xl p-3 text-left glass outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50",
     className,
   );
   if (href && !disabled) {

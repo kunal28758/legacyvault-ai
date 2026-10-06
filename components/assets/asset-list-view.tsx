@@ -92,7 +92,7 @@ export function AssetListView({ kind }: { kind: AssetKind }) {
   const meta = ASSET_KIND_META[kind];
   const copy = COPY[kind];
 
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(() => searchParams.get("q") ?? "");
   const [category, setCategory] = useState<string>("all");
   const [formOpen, setFormOpen] = useState(() => searchParams.get("new") === "1");
   const [editing, setEditing] = useState<Asset | null>(null);
@@ -208,7 +208,7 @@ export function AssetListView({ kind }: { kind: AssetKind }) {
           label="Estimated total"
           value={ready ? formatCompactCurrency(assetTotal(assets)) : "—"}
           hint="Sum of estimated values"
-          accent="purple"
+          accent="blue"
         />
         <StatCard
           label="Unassigned"

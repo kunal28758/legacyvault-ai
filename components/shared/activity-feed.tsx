@@ -9,7 +9,9 @@ import {
   ShieldAlert,
   Siren,
   TimerReset,
+  Sparkles,
   Users,
+  Wallet,
   type LucideIcon,
 } from "lucide-react";
 
@@ -18,14 +20,14 @@ import { Timeline, type TimelineItem } from "@/components/shared/timeline";
 import type { ActivityEntry } from "@/lib/types/activity";
 
 /** "document.accessed" → "Document accessed". */
-function humanize(action: string): string {
+export function humanize(action: string): string {
   const [domain, ...rest] = action.split(".");
   const verb = rest.join(" ").replace(/_/g, " ");
   const label = `${domain} ${verb}`.trim().replace(/_/g, " ");
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
-function iconFor(action: string): LucideIcon {
+export function iconFor(action: string): LucideIcon {
   if (action.startsWith("dms.")) return TimerReset;
   if (action.startsWith("ea.")) return Siren;
   if (action.startsWith("auth.") || action.startsWith("session.")) return LogIn;
@@ -33,10 +35,12 @@ function iconFor(action: string): LucideIcon {
   if (action.startsWith("document.") || action.startsWith("video.")) return FileText;
   if (action.startsWith("beneficiary.") || action.startsWith("assignment.")) return Users;
   if (action.startsWith("access.") || action.includes("credential")) return KeyRound;
+  if (action.startsWith("ai.")) return Sparkles;
+  if (action.startsWith("asset.")) return Wallet;
   return Activity;
 }
 
-function toneFor(item: ActivityEntry): TimelineItem["tone"] {
+export function toneFor(item: ActivityEntry): TimelineItem["tone"] {
   if (item.outcome === "FAILURE" || item.outcome === "DENIED") return "danger";
   if (item.action.includes("credential") || item.action.startsWith("access.")) return "warning";
   if (item.action.startsWith("dms.") || item.action.startsWith("ea.")) return "info";

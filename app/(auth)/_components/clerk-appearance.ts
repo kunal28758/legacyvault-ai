@@ -6,13 +6,13 @@ type Appearance = NonNullable<ComponentProps<typeof SignIn>["appearance"]>;
 /** Glassmorphism appearance for Clerk's auth components (constitution XIII). */
 export const clerkAuthAppearance: Appearance = {
   variables: {
-    colorPrimary: "#6d8dff",
+    colorPrimary: "#0ea5ff",
     colorBackground: "transparent",
-    colorForeground: "#f2f3fa",
-    colorMutedForeground: "#a9adc4",
-    colorInput: "rgba(34, 36, 58, 0.8)",
-    colorInputForeground: "#f2f3fa",
-    colorBorder: "rgba(255, 255, 255, 0.12)",
+    colorForeground: "#eaf1fb",
+    colorMutedForeground: "#8fa3bf",
+    colorInput: "rgba(15, 27, 48, 0.85)",
+    colorInputForeground: "#eaf1fb",
+    colorBorder: "rgba(160, 190, 230, 0.14)",
     borderRadius: "0.75rem",
     fontFamily: "var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif",
   },
@@ -23,7 +23,7 @@ export const clerkAuthAppearance: Appearance = {
     headerTitle: "text-xl font-semibold tracking-tight",
     headerSubtitle: "text-muted-foreground",
     formButtonPrimary:
-      "bg-gradient-brand text-primary-foreground shadow-glow-blue hover:opacity-90",
+      "bg-primary text-primary-foreground shadow-cta transition-[filter,box-shadow] hover:brightness-110 hover:shadow-glow-blue",
     footer: "bg-transparent",
     footerAction: "bg-transparent",
   },

@@ -69,12 +69,12 @@ export function DataTable<T>({
           <Table>
             {caption && <caption className="sr-only">{caption}</caption>}
             <TableHeader>
-              <TableRow className="hover:bg-transparent">
+              <TableRow className="bg-muted/25 hover:bg-muted/25">
                 {columns.map((col) => (
                   <TableHead
                     key={col.id}
                     className={cn(
-                      "h-10 text-xs font-medium tracking-wide text-muted-foreground uppercase",
+                      "h-10 px-4 text-[11px] font-semibold tracking-[0.08em] text-muted-foreground uppercase",
                       col.hideBelowLg && "hidden lg:table-cell",
                       col.align === "right" && "text-right",
                       col.headerClassName,
@@ -90,7 +90,10 @@ export function DataTable<T>({
                 <TableRow
                   key={rowKey(row)}
                   onClick={onRowClick ? () => onRowClick(row) : undefined}
-                  className={cn(onRowClick && "cursor-pointer")}
+                  className={cn(
+                    "transition-colors hover:bg-primary/[0.04]",
+                    onRowClick && "cursor-pointer",
+                  )}
                   tabIndex={onRowClick ? 0 : undefined}
                   onKeyDown={
                     onRowClick
@@ -107,7 +110,7 @@ export function DataTable<T>({
                     <TableCell
                       key={col.id}
                       className={cn(
-                        "py-3 align-middle",
+                        "px-4 py-3 align-middle",
                         col.hideBelowLg && "hidden lg:table-cell",
                         col.align === "right" && "text-right",
                         col.className,

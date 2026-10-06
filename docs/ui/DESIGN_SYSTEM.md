@@ -23,8 +23,15 @@ once components exist.
 - **Dark-first** visual system with an optional **light mode** (theme toggle
   T184; default dark; respects `prefers-color-scheme` on first visit;
   persisted to `preferences.theme`).
-- **Glassmorphism**, subtle gradients and restrained effects on dark
-  backgrounds; **blue / purple / cyan** accent palette.
+- **Glassmorphism**, subtle gradients and restrained effects on deep-navy
+  backgrounds. Colour roles are semantic (2026-10-06 refresh):
+  - **Electric blue** `#0EA5FF` — primary action / technology; the dominant accent.
+  - **Emerald** `#14D38F` — safe, active, verified, success.
+  - **Violet** `#9D7CFF` — AI features only (assistant, AI badges, AI gradients).
+  - **Amber** — pending / warning. **Red** — error / destructive.
+  - Cyan is a secondary technology accent (emergency contacts, data viz).
+  Glow is a state cue (primary CTA, active nav item, selected card), never a
+  resting decoration on every surface.
 - Strong, modern, high-contrast typography with a clear hierarchy.
 - The visual system must inspire trust for sensitive legal-tech workflows:
   professional, secure, calm — never at the expense of accessibility,
@@ -38,9 +45,14 @@ once components exist.
   semantic states), spacing scale, radii, typography scale, motion presets.
 - Light-mode overrides live under `[data-theme="light"]`; the `data-theme`
   attribute is set on `<html>`.
-- Typography: Geist Sans / Geist Mono are already wired through `next/font`
-  in the scaffold; whether a distinct display face is adopted is **not yet
-  decided** (T010 says "add display font if adopted").
+- Typography: **Space Grotesk** (500–700) is the display face for headings and
+  headline numbers (`font-heading`); **Geist Sans** for reading text and
+  **Geist Mono** for data — all through `next/font`.
+- Shared utilities in `styles/`: `glass`, `glass-strong`, `surface-interactive`
+  (hover lift), `surface-selected`, `icon-tile` (tinted medallion that takes
+  the semantic colour from `text-*`), `bg-gradient-brand` (blue),
+  `bg-gradient-ai` / `border-gradient-ai` (blue→violet, AI only),
+  `skeleton-shimmer`, and motion utilities that `prefers-reduced-motion` disables.
 - Utilities for glass panels, gradients and animation base classes live in
   `styles/` and are imported by `app/globals.css`.
 
@@ -123,7 +135,7 @@ users, audit logs); public `/access` page for external recipients.
 
 ## 10. Open design decisions
 
-- Display typeface (see § 2).
+- ~~Display typeface~~ — decided: Space Grotesk (see § 2).
 - Visual treatment of confidence indicators and "AI-generated" labels
   (constraints are set by FR-M013, FR-R005, FR-R009; the rendering is not
   yet designed).
