@@ -158,7 +158,7 @@ export function AppShell({ user, clerkEnabled, children }: AppShellProps) {
             </SheetContent>
           </Sheet>
 
-          <div className="min-w-0 shrink-0 md:w-48 xl:w-60">
+          <div className="min-w-0 shrink md:w-40 xl:w-60">
             <nav
               aria-label="Breadcrumb"
               className="hidden items-center gap-1 text-xs text-muted-foreground md:flex"
@@ -187,7 +187,7 @@ export function AppShell({ user, clerkEnabled, children }: AppShellProps) {
             <p className="truncate font-heading text-[15px] font-semibold md:hidden">{title}</p>
           </div>
 
-          <div className="flex flex-1 justify-end md:justify-center">
+          <div className="flex min-w-0 flex-1 justify-end md:justify-center">
             <GlobalSearch />
           </div>
 

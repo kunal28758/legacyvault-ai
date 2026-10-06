@@ -97,6 +97,22 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           borderRadius: "0.75rem",
         },
       }}
+      // Titles use the product name even while the Clerk instance's application
+      // name is unset (docs/DEPLOYMENT.md § 5, row 15).
+      localization={{
+        signIn: {
+          start: {
+            title: "Sign in to LegacyVault AI",
+            subtitle: "Welcome back — your vault is protected and waiting.",
+          },
+        },
+        signUp: {
+          start: {
+            title: "Create your LegacyVault AI account",
+            subtitle: "Secure your legacy in a private, encrypted vault.",
+          },
+        },
+      }}
       signInUrl="/sign-in"
       signUpUrl="/sign-up"
     >

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Download,
@@ -25,16 +26,20 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { DocumentAIViewer } from "@/components/ai/document-ai-viewer";
+import { DocumentProfileEditor } from "@/components/documents/document-profile-editor";
 import {
   DocumentIcon,
+  DocumentProfileChips,
   SharingChip,
   VaultCard,
   documentKind,
 } from "@/components/documents/vault-card";
-import { ShareDocumentDialog } from "@/components/documents/share-document-dialog";
+import {
+  DOCUMENT_CATEGORIES,
+  DOCUMENT_CATEGORY_LABELS,
+  type DocumentCategory,
+} from "@/lib/types/document-profile";
 import { FormField } from "@/components/shared/form-field";
-import { UploadDialog } from "@/components/documents/upload-dialog";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { DataTable, type DataTableColumn } from "@/components/shared/data-table";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -98,6 +103,18 @@ import { cn } from "@/lib/utils";
  * are promoted by the server once checked, downloads are short-lived signed links minted
  * after an ownership check, and deletion runs `delete_document()`.
  */
+// Loaded on first open: the AI viewer, uploader and share dialog are the
+// heaviest parts of this page and most visits never open them.
+const DocumentAIViewer = dynamic(() =>
+  import("@/components/ai/document-ai-viewer").then((m) => m.DocumentAIViewer),
+);
+const UploadDialog = dynamic(() =>
+  import("@/components/documents/upload-dialog").then((m) => m.UploadDialog),
+);
+const ShareDocumentDialog = dynamic(() =>
+  import("@/components/documents/share-document-dialog").then((m) => m.ShareDocumentDialog),
+);
+
 type DocumentFilter = "all" | "shared" | "private" | "pdf" | "image" | "office";
 
 const DOCUMENT_FILTERS: Record<
@@ -125,7 +142,11 @@ export function DocumentsView() {
   const [folderId, setFolderId] = useState<string | "all">("all");
   const [query, setQuery] = useState(() => searchParams.get("q") ?? "");
   const [view, setView] = useState<"grid" | "list">("grid");
-  const [filter, setFilter] = useState<DocumentFilter>("all");
+  const [filter, setFilter] = useState<DocumentFilter>(() => {
+    const requested = searchParams.get("filter");
+    return requested && requested in DOCUMENT_FILTERS ? (requested as DocumentFilter) : "all";
+  });
+  const [category, setCategory] = useState<DocumentCategory | "all" | "none">("all");
   const openUpload = searchParams.get("upload") === "1";
   const [uploadOpen, setUploadOpen] = useState(openUpload);
   const [folderOpen, setFolderOpen] = useState(false);
@@ -168,8 +189,16 @@ export function DocumentsView() {
   const rows = useMemo(() => {
     const items = listQuery.data?.items ?? [];
     const inFolder = folderId === "root" ? items.filter((d) => d.folderId === null) : items;
-    return inFolder.filter(DOCUMENT_FILTERS[filter].test);
-  }, [listQuery.data, folderId, filter]);
+    return inFolder
+      .filter(DOCUMENT_FILTERS[filter].test)
+      .filter((d) =>
+        category === "all"
+          ? true
+          : category === "none"
+            ? !d.profile?.category
+            : d.profile?.category === category,
+      );
+  }, [listQuery.data, folderId, filter, category]);
 
   const detail = detailQuery.data ?? null;
   const totalBytes = allDocuments.reduce((s, d) => s + d.sizeBytes, 0);
@@ -250,6 +279,12 @@ export function DocumentsView() {
           </button>
         );
       },
+    },
+    {
+      id: "category",
+      header: "Category",
+      hideBelowLg: true,
+      cell: (doc) => <DocumentProfileChips profile={doc.profile} now={now} />,
     },
     {
       id: "folder",
@@ -422,27 +457,54 @@ export function DocumentsView() {
             </div>
           </div>
 
-          <div
-            role="group"
-            aria-label="Filter documents"
-            className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1"
-          >
-            {(Object.keys(DOCUMENT_FILTERS) as DocumentFilter[]).map((key) => (
-              <button
-                key={key}
-                type="button"
-                aria-pressed={filter === key}
-                onClick={() => setFilter(key)}
-                className={cn(
-                  "h-8 shrink-0 rounded-full border px-3 text-xs font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
-                  filter === key
-                    ? "border-primary/40 bg-primary/15 text-foreground"
-                    : "border-border text-muted-foreground hover:border-primary/30 hover:text-foreground",
-                )}
-              >
-                {DOCUMENT_FILTERS[key].label}
-              </button>
-            ))}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Select
+              value={category}
+              onValueChange={(value) => setCategory(value as typeof category)}
+              items={[
+                { value: "all", label: "All categories" },
+                { value: "none", label: "Uncategorized" },
+                ...DOCUMENT_CATEGORIES.map((value) => ({
+                  value,
+                  label: DOCUMENT_CATEGORY_LABELS[value],
+                })),
+              ]}
+            >
+              <SelectTrigger aria-label="Filter by category" className="w-full shrink-0 sm:w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All categories</SelectItem>
+                <SelectItem value="none">Uncategorized</SelectItem>
+                {DOCUMENT_CATEGORIES.map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {DOCUMENT_CATEGORY_LABELS[value]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div
+              role="group"
+              aria-label="Filter documents"
+              className="-mx-1 flex min-w-0 gap-1.5 overflow-x-auto px-1 pb-1"
+            >
+              {(Object.keys(DOCUMENT_FILTERS) as DocumentFilter[]).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  aria-pressed={filter === key}
+                  onClick={() => setFilter(key)}
+                  className={cn(
+                    "h-8 shrink-0 rounded-full border px-3 text-xs font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                    filter === key
+                      ? "border-primary/40 bg-primary/15 text-foreground"
+                      : "border-border text-muted-foreground hover:border-primary/30 hover:text-foreground",
+                  )}
+                >
+                  {DOCUMENT_FILTERS[key].label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {!ready ? (
@@ -502,17 +564,21 @@ export function DocumentsView() {
         </div>
       </div>
 
-      <UploadDialog
-        kind="document"
-        open={uploadOpen}
-        onOpenChange={setUploadOpen}
-        defaultFolderId={folderId === "all" || folderId === "root" ? null : folderId}
-      />
-      <ShareDocumentDialog
-        open={Boolean(shareFor)}
-        onOpenChange={(open) => !open && setShareFor(null)}
-        documentId={shareFor}
-      />
+      {uploadOpen && (
+        <UploadDialog
+          kind="document"
+          open={uploadOpen}
+          onOpenChange={setUploadOpen}
+          defaultFolderId={folderId === "all" || folderId === "root" ? null : folderId}
+        />
+      )}
+      {shareFor && (
+        <ShareDocumentDialog
+          open={Boolean(shareFor)}
+          onOpenChange={(open) => !open && setShareFor(null)}
+          documentId={shareFor}
+        />
+      )}
 
       <Dialog open={folderOpen} onOpenChange={setFolderOpen}>
         <DialogContent className="glass-strong">
@@ -643,7 +709,7 @@ export function DocumentsView() {
                 <div className="flex flex-wrap gap-2">
                   <Button
                     size="sm"
-
+                    variant="ai"
                     onClick={() => {
                       setAiFor(detail);
                       setDetailId(null);
@@ -692,6 +758,7 @@ export function DocumentsView() {
                     Delete
                   </Button>
                 </div>
+                <DocumentProfileEditor key={detail.id} document={detail} />
 
                 <dl className="grid grid-cols-2 gap-3 text-sm">
                   <div>
@@ -785,17 +852,19 @@ export function DocumentsView() {
         </SheetContent>
       </Sheet>
 
-      <DocumentAIViewer
-        document={aiFor}
-        allDocuments={allDocuments}
-        onOpenChange={(open) => !open && setAiFor(null)}
-        onDownload={(id) => void download(id)}
-        onMove={(doc) => {
-          setMoveTarget(doc);
-          setMoveFolder(doc.folderId ?? "root");
-        }}
-        onDelete={(doc) => setRemoveTarget(doc)}
-      />
+      {aiFor && (
+        <DocumentAIViewer
+          document={aiFor}
+          allDocuments={allDocuments}
+          onOpenChange={(open) => !open && setAiFor(null)}
+          onDownload={(id) => void download(id)}
+          onMove={(doc) => {
+            setMoveTarget(doc);
+            setMoveFolder(doc.folderId ?? "root");
+          }}
+          onDelete={(doc) => setRemoveTarget(doc)}
+        />
+      )}
 
       <Dialog open={Boolean(moveTarget)} onOpenChange={(open) => !open && setMoveTarget(null)}>
         <DialogContent className="glass-strong sm:max-w-md">

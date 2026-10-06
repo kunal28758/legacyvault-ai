@@ -31,11 +31,11 @@ export function SidebarNav({ collapsed = false, onNavigate, badges = {} }: Sideb
     profile.data?.role === "SUPER_ADMIN" ? [...NAV_GROUPS, ADMIN_NAV_GROUP] : NAV_GROUPS;
 
   return (
-    <nav aria-label="Primary" className="flex flex-col gap-6">
+    <nav aria-label="Primary" className="flex flex-col gap-3">
       {groups.map((group) => (
         <div key={group.label ?? "root"} className="space-y-1">
           {group.label && !collapsed && (
-            <p className="px-3 pb-1.5 text-[10.5px] font-semibold tracking-[0.16em] text-muted-foreground/70 uppercase">
+            <p className="px-3 pb-1 text-[10.5px] font-semibold tracking-[0.16em] text-muted-foreground/70 uppercase">
               {group.label}
             </p>
           )}
@@ -52,7 +52,7 @@ export function SidebarNav({ collapsed = false, onNavigate, badges = {} }: Sideb
                   onClick={onNavigate}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "group relative flex h-9 items-center gap-3 rounded-lg px-2.5 text-[13.5px] font-medium transition-colors duration-150 outline-none",
+                    "group relative flex h-8 items-center gap-3 rounded-lg px-2.5 text-[13px] font-medium transition-colors duration-150 outline-none",
                     "focus-visible:ring-3 focus-visible:ring-sidebar-ring/50",
                     active
                       ? "text-sidebar-foreground"

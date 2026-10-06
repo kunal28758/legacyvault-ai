@@ -245,16 +245,29 @@ export function BeneficiariesView() {
     },
     {
       id: "assignments",
-      header: "Assignments",
+      header: "Access",
       cell: (b) => (
-        <span className="text-sm">
-          {b.roles.assignmentCount}
-          {b.roles.averageAllocation > 0 && (
-            <span className="text-xs text-muted-foreground">
-              {" "}
-              · avg {b.roles.averageAllocation}%
-            </span>
-          )}
+        <span className="block min-w-28 space-y-0.5">
+          <span className="block text-sm">
+            {b.roles.assignmentCount
+              ? `${b.roles.assignmentCount} resource${b.roles.assignmentCount === 1 ? "" : "s"}`
+              : "Nothing assigned"}
+            {b.roles.averageAllocation > 0 && (
+              <span className="text-xs text-muted-foreground">
+                {" "}
+                · avg {b.roles.averageAllocation}%
+              </span>
+            )}
+          </span>
+          <span className="block text-xs text-muted-foreground">
+            {b.status === "INACTIVE"
+              ? "No access"
+              : b.activatedAt
+                ? `Accepted ${formatRelative(b.activatedAt, now)}`
+                : b.invitedAt
+                  ? `Invited ${formatRelative(b.invitedAt, now)}`
+                  : "Not invited yet"}
+          </span>
         </span>
       ),
     },
@@ -271,7 +284,7 @@ export function BeneficiariesView() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="People"
+        eyebrow="Family & Beneficiaries"
         title="Beneficiaries"
         description="Everyone who inherits, receives documents or acts as a trusted or emergency contact. Recipients never need an account."
         actions={
@@ -306,6 +319,34 @@ export function BeneficiariesView() {
           hint="Assets or documents assigned"
         />
       </div>
+
+      <ol
+        aria-label="How beneficiary access works"
+        className="grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-3"
+      >
+        {[
+          { icon: Mail, title: "Invited", text: "A secure link by email — no account needed." },
+          { icon: UserCheck, title: "Accepted", text: "Opening the link makes them Active." },
+          {
+            icon: KeyRound,
+            title: "Scoped access",
+            text: "They see only what you assign or share. Revoke any time.",
+          },
+        ].map((step, index) => (
+          <li key={step.title} className="flex items-start gap-3 bg-surface/60 p-3.5">
+            <span className="icon-tile size-8 text-primary">
+              <step.icon className="size-4" aria-hidden />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-medium">
+                <span className="text-muted-foreground tabular-nums">{index + 1}.</span>{" "}
+                {step.title}
+              </span>
+              <span className="block text-xs text-muted-foreground">{step.text}</span>
+            </span>
+          </li>
+        ))}
+      </ol>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative w-full sm:max-w-xs">

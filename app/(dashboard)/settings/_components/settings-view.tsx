@@ -175,6 +175,8 @@ export function SettingsView({
           ...(Object.keys(rest).length > 0
             ? {
                 preferences: {
+                  // Keep every stored key (e.g. recorded life events), then apply the edit.
+                  ...(profile.data?.preferences ?? {}),
                   currency: prefs.currency,
                   dateFormat: prefs.dateFormat,
                   compactSidebar: prefs.compactSidebar,

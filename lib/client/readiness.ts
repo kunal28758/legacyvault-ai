@@ -1,105 +1,215 @@
-import { dmsView } from "@/lib/client/dms-presentation";
-import type { DeadManSwitch } from "@/lib/types/dms";
+import type { LegacySnapshot } from "@/lib/client/legacy-snapshot";
 
 /**
- * The legacy-readiness score shown on the dashboard.
+ * Legacy Readiness: how prepared the legacy is, in six explainable categories.
  *
- * The weights are unchanged from the original model; what changed is the
- * input — every number now comes from the database rather than from browser
- * state, so the score reflects what a beneficiary would actually receive.
+ * Deterministic and transparent — every point comes from a named criterion
+ * that reads real state, and the UI shows each criterion with what it is worth.
+ * It measures preparation inside LegacyVault, never legal completeness.
  */
+export type ReadinessCategoryId =
+  "documents" | "will" | "beneficiaries" | "emergency" | "digital" | "security";
+
+export interface ReadinessCriterion {
+  id: string;
+  label: string;
+  /** Points available. */
+  points: number;
+  /** Points earned (may be partial). */
+  earned: number;
+  met: boolean;
+  /** Where to fix it. */
+  href: string;
+}
+
+export interface ReadinessCategory {
+  id: ReadinessCategoryId;
+  label: string;
+  /** Share of the overall score, out of 100. */
+  weight: number;
+  /** 0–100 within the category. */
+  score: number;
+  criteria: ReadinessCriterion[];
+  href: string;
+}
+
 export interface ReadinessBreakdown {
   score: number;
-  items: {
-    id: string;
-    label: string;
-    weight: number;
-    earned: number;
-    hint: string;
-    href: string;
-  }[];
+  categories: ReadinessCategory[];
+  /** Unmet criteria, largest weighted impact first. */
+  missing: (ReadinessCriterion & { category: string; impact: number })[];
 }
 
-export interface ReadinessInputs {
-  planFinalized: boolean;
-  planVersion: number | null;
-  planPercent: number;
-  activeBeneficiaries: number;
-  assetCount: number;
-  assignedAssetCount: number;
-  documentCount: number;
-  deadManSwitch: DeadManSwitch | null;
-  emergencyContactCount: number;
-  mfaEnabled: boolean;
+function criterion(
+  id: string,
+  label: string,
+  points: number,
+  fraction: number,
+  href: string,
+): ReadinessCriterion {
+  const clamped = Math.max(0, Math.min(1, fraction));
+  return { id, label, points, earned: Math.round(points * clamped), met: clamped >= 1, href };
 }
 
-export function readiness(input: ReadinessInputs): ReadinessBreakdown {
-  const coverage = input.assetCount ? input.assignedAssetCount / input.assetCount : 0;
-  const dmsStatus = input.deadManSwitch?.status ?? "INACTIVE";
+function category(
+  id: ReadinessCategoryId,
+  label: string,
+  weight: number,
+  href: string,
+  criteria: ReadinessCriterion[],
+): ReadinessCategory {
+  const total = criteria.reduce((sum, c) => sum + c.points, 0);
+  const earned = criteria.reduce((sum, c) => sum + c.earned, 0);
+  return {
+    id,
+    label,
+    weight,
+    href,
+    criteria,
+    score: total ? Math.round((earned / total) * 100) : 0,
+  };
+}
 
-  const items: ReadinessBreakdown["items"] = [
-    {
-      id: "plan",
-      label: input.planFinalized ? "Legacy plan finalized" : "Legacy plan",
-      weight: 35,
-      earned: input.planFinalized ? 35 : Math.round((input.planPercent / 100) * 30),
-      hint: input.planFinalized
-        ? `v${input.planVersion ?? 1} finalized`
-        : `${input.planPercent}% of sections complete`,
-      href: "/legacy-plan",
-    },
-    {
-      id: "beneficiaries",
-      label: "Beneficiaries",
-      weight: 15,
-      earned: Math.min(15, input.activeBeneficiaries * 5),
-      hint: `${input.activeBeneficiaries} active or pending`,
-      href: "/beneficiaries",
-    },
-    {
-      id: "assets",
-      label: "Assets assigned",
-      weight: 15,
-      earned: Math.round(coverage * 15),
-      hint: `${input.assignedAssetCount} of ${input.assetCount} assets have a beneficiary`,
-      href: "/assets",
-    },
-    {
-      id: "documents",
-      label: "Documents in the vault",
-      weight: 10,
-      earned: Math.min(10, input.documentCount * 2.5),
-      hint: `${input.documentCount} documents`,
-      href: "/documents",
-    },
-    {
-      id: "dms",
-      label: "Dead Man’s Switch",
-      weight: 10,
-      earned: dmsStatus === "INACTIVE" ? 0 : dmsStatus === "PAUSED" ? 5 : 10,
-      hint: dmsView(dmsStatus).label,
-      href: "/dead-man-switch",
-    },
-    {
-      id: "ea",
-      label: "Emergency access",
-      weight: 5,
-      earned: input.emergencyContactCount ? 5 : 0,
-      hint: input.emergencyContactCount ? "Contact configured" : "Not configured",
-      href: "/emergency-access",
-    },
-    {
-      id: "security",
-      label: "Account security",
-      weight: 10,
-      earned: input.mfaEnabled ? 10 : 4,
-      hint: input.mfaEnabled ? "2FA enabled" : "2FA not enabled",
-      href: "/security-center",
-    },
+export function readiness(s: LegacySnapshot): ReadinessBreakdown {
+  const docs = s.documents;
+  const ben = s.beneficiaries;
+  const armed = !["INACTIVE", "PAUSED"].includes(s.dms.status);
+
+  const categories: ReadinessCategory[] = [
+    category("documents", "Documents", 20, "/documents", [
+      criterion(
+        "docs-stored",
+        "Important documents stored in the vault",
+        40,
+        docs.total > 0 ? 1 : 0,
+        "/documents?upload=1",
+      ),
+      criterion(
+        "docs-categorized",
+        "Documents categorized",
+        30,
+        docs.total ? docs.categorized / docs.total : 0,
+        "/documents",
+      ),
+      criterion(
+        "docs-will",
+        "Will & estate document stored",
+        15,
+        (docs.byCategory.WILL_ESTATE ?? 0) > 0 ? 1 : 0,
+        "/documents?upload=1",
+      ),
+      criterion(
+        "docs-current",
+        "No expired documents",
+        15,
+        docs.total > 0 && docs.expired.length === 0 ? 1 : 0,
+        "/documents",
+      ),
+    ]),
+    category("will", "Will", 25, "/legacy-plan", [
+      criterion(
+        "will-started",
+        "Will started",
+        20,
+        s.plan.exists || s.plan.finalized ? 1 : 0,
+        "/legacy-plan/wizard",
+      ),
+      criterion(
+        "will-sections",
+        "All will sections complete",
+        50,
+        s.plan.finalized && s.plan.status !== "DRAFT" ? 1 : s.plan.percent / 100,
+        "/legacy-plan/wizard",
+      ),
+      criterion("will-finalized", "Will finalized", 30, s.plan.finalized ? 1 : 0, "/legacy-plan"),
+    ]),
+    category("beneficiaries", "Beneficiaries", 20, "/beneficiaries", [
+      criterion(
+        "ben-added",
+        "At least one beneficiary",
+        40,
+        ben.total > 0 ? 1 : 0,
+        "/beneficiaries?new=1",
+      ),
+      criterion(
+        "ben-accepted",
+        "Invitations accepted",
+        30,
+        ben.active + ben.pending ? ben.active / (ben.active + ben.pending) : 0,
+        "/beneficiaries",
+      ),
+      criterion(
+        "ben-assigned",
+        "Assets or documents assigned",
+        30,
+        ben.withAssignments > 0 || docs.shared > 0 ? 1 : 0,
+        "/assets",
+      ),
+    ]),
+    category("emergency", "Emergency access", 15, "/emergency-access", [
+      criterion(
+        "ea-contact",
+        "Emergency contact designated",
+        35,
+        s.emergency.contacts > 0 ? 1 : 0,
+        "/emergency-access",
+      ),
+      criterion("dms-armed", "Dead Man’s Switch monitoring", 35, armed ? 1 : 0, "/dead-man-switch"),
+      criterion(
+        "dms-ready",
+        "Switch has trusted contacts and a release scope",
+        30,
+        (s.dms.trustedContacts > 0 ? 0.5 : 0) + (s.dms.releaseScopeSize > 0 ? 0.5 : 0),
+        "/dead-man-switch",
+      ),
+    ]),
+    category("digital", "Digital assets", 10, "/assets/digital", [
+      criterion(
+        "digital-recorded",
+        "Online accounts recorded",
+        50,
+        s.assets.digital > 0 ? 1 : 0,
+        "/assets/digital?new=1",
+      ),
+      criterion(
+        "digital-assigned",
+        "Every online account has a beneficiary",
+        50,
+        s.assets.digital ? s.assets.digitalAssigned / s.assets.digital : 0,
+        "/assets/digital",
+      ),
+    ]),
+    category("security", "Security", 10, "/security-center", [
+      criterion(
+        "sec-mfa",
+        "Two-factor authentication on",
+        50,
+        s.security.mfaEnabled ? 1 : 0,
+        "/settings?tab=security",
+      ),
+      criterion("sec-email", "Email verified", 25, s.security.emailVerified ? 1 : 0, "/settings"),
+      criterion(
+        "sec-recovery",
+        "Recovery email on file",
+        25,
+        s.security.recoveryEmail ? 1 : 0,
+        "/settings",
+      ),
+    ]),
   ];
 
-  return {
-    score: Math.min(100, Math.round(items.reduce((total, item) => total + item.earned, 0))),
-    items,
-  };
+  const score = Math.round(categories.reduce((sum, c) => sum + (c.score * c.weight) / 100, 0));
+  const missing = categories
+    .flatMap((c) =>
+      c.criteria
+        .filter((item) => !item.met)
+        .map((item) => ({
+          ...item,
+          category: c.label,
+          impact: ((item.points - item.earned) * c.weight) / 100,
+        })),
+    )
+    .sort((a, b) => b.impact - a.impact);
+
+  return { score: Math.min(100, score), categories, missing };
 }

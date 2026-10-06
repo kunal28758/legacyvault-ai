@@ -1,15 +1,29 @@
 "use client";
 
 import { useState } from "react";
-import { Bot, FileText, History, Lock, ShieldCheck, Sparkles } from "lucide-react";
+import dynamic from "next/dynamic";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import {
+  ArrowRight,
+  BadgeCheck,
+  Bot,
+  FileText,
+  History,
+  Lock,
+  ShieldCheck,
+  Sparkles,
+  UserRound,
+} from "lucide-react";
 
 import { AIChat } from "@/components/ai/ai-chat";
 import { AiDisclaimer } from "@/components/ai/ai-disclaimer";
-import { DocumentAIViewer } from "@/components/ai/document-ai-viewer";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useLegacyState } from "@/hooks/use-legacy-snapshot";
 import { useAIAvailability, useAIInteractions } from "@/hooks/use-ai";
 import { useDocumentAccess, useDocuments } from "@/hooks/use-documents";
 import { useNow } from "@/hooks/use-now";
@@ -19,14 +33,49 @@ import { AI_PROVIDER_LABELS } from "@/lib/types/ai";
 import type { DocumentSummary } from "@/lib/types/document";
 import { toast } from "sonner";
 
-const SUGGESTIONS = [
-  "What should a complete digital legacy plan include?",
-  "What's missing from my legacy plan?",
-  "How does the Dead Man's Switch protect my family?",
-  "Help me organize my digital accounts",
-  "What happens to my documents when the switch releases?",
-  "Explain beneficiaries vs emergency contacts",
-];
+const DocumentAIViewer = dynamic(() =>
+  import("@/components/ai/document-ai-viewer").then((m) => m.DocumentAIViewer),
+);
+
+type Mode = "understand" | "analyze" | "plan";
+
+/**
+ * Copilot modes only change the suggested prompts and framing. The assistant
+ * reads the same account overview (counts and gaps — never names, values or
+ * documents) in every mode, and it cannot change anything in the vault.
+ */
+const MODES: Record<Mode, { label: string; blurb: string; suggestions: string[] }> = {
+  understand: {
+    label: "Understand",
+    blurb: "Plain-language explanations of documents and how LegacyVault works.",
+    suggestions: [
+      "Explain beneficiaries vs emergency contacts",
+      "How does the Dead Man's Switch protect my family?",
+      "What happens to my documents when the switch releases?",
+      "What does finalizing my will change?",
+    ],
+  },
+  analyze: {
+    label: "Analyze",
+    blurb: "Look at your account's gaps and what could be missing.",
+    suggestions: [
+      "What am I missing?",
+      "What's missing from my legacy plan?",
+      "Which areas of my legacy are least prepared?",
+      "Is anything in my setup likely to surprise my family?",
+    ],
+  },
+  plan: {
+    label: "Plan",
+    blurb: "Turn gaps into an ordered list of next steps.",
+    suggestions: [
+      "Help me complete my legacy plan",
+      "What should I do next, in order?",
+      "Help me organize my digital accounts",
+      "What should a complete digital legacy plan include?",
+    ],
+  },
+};
 
 const PROVIDER_LABEL: Record<string, string> = AI_PROVIDER_LABELS;
 const SESSION_LABEL: Record<string, string> = {
@@ -50,6 +99,12 @@ export function AssistantView() {
   const accessDocument = useDocumentAccess();
   const now = useNow();
   const [viewing, setViewing] = useState<DocumentSummary | null>(null);
+  const searchParams = useSearchParams();
+  const requested = searchParams.get("mode");
+  const [mode, setMode] = useState<Mode>(
+    requested === "understand" || requested === "plan" ? requested : "analyze",
+  );
+  const legacy = useLegacyState();
 
   const documents = documentsQuery.data?.items ?? [];
   const configured = availability.data?.configured ?? false;
@@ -71,9 +126,9 @@ export function AssistantView() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="AI assistant"
-        title="Ask LegacyVault AI"
-        description="Your intelligent legacy planning companion — plain-language help with your plan, beneficiaries, assets, documents and the Dead Man’s Switch."
+        eyebrow="Intelligence"
+        title="LegacyVault Copilot"
+        description="Understand documents, analyze gaps and plan your next steps. Copilot answers are AI suggestions; the panel on the right is verified from your account."
         actions={
           availability.isPending ? null : configured ? (
             <StatusBadge tone="ai" icon={Sparkles}>
@@ -89,6 +144,33 @@ export function AssistantView() {
           )
         }
       />
+
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <Tabs value={mode} onValueChange={(value) => setMode(value as Mode)}>
+          <TabsList aria-label="Copilot mode">
+            {(Object.keys(MODES) as Mode[]).map((key) => (
+              <TabsTrigger key={key} value={key}>
+                {MODES[key].label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+        <ul
+          aria-label="Where information comes from"
+          className="flex flex-wrap gap-1.5 text-[11px]"
+        >
+          <li className="inline-flex items-center gap-1 rounded-full border border-success/25 bg-success/10 px-2 py-0.5 text-success">
+            <BadgeCheck className="size-3" aria-hidden /> Verified application state
+          </li>
+          <li className="inline-flex items-center gap-1 rounded-full border border-brand-purple/25 bg-brand-purple/10 px-2 py-0.5 text-brand-purple">
+            <Sparkles className="size-3" aria-hidden /> AI suggestion
+          </li>
+          <li className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-muted-foreground">
+            <UserRound className="size-3" aria-hidden /> Your input
+          </li>
+        </ul>
+      </div>
+      <p className="-mt-3 text-sm text-muted-foreground">{MODES[mode].blurb}</p>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <Card className="relative overflow-hidden shadow-elevated border-gradient-ai">
@@ -106,7 +188,7 @@ export function AssistantView() {
                 attachmentIds,
               })}
               allowAttachments
-              suggestions={SUGGESTIONS}
+              suggestions={MODES[mode].suggestions}
               placeholder="Ask anything about your legacy, LegacyVault or digital estates…"
               emptyTitle="How can I help?"
               emptyDescription="Answers are tailored with an overview of your account (counts and gaps only). Attach a document or photo to summarize it or ask about it. Legal and financial questions get careful, jurisdiction-aware answers — never a guarantee."
@@ -118,9 +200,61 @@ export function AssistantView() {
         <div className="space-y-4">
           <Card className="glass">
             <CardHeader className="pb-2">
+              <CardTitle className="flex items-center justify-between gap-2 text-sm">
+                <span className="flex items-center gap-2">
+                  <BadgeCheck className="size-4 text-success" aria-hidden />
+                  Verified from your account
+                </span>
+                {legacy.state && (
+                  <span className="font-heading text-base tabular-nums">
+                    {legacy.state.readiness.score}%
+                  </span>
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {!legacy.state ? (
+                <p className="text-sm text-muted-foreground">Reading your account…</p>
+              ) : (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    Legacy readiness · {legacy.state.open.length} open action
+                    {legacy.state.open.length === 1 ? "" : "s"}
+                  </p>
+                  <ul className="space-y-1">
+                    {legacy.state.open.slice(0, 3).map((action) => (
+                      <li key={action.id}>
+                        <Link
+                          href={action.href}
+                          className="group flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none hover:bg-primary/5 focus-visible:ring-3 focus-visible:ring-ring/50"
+                        >
+                          <span className="min-w-0 flex-1 truncate">{action.title}</span>
+                          <ArrowRight
+                            className="size-3.5 shrink-0 text-muted-foreground group-hover:text-primary"
+                            aria-hidden
+                          />
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    nativeButton={false}
+                    render={<Link href="/actions" />}
+                  >
+                    Open Action Centre
+                  </Button>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="glass">
+            <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-sm">
                 <FileText className="size-4 text-primary" aria-hidden />
-                Work with a document
+                Understand a document
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
@@ -209,12 +343,14 @@ export function AssistantView() {
         </div>
       </div>
 
-      <DocumentAIViewer
-        document={viewing}
-        allDocuments={documents}
-        onOpenChange={(open) => !open && setViewing(null)}
-        onDownload={(id) => void download(id)}
-      />
+      {viewing && (
+        <DocumentAIViewer
+          document={viewing}
+          allDocuments={documents}
+          onOpenChange={(open) => !open && setViewing(null)}
+          onDownload={(id) => void download(id)}
+        />
+      )}
     </div>
   );
 }

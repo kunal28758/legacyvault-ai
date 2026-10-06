@@ -1,3 +1,4 @@
+import type { DocumentProfile } from "@/lib/types/document-profile";
 import type { Database } from "@/lib/types/database";
 
 /**
@@ -22,6 +23,8 @@ export interface DocumentSummary {
   /** How many beneficiaries this document is shared with. */
   shareCount: number;
   currentVersionId: string | null;
+  /** Owner-set category and dates; null until the owner adds them. */
+  profile: DocumentProfile | null;
   createdAt: string;
   updatedAt: string;
 }

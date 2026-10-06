@@ -5,6 +5,8 @@ import { audit } from "@/lib/audit/audit.service";
 import type { AppUser } from "@/lib/auth/ensure-app-user";
 import { assertAccountActive } from "@/lib/auth/require-user";
 import { createUserClient } from "@/lib/db/server";
+import { mergeDocumentProfile } from "@/lib/validators/document-profile";
+import type { Json } from "@/lib/types/database";
 import * as documentRepository from "@/lib/repositories/document.repository";
 import * as folderRepository from "@/lib/repositories/folder.repository";
 import * as accessService from "@/lib/services/access.service";
@@ -93,7 +95,7 @@ export async function updateDocument(
   const before = await documentRepository.findById(db, user.id, id);
   if (!before) throw ApiError.notFound();
 
-  const patch: { name?: string; folder_id?: string | null } = {};
+  const patch: { name?: string; folder_id?: string | null; metadata?: Json } = {};
   if (body.name !== undefined) patch.name = body.name;
   if (body.folderId !== undefined) {
     if (body.folderId) {
@@ -101,6 +103,9 @@ export async function updateDocument(
       if (!folder) throw ApiError.notFound("That folder does not exist.");
     }
     patch.folder_id = body.folderId;
+  }
+  if (body.profile !== undefined) {
+    patch.metadata = mergeDocumentProfile(before.metadata, body.profile) as Json;
   }
 
   const updated = await documentRepository.updateMetadata(db, user.id, id, patch);

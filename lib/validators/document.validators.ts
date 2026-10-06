@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { documentProfileSchema } from "@/lib/validators/document-profile";
+
 /**
  * Document, folder and upload request shapes (FR-H001–H010).
  *
@@ -32,6 +34,8 @@ export const documentUpdateBodySchema = z
   .object({
     name: z.string().trim().min(1, "Name is required").max(200).optional(),
     folderId: z.uuid().nullable().optional(),
+    /** Category and dates, stored in the owner-writable `metadata` (see lib/validators/document-profile). */
+    profile: documentProfileSchema.optional(),
   })
   .superRefine((value, ctx) => {
     if (Object.keys(value).length === 0) {

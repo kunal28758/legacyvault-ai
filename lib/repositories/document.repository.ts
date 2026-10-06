@@ -6,7 +6,8 @@ import type {
   DocumentSummary,
   DocumentVersionSummary,
 } from "@/lib/types/document";
-import type { Database } from "@/lib/types/database";
+import { readDocumentProfile } from "@/lib/validators/document-profile";
+import type { Database, Json } from "@/lib/types/database";
 
 /**
  * Document data access (FR-H001–H010).
@@ -36,6 +37,7 @@ export function toDocumentSummary(
     versionCount,
     shareCount,
     currentVersionId: row.current_version_id,
+    profile: readDocumentProfile(row.metadata),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -101,7 +103,7 @@ export async function updateMetadata(
   db: TypedSupabaseClient,
   userId: string,
   id: string,
-  patch: { name?: string; folder_id?: string | null },
+  patch: { name?: string; folder_id?: string | null; metadata?: Json },
 ): Promise<DocumentRow> {
   const { data, error } = await db
     .from("documents")

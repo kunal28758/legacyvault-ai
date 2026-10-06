@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tan
 
 import { ApiError, apiClient } from "@/lib/client/api-client";
 import { queryKeys } from "@/lib/client/query-keys";
+import type { DocumentProfile } from "@/lib/types/document-profile";
 import { declaredMimeType } from "@/lib/uploads/file-types";
 import type {
   DocumentDetail,
@@ -103,6 +104,18 @@ export function useRenameDocument() {
         ...(name !== undefined ? { name } : {}),
         ...(folderId !== undefined ? { folderId } : {}),
       });
+      return data;
+    },
+    onSuccess: invalidate,
+  });
+}
+
+/** Saves the owner's category and dates for a document (PATCH /documents/:id). */
+export function useUpdateDocumentProfile() {
+  const invalidate = useInvalidateDocuments();
+  return useMutation({
+    mutationFn: async ({ id, profile }: { id: string; profile: DocumentProfile }) => {
+      const { data } = await apiClient.patch<DocumentSummary>(`/documents/${id}`, { profile });
       return data;
     },
     onSuccess: invalidate,

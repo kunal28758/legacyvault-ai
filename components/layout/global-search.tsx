@@ -3,7 +3,25 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, CornerDownLeft, FileText, Search, Users, Wallet } from "lucide-react";
+import {
+  ArrowRight,
+  Bell,
+  CornerDownLeft,
+  FileText,
+  HeartHandshake,
+  ListChecks,
+  ScrollText,
+  Search,
+  Settings,
+  Share2,
+  ShieldCheck,
+  Sparkles,
+  TimerReset,
+  Upload,
+  UserPlus,
+  Users,
+  Wallet,
+} from "lucide-react";
 
 import { NAV_GROUPS } from "@/components/layout/nav-config";
 import { Button } from "@/components/ui/button";
@@ -11,6 +29,8 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { useAssets } from "@/hooks/use-assets";
 import { useBeneficiaries } from "@/hooks/use-beneficiaries";
 import { useDocuments } from "@/hooks/use-documents";
+import { useLegacyState } from "@/hooks/use-legacy-snapshot";
+import { PRIORITY_LABELS } from "@/lib/client/action-centre";
 import { ASSET_KIND_META } from "@/lib/assets/meta";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +44,186 @@ interface Result {
 
 const PAGES = NAV_GROUPS.flatMap((group) => group.items);
 const LIMIT = 5;
+
+/**
+ * Commands only navigate. Anything that changes data (check-in, sharing,
+ * revoking, deleting) happens on its page, behind that page's own
+ * confirmation — the palette can never perform a sensitive mutation.
+ */
+const COMMANDS: (Result & { keywords: string })[] = [
+  {
+    id: "cmd:attention",
+    label: "What needs attention?",
+    hint: "Action Centre",
+    href: "/actions",
+    icon: ListChecks,
+    keywords: "actions todo tasks priorities attention next",
+  },
+  {
+    id: "cmd:upload",
+    label: "Upload document",
+    hint: "Document vault",
+    href: "/documents?upload=1",
+    icon: Upload,
+    keywords: "upload add file vault document",
+  },
+  {
+    id: "cmd:shared",
+    label: "Show shared documents",
+    hint: "Document vault",
+    href: "/documents?filter=shared",
+    icon: Share2,
+    keywords: "shared sharing access documents",
+  },
+  {
+    id: "cmd:will",
+    label: "Open my Will",
+    hint: "Legacy planning",
+    href: "/legacy-plan/wizard",
+    icon: ScrollText,
+    keywords: "will plan testament continue create",
+  },
+  {
+    id: "cmd:beneficiary",
+    label: "Add beneficiary",
+    hint: "Family & beneficiaries",
+    href: "/beneficiaries?new=1",
+    icon: UserPlus,
+    keywords: "add beneficiary invite person family heir",
+  },
+  {
+    id: "cmd:beneficiaries",
+    label: "Show beneficiaries",
+    hint: "Family & beneficiaries",
+    href: "/beneficiaries",
+    icon: Users,
+    keywords: "beneficiaries people family access",
+  },
+  {
+    id: "cmd:asset",
+    label: "Add an asset",
+    hint: "Vault",
+    href: "/assets",
+    icon: Wallet,
+    keywords: "asset account property bank crypto add",
+  },
+  {
+    id: "cmd:life",
+    label: "Record a life event",
+    hint: "Legacy planning",
+    href: "/life-events",
+    icon: HeartHandshake,
+    keywords: "life event marriage child property retirement",
+  },
+  {
+    id: "cmd:checkin",
+    label: "Check in to the Dead Man’s Switch",
+    hint: "Opens the switch — you confirm there",
+    href: "/dead-man-switch",
+    icon: TimerReset,
+    keywords: "check in checkin switch dead man alive",
+  },
+  {
+    id: "cmd:security",
+    label: "Open Security Centre",
+    hint: "Security",
+    href: "/security-center",
+    icon: ShieldCheck,
+    keywords: "security sessions devices access score",
+  },
+  {
+    id: "cmd:2fa",
+    label: "Two-factor & sign-in settings",
+    hint: "Settings",
+    href: "/settings?tab=security",
+    icon: ShieldCheck,
+    keywords: "2fa mfa two factor password sign in",
+  },
+  {
+    id: "cmd:notifications",
+    label: "Open notifications",
+    hint: "Notification Centre",
+    href: "/notifications",
+    icon: Bell,
+    keywords: "notifications alerts inbox unread",
+  },
+  {
+    id: "cmd:prefs",
+    label: "Notification preferences",
+    hint: "Settings",
+    href: "/settings?tab=notifications",
+    icon: Settings,
+    keywords: "email preferences alerts notifications settings",
+  },
+  {
+    id: "cmd:copilot",
+    label: "Ask Copilot what I’m missing",
+    hint: "AI suggestion",
+    href: "/ai?mode=analyze",
+    icon: Sparkles,
+    keywords: "ai copilot assistant missing gaps help",
+  },
+];
+
+/** Live open actions; mounted only while the palette is open, so nothing loads otherwise. */
+function AttentionGroup({ needle, onGo }: { needle: string; onGo: (href: string) => void }) {
+  const { state } = useLegacyState();
+  const items = (state?.open ?? [])
+    .filter((action) => !needle || action.title.toLowerCase().includes(needle))
+    .slice(0, needle ? 5 : 4);
+  if (!items.length) return null;
+  return (
+    <li>
+      <p className="px-3 pt-1 pb-1.5 text-[10.5px] font-semibold tracking-[0.14em] text-muted-foreground/70 uppercase">
+        Needs attention
+      </p>
+      <ul>
+        {items.map((action) => (
+          <li key={action.id}>
+            <ResultLink
+              item={{
+                id: action.id,
+                label: action.title,
+                hint: `${PRIORITY_LABELS[action.priority]} · ${action.source}`,
+                href: action.href,
+                icon: ListChecks,
+              }}
+              onGo={onGo}
+            />
+          </li>
+        ))}
+      </ul>
+    </li>
+  );
+}
+
+function ResultLink({ item, onGo }: { item: Result; onGo: (href: string) => void }) {
+  return (
+    <Link
+      href={item.href}
+      onClick={(event) => {
+        event.preventDefault();
+        onGo(item.href);
+      }}
+      className={cn(
+        "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm outline-none",
+        "hover:bg-primary/10 focus-visible:bg-primary/10 focus-visible:ring-1 focus-visible:ring-primary/40",
+      )}
+    >
+      <span className="icon-tile size-8 text-primary">
+        <item.icon className="size-4" aria-hidden />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-medium">{item.label}</span>
+        <span className="block truncate text-xs text-muted-foreground">{item.hint}</span>
+      </span>
+      <ArrowRight
+        className="size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+        aria-hidden
+      />
+    </Link>
+  );
+}
 
 const noSubscribe = () => () => {};
 /** Apple keyboards label the shortcut ⌘ K; the server render (and everyone else) shows Ctrl K. */
@@ -73,6 +273,10 @@ export function GlobalSearch() {
   const digital = useAssets("DIGITAL_ASSET", filters, { enabled });
 
   const needle = input.trim().toLowerCase();
+  const commands: Result[] = COMMANDS.filter(
+    (command) =>
+      !needle || command.label.toLowerCase().includes(needle) || command.keywords.includes(needle),
+  ).slice(0, needle ? 6 : 5);
   const pages: Result[] = PAGES.filter(
     (page) => !needle || page.label.toLowerCase().includes(needle),
   ).map((page) => ({
@@ -123,7 +327,11 @@ export function GlobalSearch() {
   const searching =
     enabled &&
     [documents, beneficiaries, financial, physical, digital].some((query) => query.isFetching);
-  const groups = [{ heading: "Pages", items: pages }, ...records].filter((g) => g.items.length);
+  const groups = [
+    { heading: "Commands", items: commands },
+    { heading: "Pages", items: needle ? pages : [] },
+    ...records,
+  ].filter((g) => g.items.length);
   const first = groups[0]?.items[0];
 
   const go = (href: string) => {
@@ -131,6 +339,21 @@ export function GlobalSearch() {
     setInput("");
     router.push(href);
   };
+
+  const renderGroup = (group: { heading: string; items: Result[] }) => (
+    <li key={group.heading}>
+      <p className="px-3 pt-1 pb-1.5 text-[10.5px] font-semibold tracking-[0.14em] text-muted-foreground/70 uppercase">
+        {group.heading}
+      </p>
+      <ul>
+        {group.items.map((item) => (
+          <li key={item.id}>
+            <ResultLink item={item} onGo={go} />
+          </li>
+        ))}
+      </ul>
+    </li>
+  );
 
   // Arrow keys move focus through the result links; Enter in the field opens the first.
   const moveFocus = (event: React.KeyboardEvent, delta: number) => {
@@ -146,12 +369,12 @@ export function GlobalSearch() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="group hidden h-9 w-full max-w-md items-center gap-2.5 rounded-lg border border-input bg-surface/60 px-3 text-left text-sm text-muted-foreground transition-[border-color,background-color] duration-150 outline-none hover:border-primary/35 hover:bg-surface focus-visible:ring-3 focus-visible:ring-ring/50 md:flex"
+        className="group hidden h-9 w-full max-w-md min-w-0 items-center gap-2.5 rounded-lg border border-input bg-surface/60 px-3 text-left text-sm text-muted-foreground transition-[border-color,background-color] duration-150 outline-none hover:border-primary/35 hover:bg-surface focus-visible:ring-3 focus-visible:ring-ring/50 md:flex"
         aria-label="Search documents, assets and beneficiaries"
         aria-keyshortcuts="Control+K Meta+K"
       >
         <Search className="size-4 shrink-0 transition-colors group-hover:text-primary" />
-        <span className="flex-1 truncate">Search documents, assets, beneficiaries…</span>
+        <span className="min-w-0 flex-1 truncate">Search documents, assets, beneficiaries…</span>
         <kbd className="hidden rounded-md border border-border bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] font-medium lg:inline">
           {isApple ? "⌘ K" : "Ctrl K"}
         </kbd>
@@ -170,7 +393,7 @@ export function GlobalSearch() {
         <DialogContent className="top-[10vh] translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-xl">
           <DialogTitle className="sr-only">Search</DialogTitle>
           <DialogDescription className="sr-only">
-            Find pages, documents, beneficiaries and assets in your vault.
+            Run a command or find pages, documents, beneficiaries and assets in your vault.
           </DialogDescription>
           <div className="flex items-center gap-3 border-b border-border px-4">
             <Search className="size-4 shrink-0 text-primary" aria-hidden />
@@ -181,7 +404,7 @@ export function GlobalSearch() {
                 if (event.key === "ArrowDown") moveFocus(event, 1);
                 if (event.key === "Enter" && first) go(first.href);
               }}
-              placeholder="Search documents, assets, beneficiaries…"
+              placeholder="Search or type a command — “upload”, “will”, “shared”…"
               aria-label="Search query"
               className="h-14 flex-1 bg-transparent pr-8 text-[15px] outline-none placeholder:text-muted-foreground/70"
             />
@@ -201,44 +424,9 @@ export function GlobalSearch() {
                   if (event.key === "ArrowUp") moveFocus(event, -1);
                 }}
               >
-                {groups.map((group) => (
-                  <li key={group.heading}>
-                    <p className="px-3 pt-1 pb-1.5 text-[10.5px] font-semibold tracking-[0.14em] text-muted-foreground/70 uppercase">
-                      {group.heading}
-                    </p>
-                    <ul>
-                      {group.items.map((item) => (
-                        <li key={item.id}>
-                          <Link
-                            href={item.href}
-                            onClick={(event) => {
-                              event.preventDefault();
-                              go(item.href);
-                            }}
-                            className={cn(
-                              "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm outline-none",
-                              "hover:bg-primary/10 focus-visible:bg-primary/10 focus-visible:ring-1 focus-visible:ring-primary/40",
-                            )}
-                          >
-                            <span className="icon-tile size-8 text-primary">
-                              <item.icon className="size-4" aria-hidden />
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate font-medium">{item.label}</span>
-                              <span className="block truncate text-xs text-muted-foreground">
-                                {item.hint}
-                              </span>
-                            </span>
-                            <ArrowRight
-                              className="size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
-                              aria-hidden
-                            />
-                          </Link>
-                        </li>
-                      ))}
-                    </ul>
-                  </li>
-                ))}
+                {groups.slice(0, 1).map(renderGroup)}
+                {open && <AttentionGroup needle={needle} onGo={go} />}
+                {groups.slice(1).map(renderGroup)}
               </ul>
             )}
             {searching && (

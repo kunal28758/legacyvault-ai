@@ -82,7 +82,7 @@ export function SiteNavbar({ clerkEnabled }: { clerkEnabled: boolean }) {
     >
       <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-4 px-6">
         <BrandLogo />
-        <nav aria-label="Site" className="hidden items-center gap-1 md:flex">
+        <nav aria-label="Site" className="hidden items-center gap-1 lg:flex">
           {links.map((link) => (
             <a
               key={link.href}
@@ -93,12 +93,12 @@ export function SiteNavbar({ clerkEnabled }: { clerkEnabled: boolean }) {
             </a>
           ))}
         </nav>
-        <div className="hidden items-center gap-2 md:flex">
+        <div className="hidden items-center gap-2 lg:flex">
           <SystemStatusIndicator className="mr-1" />
           <ThemeToggle />
           {accountActions}
         </div>
-        <div className="flex items-center gap-1 md:hidden">
+        <div className="flex items-center gap-1 lg:hidden">
           <SystemStatusIndicator compact />
           <ThemeToggle />
           <Sheet open={open} onOpenChange={setOpen}>

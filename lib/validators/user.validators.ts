@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { lifeEventsSchema } from "@/lib/validators/life-event.validators";
+
 /**
  * User profile schemas (task T034).
  *
@@ -67,6 +69,8 @@ export const preferencesSchema = z
     dateFormat: z.enum(["DD MMM YYYY", "MM/DD/YYYY", "YYYY-MM-DD"]).optional(),
     theme: z.enum(["dark", "light"]).optional(),
     compactSidebar: z.boolean().optional(),
+    /** Owner-recorded life events (see lib/legacy-plan/life-events). */
+    lifeEvents: lifeEventsSchema.optional(),
   })
   .strict();
 

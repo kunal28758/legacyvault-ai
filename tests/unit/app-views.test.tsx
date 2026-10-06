@@ -211,7 +211,10 @@ describe("authenticated views", () => {
       expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/Aarav/),
     );
     expect(screen.getByText(/Legacy readiness/i)).toBeInTheDocument();
-    expect(screen.getByRole("meter", { name: /legacy readiness score/i })).toBeInTheDocument();
+    // The greeting renders immediately; readiness fills in once the account data loads.
+    expect(
+      await screen.findByRole("meter", { name: /legacy readiness score/i }),
+    ).toBeInTheDocument();
     expect(screen.getAllByText(/Dead Man’s Switch/).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("link", { name: /(Continue|Create) Will/i }).length).toBeGreaterThan(
       0,

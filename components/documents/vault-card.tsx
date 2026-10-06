@@ -1,9 +1,24 @@
 "use client";
 
-import { FileImage, FileText, Lock, MoreHorizontal, ShieldCheck } from "lucide-react";
+import {
+  CalendarClock,
+  FileImage,
+  FileText,
+  Lock,
+  MoreHorizontal,
+  ShieldCheck,
+  Sparkles,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { useNow } from "@/hooks/use-now";
+import {
+  DOCUMENT_CATEGORY_LABELS,
+  EXPIRY_WINDOW_DAYS,
+  daysUntil,
+  type DocumentProfile,
+} from "@/lib/types/document-profile";
 import type { DocumentSummary } from "@/lib/types/document";
 import { formatBytes, formatDate, pluralize } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -54,6 +69,50 @@ export function SharingChip({ count, className }: { count: number; className?: s
   );
 }
 
+/**
+ * Category and expiry, as the owner set them. Expiry turns amber inside the
+ * expiry window and red once passed; AI-suggested values carry a violet mark.
+ */
+export function DocumentProfileChips({
+  profile,
+  now,
+}: {
+  profile: DocumentProfile | null;
+  now: number;
+}) {
+  if (!profile?.category && !profile?.expiresOn) {
+    return <span className="text-xs text-muted-foreground">—</span>;
+  }
+  const days = profile.expiresOn ? daysUntil(profile.expiresOn, now) : null;
+  return (
+    <span className="flex flex-wrap items-center gap-1.5">
+      {profile.category && (
+        <span className="inline-flex h-6 items-center gap-1 rounded-full border border-primary/25 bg-primary/10 px-2.5 text-[11px] font-medium text-primary">
+          {profile.aiSuggested?.includes("category") && (
+            <Sparkles className="size-3 text-brand-purple" aria-label="AI-suggested" />
+          )}
+          {DOCUMENT_CATEGORY_LABELS[profile.category]}
+        </span>
+      )}
+      {profile.expiresOn && days !== null && (
+        <span
+          className={cn(
+            "inline-flex h-6 items-center gap-1 rounded-full border px-2.5 text-[11px] font-medium",
+            days < 0
+              ? "border-destructive/30 bg-destructive/10 text-destructive"
+              : days <= EXPIRY_WINDOW_DAYS
+                ? "border-warning/30 bg-warning/10 text-warning"
+                : "border-border bg-muted/40 text-muted-foreground",
+          )}
+        >
+          <CalendarClock className="size-3" aria-hidden />
+          {days < 0 ? "Expired" : "Expires"} {formatDate(profile.expiresOn)}
+        </span>
+      )}
+    </span>
+  );
+}
+
 interface VaultCardProps {
   document: DocumentSummary;
   folderName: string;
@@ -72,6 +131,7 @@ export function VaultCard({
   menu,
   className,
 }: VaultCardProps) {
+  const now = useNow();
   return (
     <Card className={cn("group glass-highlight h-full surface-interactive py-0 glass", className)}>
       <CardContent className="flex h-full flex-col gap-4 p-4">
@@ -106,6 +166,9 @@ export function VaultCard({
             </Button>
           )}
         </div>
+        {(document.profile?.category || document.profile?.expiresOn) && (
+          <DocumentProfileChips profile={document.profile} now={now} />
+        )}
         <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-3">
           <SharingChip count={sharedCount} />
           <p className="text-[11px] text-muted-foreground">

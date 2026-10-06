@@ -5,6 +5,7 @@ import {
   FileText,
   HeartHandshake,
   LayoutDashboard,
+  ListChecks,
   ScrollText,
   Settings,
   ShieldAlert,
@@ -33,14 +34,17 @@ export interface NavGroup {
 }
 
 /**
- * Grouped product navigation (single source for the sidebar, mobile nav,
- * breadcrumbs and global search). Every route of the product stays reachable;
- * the asset classes live under one "Assets" entry with in-page tabs.
+ * Product information architecture: nine areas, each a nav group (single source
+ * for the sidebar, mobile nav, breadcrumbs and the command palette). Existing
+ * routes keep their URLs; only labels and grouping changed.
  */
 export const NAV_GROUPS: NavGroup[] = [
   {
-    label: "Overview",
-    items: [{ label: "Dashboard", href: "/dashboard", icon: LayoutDashboard }],
+    label: "Command Centre",
+    items: [
+      { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+      { label: "Action Centre", href: "/actions", icon: ListChecks },
+    ],
   },
   {
     label: "Vault",
@@ -51,25 +55,38 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    label: "Legacy",
+    label: "Legacy Planning",
     items: [
       { label: "My Will", href: "/legacy-plan", icon: ScrollText },
-      { label: "Beneficiaries", href: "/beneficiaries", icon: Users },
+      { label: "Life Events", href: "/life-events", icon: HeartHandshake },
+    ],
+  },
+  {
+    label: "Family & Beneficiaries",
+    items: [{ label: "Beneficiaries", href: "/beneficiaries", icon: Users }],
+  },
+  {
+    label: "Emergency",
+    items: [
       { label: "Dead Man's Switch", href: "/dead-man-switch", icon: ShieldAlert },
       { label: "Emergency Access", href: "/emergency-access", icon: Siren },
     ],
   },
   {
     label: "Intelligence",
-    items: [
-      { label: "AI Assistant", href: "/ai", icon: Sparkles, ai: true },
-      { label: "Activity Log", href: "/activity", icon: Activity },
-    ],
+    items: [{ label: "AI Copilot", href: "/ai", icon: Sparkles, ai: true }],
   },
   {
-    label: "System",
+    label: "Security",
+    items: [{ label: "Security Centre", href: "/security-center", icon: ShieldCheck }],
+  },
+  {
+    label: "Activity & Audit",
+    items: [{ label: "Audit Centre", href: "/activity", icon: Activity }],
+  },
+  {
+    label: "Settings",
     items: [
-      { label: "Security", href: "/security-center", icon: ShieldCheck },
       { label: "Notifications", href: "/notifications", icon: Bell },
       { label: "Settings", href: "/settings", icon: Settings },
     ],
@@ -89,6 +106,8 @@ export const ADMIN_NAV_GROUP: NavGroup = {
 
 export const PAGE_TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
+  "/actions": "Action Centre",
+  "/life-events": "Life Events",
   "/legacy-plan": "My Will",
   "/legacy-plan/wizard": "Create Will",
   "/beneficiaries": "Beneficiaries",
@@ -100,9 +119,9 @@ export const PAGE_TITLES: Record<string, string> = {
   "/video-legacy": "Video Legacy",
   "/dead-man-switch": "Dead Man's Switch",
   "/emergency-access": "Emergency Access",
-  "/security-center": "Security Center",
-  "/ai": "AI Assistant",
-  "/activity": "Activity Log",
+  "/security-center": "Security Centre",
+  "/ai": "AI Copilot",
+  "/activity": "Audit Centre",
   "/notifications": "Notifications",
   "/settings": "Settings",
   "/admin": "Administration",

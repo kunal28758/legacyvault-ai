@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -20,6 +21,7 @@ import { ActivityFeed } from "@/components/shared/activity-feed";
 import { PageHeader, SectionHeading } from "@/components/shared/page-header";
 import { PageSkeleton } from "@/components/shared/loading-skeleton";
 import { ProgressRing } from "@/components/shared/progress-card";
+import { AccessOverview, AuthenticationCard } from "@/components/security/access-overview";
 import { SecurityCard } from "@/components/security/security-card";
 import { StaggerGrid, StaggerItem } from "@/components/shared/page-transition";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -33,10 +35,14 @@ import { useClerkSessions } from "@/hooks/use-clerk-sessions";
 import { useDeadManSwitch } from "@/hooks/use-dead-man-switch";
 import { useEmergencyAccess } from "@/hooks/use-emergency-access";
 import { useLegacyPlanOverview } from "@/hooks/use-legacy-plan";
+import { useLegacyState } from "@/hooks/use-legacy-snapshot";
 import { useNow } from "@/hooks/use-now";
 import { useProfile } from "@/hooks/use-profile";
 import { securityChecks, securityScore } from "@/lib/client/security-checks";
 import { formatRelative } from "@/lib/format";
+
+/** Sessions listed before "Show all" — long-lived accounts can have dozens. */
+const SESSIONS_SHOWN = 6;
 
 const icons = {
   auth: Fingerprint,
@@ -63,8 +69,16 @@ export function SecurityCenterView() {
   const emergency = useEmergencyAccess();
   const activity = useActivity(50);
   const clerkSessions = useClerkSessions();
+  const legacy = useLegacyState();
+  const [showAllSessions, setShowAllSessions] = useState(false);
   const { session } = useSession();
   const currentSessionId = session?.id ?? null;
+  // This device first, then most recently active.
+  const sessions = [...clerkSessions.sessions].sort(
+    (a, b) =>
+      Number(b.id === currentSessionId) - Number(a.id === currentSessionId) ||
+      new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime(),
+  );
 
   if (profile.isPending) return <PageSkeleton stats={0} />;
 
@@ -90,7 +104,7 @@ export function SecurityCenterView() {
     <div className="space-y-8">
       <PageHeader
         eyebrow="Protection"
-        title="Security Center"
+        title="Security Centre"
         description="A single view of how your account, data and release mechanisms are protected — and what would make them stronger."
         actions={
           <Button
@@ -189,6 +203,14 @@ export function SecurityCenterView() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
+        <AccessOverview snapshot={legacy.state?.snapshot ?? null} />
+        <AuthenticationCard
+          recoveryEmail={Boolean(profile.data?.alternateEmail)}
+          events={activity.data?.items ?? []}
+        />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
         <Card className="glass">
           <CardHeader>
             <CardTitle className="text-base">Active sessions</CardTitle>
@@ -208,7 +230,7 @@ export function SecurityCenterView() {
               </p>
             ) : (
               <ul className="space-y-2">
-                {clerkSessions.sessions.map((session) => {
+                {(showAllSessions ? sessions : sessions.slice(0, SESSIONS_SHOWN)).map((session) => {
                   const activityInfo = session.latestActivity;
                   const deviceLabel = activityInfo?.deviceType ?? "Unknown device";
                   const Icon = /phone|mobile|android|ios/i.test(deviceLabel) ? Smartphone : Monitor;
@@ -258,6 +280,19 @@ export function SecurityCenterView() {
                   );
                 })}
               </ul>
+            )}
+            {clerkSessions.sessions.length > SESSIONS_SHOWN && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="mt-3 w-full"
+                aria-expanded={showAllSessions}
+                onClick={() => setShowAllSessions((value) => !value)}
+              >
+                {showAllSessions
+                  ? "Show fewer sessions"
+                  : `Show all ${clerkSessions.sessions.length} sessions`}
+              </Button>
             )}
           </CardContent>
         </Card>

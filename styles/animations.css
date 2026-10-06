@@ -166,6 +166,42 @@
   animation: lv-shield-glow 4s ease-in-out infinite;
 }
 
+/* Landing hero entrance: CSS only, so it starts with the first paint and
+   ships no animation library. Delays are set inline per element. */
+@keyframes lv-word-rise {
+  from {
+    opacity: 0;
+    transform: translateY(110%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes lv-visual-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@utility hero-word {
+  animation: lv-word-rise 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@utility hero-fade {
+  animation: lv-fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@utility hero-visual {
+  animation: lv-visual-in 1.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 /* Staggered entrance helpers */
 .stagger > * {
   animation: lv-fade-up 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -215,5 +251,11 @@
   }
   .surface-interactive:hover {
     transform: none;
+  }
+  /* No entrance at all: content is simply there (delays included). */
+  .hero-word,
+  .hero-fade,
+  .hero-visual {
+    animation: none !important;
   }
 }

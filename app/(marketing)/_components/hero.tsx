@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import Link from "next/link";
 import { motion, useScroll, useTransform } from "framer-motion";
 import { ArrowDown, ArrowRight, FileLock2, Fingerprint, Lock, Sparkles } from "lucide-react";
-import gsap from "gsap";
 
 import { VaultVisual } from "@/components/landing/vault-visual";
 import { buttonVariants } from "@/components/ui/button";
@@ -46,19 +45,12 @@ export function Hero() {
   const visualScale = useTransform(scrollYProgress, [0, 1], [1, reduced ? 1 : 0.92]);
   const copyY = useTransform(scrollYProgress, [0, 1], [0, reduced ? 0 : 40]);
 
-  useEffect(() => {
-    if (reduced || !scope.current) return;
-    const ctx = gsap.context(() => {
-      gsap.set("[data-hero-word]", { yPercent: 110, opacity: 0 });
-      gsap.set("[data-hero-fade]", { y: 16, opacity: 0 });
-      gsap.set("[data-hero-visual]", { opacity: 0, scale: 0.94 });
-      const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
-      tl.to("[data-hero-word]", { yPercent: 0, opacity: 1, duration: 0.9, stagger: 0.09 }, 0.1)
-        .to("[data-hero-fade]", { y: 0, opacity: 1, duration: 0.7, stagger: 0.08 }, 0.45)
-        .to("[data-hero-visual]", { opacity: 1, scale: 1, duration: 1.4, ease: "expo.out" }, 0.2);
-    }, scope);
-    return () => ctx.revert();
-  }, [reduced]);
+  // Entrance choreography is pure CSS (styles/animations.css: hero-word,
+  // hero-fade, hero-visual): it runs from the first paint, needs no JS library,
+  // and `prefers-reduced-motion` turns it off entirely.
+  let fadeIndex = 0;
+  const fadeDelay = () => ({ animationDelay: `${0.45 + 0.08 * fadeIndex++}s` });
+  let wordIndex = 0;
 
   return (
     <section ref={scope} className="relative isolate overflow-hidden">
@@ -95,8 +87,8 @@ export function Hero() {
       <div className="mx-auto grid w-full max-w-6xl gap-10 px-4 pt-10 pb-16 sm:px-6 lg:grid-cols-[1.02fr_0.98fr] lg:items-center lg:gap-6 lg:pt-20 lg:pb-24">
         <motion.div style={{ y: copyY }} className="relative z-10 flex flex-col gap-6">
           <span
-            className="inline-flex w-fit items-center gap-2 rounded-full border border-brand-purple/30 bg-brand-purple/10 px-3 py-1 text-xs font-medium backdrop-blur-md"
-            data-hero-fade
+            className="inline-flex w-fit hero-fade items-center gap-2 rounded-full border border-brand-purple/30 bg-brand-purple/10 px-3 py-1 text-xs font-medium backdrop-blur-md"
+            style={fadeDelay()}
           >
             <Sparkles className="size-3.5 text-brand-purple" aria-hidden />
             AI-Powered Digital Legacy Platform
@@ -110,25 +102,32 @@ export function Hero() {
                     className="inline-block overflow-hidden pr-[0.22em] pb-[0.08em] align-bottom"
                   >
                     <span
-                      data-hero-word
-                      className={cn(
-                        "inline-block",
-                        lineIndex === 1 && "animate-gradient-drift text-gradient-brand",
-                      )}
+                      className="inline-block hero-word"
+                      style={{ animationDelay: `${0.1 + 0.09 * wordIndex++}s` }}
                     >
-                      {word}
+                      <span
+                        className={cn(
+                          "inline-block",
+                          lineIndex === 1 && "animate-gradient-drift text-gradient-brand",
+                        )}
+                      >
+                        {word}
+                      </span>
                     </span>
                   </span>
                 ))}
               </span>
             ))}
           </h1>
-          <p className="max-w-xl text-lg leading-8 text-muted-foreground" data-hero-fade>
+          <p
+            className="max-w-xl hero-fade text-lg leading-8 text-muted-foreground"
+            style={fadeDelay()}
+          >
             One encrypted vault for your will, documents, assets and final wishes — organized with
             AI, protected by design, and handed over only to the people and on the conditions you
             choose.
           </p>
-          <div className="flex flex-col gap-3 sm:flex-row" data-hero-fade>
+          <div className="flex hero-fade flex-col gap-3 sm:flex-row" style={fadeDelay()}>
             <Link
               href="/legacy-plan/wizard"
               className={cn(
@@ -157,8 +156,8 @@ export function Hero() {
             </Link>
           </div>
           <ul
-            className="flex flex-wrap gap-x-5 gap-y-2.5 pt-1"
-            data-hero-fade
+            className="flex hero-fade flex-wrap gap-x-5 gap-y-2.5 pt-1"
+            style={fadeDelay()}
             aria-label="Security"
           >
             {TRUST.map(({ icon: Icon, label }) => (
@@ -171,8 +170,8 @@ export function Hero() {
             ))}
           </ul>
           <p
-            className="flex items-start gap-2 text-xs leading-5 text-muted-foreground"
-            data-hero-fade
+            className="flex hero-fade items-start gap-2 text-xs leading-5 text-muted-foreground"
+            style={fadeDelay()}
           >
             <FileLock2 className="mt-0.5 size-3.5 shrink-0" aria-hidden />
             Informational guidance only — LegacyVault AI does not provide legal advice or guarantee
@@ -183,13 +182,15 @@ export function Hero() {
         <motion.div
           style={{ y: visualY, scale: visualScale }}
           className="relative z-0 mx-auto aspect-square w-full max-w-[26rem] sm:max-w-[32rem] lg:max-w-none"
-          data-hero-visual
         >
-          <div
-            aria-hidden
-            className="absolute inset-[8%] animate-shield-glow rounded-full bg-[radial-gradient(circle,color-mix(in_oklab,var(--brand-blue)_32%,transparent)_0%,transparent_65%)] blur-2xl"
-          />
-          <VaultVisual className="absolute inset-0" />
+          {/* The entrance animates this inner layer; the outer one carries the scroll parallax. */}
+          <div className="absolute inset-0 hero-visual" style={{ animationDelay: "0.2s" }}>
+            <div
+              aria-hidden
+              className="absolute inset-[8%] animate-shield-glow rounded-full bg-[radial-gradient(circle,color-mix(in_oklab,var(--brand-blue)_32%,transparent)_0%,transparent_65%)] blur-2xl"
+            />
+            <VaultVisual className="absolute inset-0" />
+          </div>
         </motion.div>
       </div>
     </section>

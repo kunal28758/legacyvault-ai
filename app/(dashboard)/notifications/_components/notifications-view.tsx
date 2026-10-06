@@ -1,14 +1,18 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import {
   Bell,
   BellOff,
   CheckCheck,
+  FileText,
+  KeyRound,
+  ListChecks,
   Mail,
-  ScrollText,
+  Settings2,
   ShieldAlert,
-  TimerReset,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -19,7 +23,6 @@ import { PageHeader } from "@/components/shared/page-header";
 import { CardSkeleton } from "@/components/shared/loading-skeleton";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useMarkNotificationsRead, useNotifications } from "@/hooks/use-notifications";
 import { useNow } from "@/hooks/use-now";
 import { ApiError } from "@/lib/client/api-client";
@@ -27,21 +30,17 @@ import type { NotificationItem } from "@/lib/types/notification";
 import { formatDateTime, formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-type Category = "security" | "protection" | "legacy" | "system";
+type Category = "action" | "security" | "access" | "document" | "system" | "ai";
+
+const CATEGORIES: Category[] = ["action", "security", "access", "document", "system", "ai"];
 
 const categoryMeta: Record<Category, { label: string; icon: LucideIcon; className: string }> = {
-  security: {
-    label: "Security",
-    icon: ShieldAlert,
-    className: "bg-destructive/10 text-destructive",
-  },
-  protection: {
-    label: "Protection",
-    icon: TimerReset,
-    className: "bg-warning/12 text-warning",
-  },
-  legacy: { label: "Legacy", icon: ScrollText, className: "bg-brand-blue/15 text-brand-blue" },
-  system: { label: "System", icon: Bell, className: "bg-muted text-muted-foreground" },
+  action: { label: "Action", icon: ListChecks, className: "text-warning" },
+  security: { label: "Security", icon: ShieldAlert, className: "text-destructive" },
+  access: { label: "Access", icon: KeyRound, className: "text-primary" },
+  document: { label: "Document", icon: FileText, className: "text-brand-cyan" },
+  system: { label: "System", icon: Bell, className: "text-muted-foreground" },
+  ai: { label: "AI", icon: Sparkles, className: "text-brand-purple" },
 };
 
 /**
@@ -52,12 +51,14 @@ const categoryMeta: Record<Category, { label: string; icon: LucideIcon; classNam
  * rather than being hidden.
  */
 function categoryOf(notification: NotificationItem): Category {
-  const domain = notification.type.split(".")[0];
-  if (domain === "security" || domain === "user" || domain === "auth") return "security";
-  if (domain === "dms" || domain === "ea" || domain === "access") return "protection";
-  if (["plan", "document", "asset", "beneficiary", "video", "upload"].includes(domain)) {
-    return "legacy";
-  }
+  const [domain, event = ""] = notification.type.split(".");
+  // Reminders and grace periods ask the owner to do something (check in).
+  if (domain === "dms" && (event === "reminder" || event === "grace_period")) return "action";
+  if (["security", "user", "auth", "admin"].includes(domain)) return "security";
+  if (["dms", "ea", "access", "beneficiary", "assignment"].includes(domain)) return "access";
+  if (["plan", "document", "asset", "video", "upload", "folder"].includes(domain))
+    return "document";
+  if (domain === "ai") return "ai";
   return "system";
 }
 
@@ -65,12 +66,21 @@ function categoryOf(notification: NotificationItem): Category {
 export function NotificationsView() {
   const now = useNow();
   const [category, setCategory] = useState<Category | "all">("all");
+  const [unreadOnly, setUnreadOnly] = useState(false);
 
   const notifications = useNotifications({ limit: 100 });
   const markRead = useMarkNotificationsRead();
 
   const all = notifications.data?.items ?? [];
-  const items = all.filter((entry) => category === "all" || categoryOf(entry) === category);
+  const items = all.filter(
+    (entry) =>
+      (category === "all" || categoryOf(entry) === category) && (!unreadOnly || !entry.readAt),
+  );
+  const counts = all.reduce<Record<string, number>>((acc, entry) => {
+    const key = categoryOf(entry);
+    acc[key] = (acc[key] ?? 0) + 1;
+    return acc;
+  }, {});
   const unread = notifications.data?.unreadCount ?? 0;
 
   const read = async (ids: string[]) => {
@@ -86,8 +96,8 @@ export function NotificationsView() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="System"
-        title="Notifications"
+        eyebrow="Settings"
+        title="Notification Centre"
         description={
           notifications.isPending
             ? ""
@@ -96,29 +106,70 @@ export function NotificationsView() {
               : "You are all caught up."
         }
         actions={
-          <Button
-            variant="outline"
-            disabled={!unread || markRead.isPending}
-            onClick={async () => {
-              await read([]);
-              toast.success("All notifications marked as read");
-            }}
-          >
-            <CheckCheck data-icon="inline-start" />
-            Mark all read
-          </Button>
+          <>
+            <Button
+              variant="ghost"
+              nativeButton={false}
+              render={<Link href="/settings?tab=notifications" />}
+            >
+              <Settings2 data-icon="inline-start" />
+              Preferences
+            </Button>
+            <Button
+              variant="outline"
+              disabled={!unread || markRead.isPending}
+              onClick={async () => {
+                await read([]);
+                toast.success("All notifications marked as read");
+              }}
+            >
+              <CheckCheck data-icon="inline-start" />
+              Mark all read
+            </Button>
+          </>
         }
       />
 
-      <Tabs value={category} onValueChange={(value) => setCategory(value as Category | "all")}>
-        <TabsList className="h-auto flex-wrap">
-          <TabsTrigger value="all">All</TabsTrigger>
-          <TabsTrigger value="security">Security</TabsTrigger>
-          <TabsTrigger value="protection">Protection</TabsTrigger>
-          <TabsTrigger value="legacy">Legacy</TabsTrigger>
-          <TabsTrigger value="system">System</TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div
+          role="group"
+          aria-label="Filter by category"
+          className="-mx-1 flex min-w-0 gap-1.5 overflow-x-auto px-1 pb-1"
+        >
+          {(["all", ...CATEGORIES] as const).map((key) => (
+            <button
+              key={key}
+              type="button"
+              aria-pressed={category === key}
+              onClick={() => setCategory(key)}
+              className={cn(
+                "flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                category === key
+                  ? "border-primary/40 bg-primary/15 text-foreground"
+                  : "border-border text-muted-foreground hover:border-primary/30 hover:text-foreground",
+              )}
+            >
+              {key === "all" ? "All" : categoryMeta[key].label}
+              <span className="tabular-nums opacity-70">
+                {key === "all" ? all.length : (counts[key] ?? 0)}
+              </span>
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          aria-pressed={unreadOnly}
+          onClick={() => setUnreadOnly((value) => !value)}
+          className={cn(
+            "h-8 shrink-0 self-start rounded-full border px-3 text-xs font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:self-auto",
+            unreadOnly
+              ? "border-primary/40 bg-primary/15 text-foreground"
+              : "border-border text-muted-foreground hover:text-foreground",
+          )}
+        >
+          Unread only
+        </button>
+      </div>
 
       {notifications.isError ? (
         <ErrorState
@@ -135,7 +186,7 @@ export function NotificationsView() {
       ) : items.length === 0 ? (
         <EmptyState
           icon={BellOff}
-          title="No notifications here"
+          title={unreadOnly ? "No unread notifications" : "No notifications here"}
           description="Check-in reminders, emergency requests, sharing events and security alerts will appear in this list."
         />
       ) : (
@@ -156,12 +207,7 @@ export function NotificationsView() {
                     unreadItem && "bg-primary/[0.04]",
                   )}
                 >
-                  <span
-                    className={cn(
-                      "mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg",
-                      meta.className,
-                    )}
-                  >
+                  <span className={cn("mt-0.5 icon-tile size-9", meta.className)}>
                     <Icon className="size-4" aria-hidden />
                   </span>
                   <span className="min-w-0 flex-1 space-y-1">

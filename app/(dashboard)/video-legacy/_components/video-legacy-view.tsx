@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import {
   Clock,
   MoreHorizontal,
@@ -17,7 +18,6 @@ import {
 import { toast } from "sonner";
 
 import { AssignVideoDialog } from "@/components/video-legacy/assign-video-dialog";
-import { UploadDialog } from "@/components/documents/upload-dialog";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { GridSkeleton } from "@/components/shared/loading-skeleton";
@@ -59,6 +59,10 @@ import {
 import { ApiError } from "@/lib/client/api-client";
 import type { DeliveryCondition, VideoMessage } from "@/lib/types/video";
 import { formatBytes, formatDate } from "@/lib/format";
+
+const UploadDialog = dynamic(() =>
+  import("@/components/documents/upload-dialog").then((m) => m.UploadDialog),
+);
 
 const DELIVERY_META: Record<
   DeliveryCondition,
@@ -269,7 +273,7 @@ export function VideoLegacyView() {
         </StaggerGrid>
       )}
 
-      <UploadDialog kind="video" open={uploadOpen} onOpenChange={setUploadOpen} />
+      {uploadOpen && <UploadDialog kind="video" open={uploadOpen} onOpenChange={setUploadOpen} />}
       <AssignVideoDialog
         open={Boolean(shareFor)}
         onOpenChange={(open) => !open && setShareFor(null)}
