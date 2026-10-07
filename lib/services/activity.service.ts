@@ -14,17 +14,20 @@ import type { ActivityListResult } from "@/lib/types/activity";
  */
 export async function listActivity(
   user: AppUser,
-  query: { page: number; limit: number },
+  query: { page: number; limit: number; resourceId?: string },
 ): Promise<ActivityListResult> {
   const db = await createUserClient();
   const from = (query.page - 1) * query.limit;
 
-  const { data, error, count } = await db
+  let select = db
     .from("audit_log")
     .select("id, action, resource_type, resource_id, outcome, ip_address, created_at, metadata", {
       count: "exact",
     })
-    .eq("actor_id", user.id)
+    .eq("actor_id", user.id);
+  if (query.resourceId) select = select.eq("resource_id", query.resourceId);
+
+  const { data, error, count } = await select
     .order("created_at", { ascending: false })
     .range(from, from + query.limit - 1);
   if (error) throw error;

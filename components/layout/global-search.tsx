@@ -10,6 +10,7 @@ import {
   FileText,
   HeartHandshake,
   ListChecks,
+  ScanSearch,
   ScrollText,
   Search,
   Settings,
@@ -32,6 +33,8 @@ import { useDocuments } from "@/hooks/use-documents";
 import { useLegacyState } from "@/hooks/use-legacy-snapshot";
 import { PRIORITY_LABELS } from "@/lib/client/action-centre";
 import { ASSET_KIND_META } from "@/lib/assets/meta";
+import { FINDING_TYPE_LABELS } from "@/lib/client/intelligence";
+import { assetHref } from "@/lib/client/legacy-graph";
 import { cn } from "@/lib/utils";
 
 interface Result {
@@ -100,12 +103,60 @@ const COMMANDS: (Result & { keywords: string })[] = [
     keywords: "beneficiaries people family access",
   },
   {
-    id: "cmd:asset",
-    label: "Add an asset",
+    id: "cmd:vault",
+    label: "Open Asset Vault",
     hint: "Vault",
     href: "/assets",
     icon: Wallet,
-    keywords: "asset account property bank crypto add",
+    keywords: "asset vault assets property bank crypto own inventory",
+  },
+  {
+    id: "cmd:asset",
+    label: "Add an asset",
+    hint: "Asset Vault",
+    href: "/assets?new=financial",
+    icon: Wallet,
+    keywords: "asset account property bank crypto add new",
+  },
+  {
+    id: "cmd:unassigned",
+    label: "Show assets without beneficiaries",
+    hint: "Asset Vault",
+    href: "/assets?rule=ASSET-BEN-001",
+    icon: Users,
+    keywords: "assets without beneficiaries unassigned nobody heir missing",
+  },
+  {
+    id: "cmd:conflicts",
+    label: "Show conflicting legacy information",
+    hint: "Legacy Intelligence",
+    href: "/intelligence?type=CONFLICT",
+    icon: ScanSearch,
+    keywords: "conflicts conflicting inconsistent mismatch will vault duplicate",
+  },
+  {
+    id: "cmd:expiring",
+    label: "Show expiring documents",
+    hint: "Legacy Intelligence",
+    href: "/intelligence?type=EXPIRING",
+    icon: FileText,
+    keywords: "expiring expiry expired renew documents review due",
+  },
+  {
+    id: "cmd:orphans",
+    label: "Show orphaned documents",
+    hint: "Legacy Intelligence",
+    href: "/intelligence?rule=DOC-ASSET-001",
+    icon: FileText,
+    keywords: "orphaned unlinked documents not linked asset",
+  },
+  {
+    id: "cmd:findings",
+    label: "Show unresolved recommendations",
+    hint: "Legacy Intelligence",
+    href: "/intelligence",
+    icon: ScanSearch,
+    keywords: "recommendations findings unresolved intelligence issues gaps",
   },
   {
     id: "cmd:life",
@@ -171,29 +222,66 @@ function AttentionGroup({ needle, onGo }: { needle: string; onGo: (href: string)
   const items = (state?.open ?? [])
     .filter((action) => !needle || action.title.toLowerCase().includes(needle))
     .slice(0, needle ? 5 : 4);
-  if (!items.length) return null;
+  // Findings are searchable by title or record name; only while typing.
+  const findings = needle
+    ? (state?.intelligence.open ?? [])
+        .filter(
+          (finding) =>
+            finding.title.toLowerCase().includes(needle) ||
+            finding.sourceRecords.some((record) => record.label.toLowerCase().includes(needle)),
+        )
+        .slice(0, 5)
+    : [];
+  if (!items.length && !findings.length) return null;
   return (
-    <li>
-      <p className="px-3 pt-1 pb-1.5 text-[10.5px] font-semibold tracking-[0.14em] text-muted-foreground/70 uppercase">
-        Needs attention
-      </p>
-      <ul>
-        {items.map((action) => (
-          <li key={action.id}>
-            <ResultLink
-              item={{
-                id: action.id,
-                label: action.title,
-                hint: `${PRIORITY_LABELS[action.priority]} · ${action.source}`,
-                href: action.href,
-                icon: ListChecks,
-              }}
-              onGo={onGo}
-            />
-          </li>
-        ))}
-      </ul>
-    </li>
+    <>
+      {items.length > 0 && (
+        <li>
+          <p className="px-3 pt-1 pb-1.5 text-[10.5px] font-semibold tracking-[0.14em] text-muted-foreground/70 uppercase">
+            Needs attention
+          </p>
+          <ul>
+            {items.map((action) => (
+              <li key={action.id}>
+                <ResultLink
+                  item={{
+                    id: action.id,
+                    label: action.title,
+                    hint: `${PRIORITY_LABELS[action.priority]} · ${action.source}`,
+                    href: action.href,
+                    icon: ListChecks,
+                  }}
+                  onGo={onGo}
+                />
+              </li>
+            ))}
+          </ul>
+        </li>
+      )}
+      {findings.length > 0 && (
+        <li>
+          <p className="px-3 pt-1 pb-1.5 text-[10.5px] font-semibold tracking-[0.14em] text-muted-foreground/70 uppercase">
+            System detected
+          </p>
+          <ul>
+            {findings.map((finding) => (
+              <li key={finding.id}>
+                <ResultLink
+                  item={{
+                    id: finding.id,
+                    label: finding.title,
+                    hint: `${FINDING_TYPE_LABELS[finding.type]} · ${finding.ruleId}`,
+                    href: finding.destination,
+                    icon: ScanSearch,
+                  }}
+                  onGo={onGo}
+                />
+              </li>
+            ))}
+          </ul>
+        </li>
+      )}
+    </>
   );
 }
 
@@ -316,7 +404,7 @@ export function GlobalSearch() {
               id: `asset:${asset.id}`,
               label: asset.name,
               hint: ASSET_KIND_META[asset.kind].plural,
-              href: `${ASSET_KIND_META[asset.kind].href}?q=${encodeURIComponent(asset.name)}`,
+              href: assetHref(asset.kind, asset.id),
               icon: Wallet,
             })),
           ),

@@ -22,6 +22,8 @@ export interface DocumentSummary {
   versionCount: number;
   /** How many beneficiaries this document is shared with. */
   shareCount: number;
+  /** Assets (or the plan) this document supports — the owner's own links only. */
+  attachments: DocumentAttachmentSummary[];
   currentVersionId: string | null;
   /** Owner-set category and dates; null until the owner adds them. */
   profile: DocumentProfile | null;
@@ -53,7 +55,6 @@ export interface DocumentShare {
 
 export interface DocumentDetail extends DocumentSummary {
   versions: DocumentVersionSummary[];
-  attachments: DocumentAttachmentSummary[];
   shares: DocumentShare[];
 }
 

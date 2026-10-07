@@ -27,6 +27,7 @@ export function toDocumentSummary(
   row: DocumentRow,
   versionCount = 0,
   shareCount = 0,
+  attachments: DocumentAttachmentSummary[] = [],
 ): DocumentSummary {
   return {
     id: row.id,
@@ -36,6 +37,7 @@ export function toDocumentSummary(
     folderId: row.folder_id,
     versionCount,
     shareCount,
+    attachments,
     currentVersionId: row.current_version_id,
     profile: readDocumentProfile(row.metadata),
     createdAt: row.created_at,
@@ -192,6 +194,35 @@ export async function shareCounts(
     counts.set(row.resource_id, (counts.get(row.resource_id) ?? 0) + 1);
   }
   return counts;
+}
+
+/** Attachments of a page of documents, in one owner-scoped query (no N+1). */
+export async function attachmentsFor(
+  db: TypedSupabaseClient,
+  userId: string,
+  documentIds: readonly string[],
+): Promise<Map<string, DocumentAttachmentSummary[]>> {
+  if (documentIds.length === 0) return new Map();
+  const { data, error } = await db
+    .from("document_attachments")
+    .select("id, document_id, resource_type, resource_id, created_at")
+    .eq("user_id", userId)
+    .in("document_id", [...documentIds])
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+
+  const byDocument = new Map<string, DocumentAttachmentSummary[]>();
+  for (const row of data ?? []) {
+    const list = byDocument.get(row.document_id) ?? [];
+    list.push({
+      id: row.id,
+      resourceType: row.resource_type,
+      resourceId: row.resource_id,
+      createdAt: row.created_at,
+    });
+    byDocument.set(row.document_id, list);
+  }
+  return byDocument;
 }
 
 export async function listAttachments(

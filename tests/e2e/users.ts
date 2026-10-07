@@ -22,6 +22,9 @@ export const E2E_USERS = {
   settings: "e2e-settings+clerk_test@example.com",
   ai: "e2e-ai+clerk_test@example.com",
   commandCentre: "e2e-command+clerk_test@example.com",
+  assetVault: "e2e-vault+clerk_test@example.com",
+  assetGuard: "e2e-vault-guard+clerk_test@example.com",
+  intelligence: "e2e-intel+clerk_test@example.com",
 } as const;
 
 export const E2E_USER_EMAILS = Object.values(E2E_USERS);

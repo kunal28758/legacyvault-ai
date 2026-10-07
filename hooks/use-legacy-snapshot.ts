@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { toast } from "sonner";
 
 import { useAssets } from "@/hooks/use-assets";
 import { useBeneficiaries } from "@/hooks/use-beneficiaries";
@@ -9,9 +10,19 @@ import { useDocuments } from "@/hooks/use-documents";
 import { useEmergencyAccess } from "@/hooks/use-emergency-access";
 import { useLegacyPlanOverview } from "@/hooks/use-legacy-plan";
 import { useNow } from "@/hooks/use-now";
-import { useProfile } from "@/hooks/use-profile";
+import { useProfile, useUpdatePreferences } from "@/hooks/use-profile";
 import { deriveActions, openActions, type LegacyAction } from "@/lib/client/action-centre";
-import { buildLegacySnapshot, type LegacySnapshot } from "@/lib/client/legacy-snapshot";
+import {
+  analyzeLegacy,
+  mergeActions,
+  readDismissedFindings,
+  type LegacyIntelligence,
+} from "@/lib/client/intelligence";
+import {
+  buildLegacySnapshot,
+  type LegacySnapshot,
+  type LegacySnapshotInput,
+} from "@/lib/client/legacy-snapshot";
 import { readiness, type ReadinessBreakdown } from "@/lib/client/readiness";
 
 export interface LegacyState {
@@ -19,6 +30,10 @@ export interface LegacyState {
   actions: LegacyAction[];
   open: LegacyAction[];
   readiness: ReadinessBreakdown;
+  /** Relationship graph + deterministic findings (lib/client/intelligence). */
+  intelligence: LegacyIntelligence;
+  /** The loaded records everything above was derived from. */
+  records: LegacySnapshotInput;
 }
 
 /**
@@ -63,7 +78,7 @@ export function useLegacyState(options: { enabled?: boolean } = {}): {
 
   const state = useMemo<LegacyState | null>(() => {
     if (!enabled || !loaded || !profile.data || !plan.data) return null;
-    const snapshot = buildLegacySnapshot({
+    const input: LegacySnapshotInput = {
       now,
       profile: {
         mfaEnabled: profile.data.mfaEnabled,
@@ -80,11 +95,23 @@ export function useLegacyState(options: { enabled?: boolean } = {}): {
       ],
       documents: documents.data?.items ?? [],
       documentTotal: documents.data?.total ?? 0,
+      assetTotal:
+        (financial.data?.total ?? 0) + (physical.data?.total ?? 0) + (digital.data?.total ?? 0),
+      beneficiaryTotal: beneficiaries.data?.total ?? 0,
       dms: dms.data ?? null,
       emergency: emergency.data ?? null,
-    });
-    const actions = deriveActions(snapshot);
-    return { snapshot, actions, open: openActions(actions), readiness: readiness(snapshot) };
+    };
+    const snapshot = buildLegacySnapshot(input);
+    const intelligence = analyzeLegacy(input, snapshot);
+    const actions = mergeActions(deriveActions(snapshot), intelligence);
+    return {
+      snapshot,
+      actions,
+      open: openActions(actions),
+      readiness: readiness(snapshot, intelligence.coverage),
+      intelligence,
+      records: input,
+    };
   }, [
     enabled,
     loaded,
@@ -106,4 +133,29 @@ export function useLegacyState(options: { enabled?: boolean } = {}): {
     isError: queries.some((query) => query.isError && !query.data),
     refetch: () => queries.forEach((query) => void query.refetch()),
   };
+}
+
+/**
+ * Sets a heuristic finding aside, or brings it back. Stored in the owner's own
+ * preferences (validated server-side, audited as user.preferences_updated); the
+ * finding stays listed under "Dismissed" and returns if the records change.
+ */
+export function useFindingDismissal() {
+  const profile = useProfile();
+  const update = useUpdatePreferences();
+  const toggle = async (findingId: string, dismissed: boolean) => {
+    const preferences = profile.data?.preferences ?? {};
+    const current = readDismissedFindings(preferences);
+    const next = dismissed
+      ? [...new Set([...current, findingId])].slice(-200)
+      : current.filter((id) => id !== findingId);
+    try {
+      // The server replaces the whole preferences object, so keep every other key.
+      await update.mutateAsync({ preferences: { ...preferences, dismissedFindings: next } });
+      toast.success(dismissed ? "Finding dismissed" : "Finding restored");
+    } catch {
+      toast.error("Could not update this finding. Please try again.");
+    }
+  };
+  return { toggle, isPending: update.isPending };
 }

@@ -1,3 +1,4 @@
+import type { IntelligenceCoverage } from "@/lib/client/intelligence";
 import type { LegacySnapshot } from "@/lib/client/legacy-snapshot";
 
 /**
@@ -6,6 +7,10 @@ import type { LegacySnapshot } from "@/lib/client/legacy-snapshot";
  * Deterministic and transparent — every point comes from a named criterion
  * that reads real state, and the UI shows each criterion with what it is worth.
  * It measures preparation inside LegacyVault, never legal completeness.
+ *
+ * With Legacy Intelligence coverage, three criteria join existing categories —
+ * each only where it applies, so an account without assets or a Will is not
+ * scored on them. Category weights are unchanged.
  */
 export type ReadinessCategoryId =
   "documents" | "will" | "beneficiaries" | "emergency" | "digital" | "security";
@@ -70,10 +75,12 @@ function category(
   };
 }
 
-export function readiness(s: LegacySnapshot): ReadinessBreakdown {
+export function readiness(s: LegacySnapshot, coverage?: IntelligenceCoverage): ReadinessBreakdown {
   const docs = s.documents;
   const ben = s.beneficiaries;
   const armed = !["INACTIVE", "PAUSED"].includes(s.dms.status);
+  const when = (applies: boolean | undefined, make: () => ReadinessCriterion) =>
+    applies ? [make()] : [];
 
   const categories: ReadinessCategory[] = [
     category("documents", "Documents", 20, "/documents", [
@@ -105,6 +112,15 @@ export function readiness(s: LegacySnapshot): ReadinessBreakdown {
         docs.total > 0 && docs.expired.length === 0 ? 1 : 0,
         "/documents",
       ),
+      ...when(coverage && coverage.documentsComplete && coverage.documentableAssets > 0, () =>
+        criterion(
+          "docs-assets",
+          "Assets you hold have a supporting document",
+          20,
+          coverage!.supportedAssets / coverage!.documentableAssets,
+          "/assets?rule=ASSET-DOC-001",
+        ),
+      ),
     ]),
     category("will", "Will", 25, "/legacy-plan", [
       criterion(
@@ -122,6 +138,15 @@ export function readiness(s: LegacySnapshot): ReadinessBreakdown {
         "/legacy-plan/wizard",
       ),
       criterion("will-finalized", "Will finalized", 30, s.plan.finalized ? 1 : 0, "/legacy-plan"),
+      ...when(coverage && (s.plan.exists || s.plan.finalized), () =>
+        criterion(
+          "will-consistent",
+          "No unresolved conflicts between your Will and vault",
+          20,
+          coverage!.willConflicts === 0 ? 1 : 0,
+          "/intelligence?type=CONFLICT",
+        ),
+      ),
     ]),
     category("beneficiaries", "Beneficiaries", 20, "/beneficiaries", [
       criterion(
@@ -144,6 +169,15 @@ export function readiness(s: LegacySnapshot): ReadinessBreakdown {
         30,
         ben.withAssignments > 0 || docs.shared > 0 ? 1 : 0,
         "/assets",
+      ),
+      ...when(coverage && coverage.heldAssets > 0, () =>
+        criterion(
+          "ben-asset-coverage",
+          "Every asset you hold has a beneficiary",
+          30,
+          coverage!.assignedAssets / coverage!.heldAssets,
+          "/assets?rule=ASSET-BEN-001",
+        ),
       ),
     ]),
     category("emergency", "Emergency access", 15, "/emergency-access", [

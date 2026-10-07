@@ -2062,6 +2062,9 @@ export type Database = {
         | "SUBSCRIPTION"
         | "SOCIAL_MEDIA"
         | "OTHER"
+        | "WEBSITE"
+        | "DIGITAL_BUSINESS"
+        | "INTELLECTUAL_PROPERTY"
       dms_event_type:
         | "CHECK_IN"
         | "MISSED_CHECK_IN"
@@ -2104,6 +2107,9 @@ export type Database = {
         | "STOCK"
         | "INSURANCE"
         | "RETIREMENT"
+        | "INVESTMENT"
+        | "CRYPTOCURRENCY"
+        | "OTHER"
       job_status: "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "DEAD"
       legacy_plan_status: "DRAFT" | "FINALIZED"
       notification_channel: "EMAIL" | "IN_APP" | "BOTH"
@@ -2119,6 +2125,7 @@ export type Database = {
         | "GOLD_JEWELRY"
         | "PERSONAL_PROPERTY"
         | "BUSINESS_ASSET"
+        | "OTHER"
       scan_status: "PENDING" | "CLEAN" | "INFECTED" | "ERROR" | "NOT_SCANNED"
       token_revoked_reason:
         | "OWNER"
@@ -2306,6 +2313,9 @@ export const Constants = {
         "SUBSCRIPTION",
         "SOCIAL_MEDIA",
         "OTHER",
+        "WEBSITE",
+        "DIGITAL_BUSINESS",
+        "INTELLECTUAL_PROPERTY",
       ],
       dms_event_type: [
         "CHECK_IN",
@@ -2352,6 +2362,9 @@ export const Constants = {
         "STOCK",
         "INSURANCE",
         "RETIREMENT",
+        "INVESTMENT",
+        "CRYPTOCURRENCY",
+        "OTHER",
       ],
       job_status: ["QUEUED", "RUNNING", "SUCCEEDED", "FAILED", "DEAD"],
       legacy_plan_status: ["DRAFT", "FINALIZED"],
@@ -2369,6 +2382,7 @@ export const Constants = {
         "GOLD_JEWELRY",
         "PERSONAL_PROPERTY",
         "BUSINESS_ASSET",
+        "OTHER",
       ],
       scan_status: ["PENDING", "CLEAN", "INFECTED", "ERROR", "NOT_SCANNED"],
       token_revoked_reason: [

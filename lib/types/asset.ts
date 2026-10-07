@@ -1,3 +1,4 @@
+import type { AssetProfile } from "@/lib/types/asset-profile";
 import type { Database } from "@/lib/types/database";
 
 /**
@@ -33,6 +34,8 @@ interface AssetBase {
   estimatedValue: number | null;
   currency: string;
   notes: string | null;
+  /** Owner-set legacy facts (status, dates, nominee, instructions); null until set. */
+  profile: AssetProfile | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -14,6 +14,7 @@ import * as assetRepository from "@/lib/repositories/asset.repository";
 import * as dmsRepository from "@/lib/repositories/dms.repository";
 import * as planRepository from "@/lib/repositories/legacy-plan.repository";
 import { enforceRateLimit } from "@/lib/security/rate-limit";
+import { describeForAssistant, loadLegacyIntelligence } from "@/lib/services/intelligence.service";
 import type { AIInteractionSummary } from "@/lib/types/ai";
 import type { AssistantMessageBody } from "@/lib/validators/ai.validators";
 
@@ -140,11 +141,20 @@ export async function streamAssistantReply(
     await chargeExtraAttachments(user, body.attachmentIds.length);
 
     const db = await createUserClient();
-    const overview = await buildAccountOverview(db, user).catch((cause: unknown) => {
-      // Answers are still useful without personalisation.
-      logger.warn({ err: cause }, "assistant account overview unavailable");
-      return "Account overview: unavailable right now.";
-    });
+    const [accountOverview, findings] = await Promise.all([
+      buildAccountOverview(db, user).catch((cause: unknown) => {
+        // Answers are still useful without personalisation.
+        logger.warn({ err: cause }, "assistant account overview unavailable");
+        return "Account overview: unavailable right now.";
+      }),
+      loadLegacyIntelligence(user)
+        .then(describeForAssistant)
+        .catch((cause: unknown) => {
+          logger.warn({ err: cause }, "assistant legacy intelligence unavailable");
+          return "System-detected findings: unavailable right now.";
+        }),
+    ]);
+    const overview = `${accountOverview}\n\n${findings}`;
 
     // Ownership and type are checked again here for every id.
     const attachments = await loadAssistantAttachments(user, body.attachmentIds, signal);

@@ -12,6 +12,7 @@ import {
   Gauge,
   HeartHandshake,
   ListChecks,
+  ScanSearch,
   ScrollText,
   ShieldCheck,
   Sparkles,
@@ -266,6 +267,7 @@ export function DashboardView({ firstName }: { firstName: string | null }) {
             </h2>
             <QuickActions willLabel={willLabel} checkInAvailable={canCheckIn(state)} />
           </section>
+          <IntelligenceCard state={state} />
           {state && <CopilotCard state={state} />}
         </div>
       </div>
@@ -533,6 +535,83 @@ function RecentActivityCard() {
           <p className="text-sm text-destructive">Recent activity could not be loaded.</p>
         ) : (
           <ActivityFeed items={activity.data?.items ?? []} limit={6} />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Legacy Intelligence at a glance: counts of what the deterministic rules found,
+ * each linking to the filtered view. Derived from the same loaded state as the
+ * rest of the page — it adds no request and never blocks the greeting.
+ */
+function IntelligenceCard({ state }: { state: LegacyState | null }) {
+  const open = state?.intelligence.open ?? [];
+  const assetIds = new Set(
+    open.flatMap((finding) =>
+      finding.sourceRecords.filter((record) => record.kind === "asset").map((record) => record.id),
+    ),
+  );
+  const rows = [
+    {
+      label: "Critical & important",
+      value: open.filter((f) => f.severity === "CRITICAL" || f.severity === "IMPORTANT").length,
+      href: "/intelligence",
+    },
+    {
+      label: "Potential conflicts",
+      value: open.filter((f) => f.type === "CONFLICT").length,
+      href: "/intelligence?type=CONFLICT",
+    },
+    { label: "Assets needing attention", value: assetIds.size, href: "/assets?filter=attention" },
+    {
+      label: "Expiring or due",
+      value: open.filter((f) => f.type === "EXPIRING").length,
+      href: "/intelligence?type=EXPIRING",
+    },
+  ];
+  return (
+    <Card className="glass">
+      <PanelHeader
+        icon={ScanSearch}
+        title="Legacy Intelligence"
+        description="System detected from your records"
+        action={
+          <Button
+            variant="ghost"
+            size="sm"
+            nativeButton={false}
+            render={<Link href="/intelligence" />}
+          >
+            Open
+          </Button>
+        }
+      />
+      <CardContent>
+        {!state ? (
+          <SectionSkeleton rows={2} />
+        ) : (
+          <ul className="grid grid-cols-2 gap-2" aria-label="Legacy Intelligence summary">
+            {rows.map((row) => (
+              <li key={row.label}>
+                <Link
+                  href={row.href}
+                  className="flex h-full flex-col gap-0.5 rounded-lg border border-border px-3 py-2 transition-colors outline-none hover:border-primary/30 hover:bg-primary/[0.04] focus-visible:ring-3 focus-visible:ring-ring/50"
+                >
+                  <span
+                    className={cn(
+                      "font-heading text-lg font-semibold tabular-nums",
+                      row.value ? "text-foreground" : "text-muted-foreground",
+                    )}
+                  >
+                    {row.value}
+                  </span>
+                  <span className="text-xs text-muted-foreground">{row.label}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
         )}
       </CardContent>
     </Card>

@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tan
 
 import { ApiError, apiClient } from "@/lib/client/api-client";
 import { queryKeys } from "@/lib/client/query-keys";
+import type { AssetKind } from "@/lib/types/asset";
 import type { DocumentProfile } from "@/lib/types/document-profile";
 import { declaredMimeType } from "@/lib/uploads/file-types";
 import type {
@@ -119,6 +120,60 @@ export function useUpdateDocumentProfile() {
       return data;
     },
     onSuccess: invalidate,
+  });
+}
+
+/**
+ * Links a document to an asset as supporting evidence (`attach_document()`
+ * re-checks that both belong to the caller, and audits the link).
+ */
+export function useLinkDocument() {
+  const invalidate = useInvalidateDocuments();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      documentId,
+      resourceType,
+      resourceId,
+    }: {
+      documentId: string;
+      resourceType: AssetKind;
+      resourceId: string;
+    }) => {
+      const { data } = await apiClient.post<{ attachmentId: string }>(
+        `/documents/${documentId}/attachments`,
+        { resourceType, resourceId },
+      );
+      return data;
+    },
+    onSuccess: async () => {
+      await invalidate();
+      await queryClient.invalidateQueries({ queryKey: queryKeys.assets.all() });
+    },
+  });
+}
+
+/** Removes a supporting-document link (`detach_document()`, audited). */
+export function useUnlinkDocument() {
+  const invalidate = useInvalidateDocuments();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      documentId,
+      attachmentId,
+    }: {
+      documentId: string;
+      attachmentId: string;
+    }) => {
+      const { data } = await apiClient.delete<{ id: string }>(
+        `/documents/${documentId}/attachments/${attachmentId}`,
+      );
+      return data;
+    },
+    onSuccess: async () => {
+      await invalidate();
+      await queryClient.invalidateQueries({ queryKey: queryKeys.assets.all() });
+    },
   });
 }
 

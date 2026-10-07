@@ -11,6 +11,7 @@ import {
   FileText,
   History,
   Lock,
+  ScanSearch,
   ShieldCheck,
   Sparkles,
   UserRound,
@@ -24,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useLegacyState } from "@/hooks/use-legacy-snapshot";
+import type { LegacyIntelligence } from "@/lib/client/intelligence";
 import { useAIAvailability, useAIInteractions } from "@/hooks/use-ai";
 import { useDocumentAccess, useDocuments } from "@/hooks/use-documents";
 import { useNow } from "@/hooks/use-now";
@@ -59,10 +61,10 @@ const MODES: Record<Mode, { label: string; blurb: string; suggestions: string[] 
     label: "Analyze",
     blurb: "Look at your account's gaps and what could be missing.",
     suggestions: [
-      "What am I missing?",
-      "What's missing from my legacy plan?",
-      "Which areas of my legacy are least prepared?",
-      "Is anything in my setup likely to surprise my family?",
+      "What information needs my attention?",
+      "Show me conflicting legacy information",
+      "Which assets are not referenced in my Will?",
+      "What should I review this month?",
     ],
   },
   plan: {
@@ -160,7 +162,10 @@ export function AssistantView() {
           className="flex flex-wrap gap-1.5 text-[11px]"
         >
           <li className="inline-flex items-center gap-1 rounded-full border border-success/25 bg-success/10 px-2 py-0.5 text-success">
-            <BadgeCheck className="size-3" aria-hidden /> Verified application state
+            <BadgeCheck className="size-3" aria-hidden /> Verified from your account
+          </li>
+          <li className="inline-flex items-center gap-1 rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 text-primary">
+            <ScanSearch className="size-3" aria-hidden /> System detected
           </li>
           <li className="inline-flex items-center gap-1 rounded-full border border-brand-purple/25 bg-brand-purple/10 px-2 py-0.5 text-brand-purple">
             <Sparkles className="size-3" aria-hidden /> AI suggestion
@@ -340,6 +345,9 @@ export function AssistantView() {
           >
             <FileText data-icon="inline-start" /> Open the document vault
           </Button>
+          {/* Last in the column: it fills in when the account has loaded, so
+              nothing below it can shift. */}
+          {legacy.state && <SystemDetectedCard intelligence={legacy.state.intelligence} />}
         </div>
       </div>
 
@@ -352,5 +360,60 @@ export function AssistantView() {
         />
       )}
     </div>
+  );
+}
+
+/**
+ * Findings from Legacy Intelligence, labelled "System detected": deterministic
+ * rules over the owner's records, shown here by name. The Copilot itself only
+ * receives counts.
+ */
+function SystemDetectedCard({ intelligence }: { intelligence: LegacyIntelligence }) {
+  const open = intelligence.open;
+  return (
+    <Card className="glass">
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-sm">
+          <ScanSearch className="size-4 text-primary" aria-hidden />
+          System detected · {open.length} finding{open.length === 1 ? "" : "s"}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {open.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No missing, expiring or conflicting information detected.
+          </p>
+        ) : (
+          <ul className="space-y-1" aria-label="System-detected findings">
+            {open.slice(0, 3).map((finding) => (
+              <li key={finding.id}>
+                <Link
+                  href={finding.destination}
+                  className="group flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none hover:bg-primary/5 focus-visible:ring-3 focus-visible:ring-ring/50"
+                >
+                  <span className="min-w-0 flex-1 truncate">{finding.title}</span>
+                  <ArrowRight
+                    className="size-3.5 shrink-0 text-muted-foreground group-hover:text-primary"
+                    aria-hidden
+                  />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="text-[11px] leading-4 text-muted-foreground">
+          Copilot sees only counts of these findings — never names. The exact records are listed in
+          Legacy Intelligence.
+        </p>
+        <Button
+          variant="ghost"
+          size="sm"
+          nativeButton={false}
+          render={<Link href="/intelligence" />}
+        >
+          Open Legacy Intelligence
+        </Button>
+      </CardContent>
+    </Card>
   );
 }

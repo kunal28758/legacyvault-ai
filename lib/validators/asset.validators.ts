@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { DIGITAL_CATEGORIES, FINANCIAL_CATEGORIES, PHYSICAL_CATEGORIES } from "@/lib/assets/meta";
+import { assetProfileSchema } from "@/lib/validators/asset-profile";
 import type {
   AssetTypeSlug,
   DigitalAssetCategory,
@@ -9,31 +11,7 @@ import type {
 
 /** Asset form schemas (task T079 shape). Sensitive fields are validated only for presence here. */
 
-export const FINANCIAL_CATEGORIES: { value: FinancialAssetCategory; label: string }[] = [
-  { value: "BANK_ACCOUNT", label: "Bank account" },
-  { value: "FIXED_DEPOSIT", label: "Fixed deposit" },
-  { value: "MUTUAL_FUND", label: "Mutual fund" },
-  { value: "STOCK", label: "Stocks / shares" },
-  { value: "INSURANCE", label: "Insurance policy" },
-  { value: "RETIREMENT", label: "Retirement account" },
-];
-
-export const PHYSICAL_CATEGORIES: { value: PhysicalAssetCategory; label: string }[] = [
-  { value: "REAL_ESTATE", label: "Real estate" },
-  { value: "VEHICLE", label: "Vehicle" },
-  { value: "GOLD_JEWELRY", label: "Gold & jewellery" },
-  { value: "PERSONAL_PROPERTY", label: "Personal property" },
-  { value: "BUSINESS_ASSET", label: "Business asset" },
-];
-
-export const DIGITAL_CATEGORIES: { value: DigitalAssetCategory; label: string }[] = [
-  { value: "ONLINE_ACCOUNT", label: "Online account" },
-  { value: "DOMAIN", label: "Domain" },
-  { value: "CRYPTO_WALLET", label: "Crypto wallet" },
-  { value: "SUBSCRIPTION", label: "Subscription" },
-  { value: "SOCIAL_MEDIA", label: "Social media" },
-  { value: "OTHER", label: "Other" },
-];
+export { DIGITAL_CATEGORIES, FINANCIAL_CATEGORIES, PHYSICAL_CATEGORIES };
 
 export const CURRENCIES = ["INR", "USD", "EUR", "GBP", "AED", "SGD"] as const;
 
@@ -177,15 +155,18 @@ const secret = z.string().trim().min(1).max(500).nullable();
 const financialShape = {
   name: serverName,
   category: z.enum(
-    ["BANK_ACCOUNT", "FIXED_DEPOSIT", "MUTUAL_FUND", "STOCK", "INSURANCE", "RETIREMENT"],
-    {
-      error: "Choose a category",
-    },
+    FINANCIAL_CATEGORIES.map((c) => c.value) as [
+      FinancialAssetCategory,
+      ...FinancialAssetCategory[],
+    ],
+    { error: "Choose a category" },
   ),
   institution: z.string().trim().max(120).nullable(),
   estimatedValue: serverMoney,
   currency: serverCurrency,
   notes: serverNotes,
+  /** Legacy facts stored in `metadata.profile` (see lib/types/asset-profile). */
+  profile: assetProfileSchema,
   accountNumber: secret,
   policyNumber: secret,
 };
@@ -193,10 +174,8 @@ const financialShape = {
 const physicalShape = {
   name: serverName,
   category: z.enum(
-    ["REAL_ESTATE", "VEHICLE", "GOLD_JEWELRY", "PERSONAL_PROPERTY", "BUSINESS_ASSET"],
-    {
-      error: "Choose a category",
-    },
+    PHYSICAL_CATEGORIES.map((c) => c.value) as [PhysicalAssetCategory, ...PhysicalAssetCategory[]],
+    { error: "Choose a category" },
   ),
   description: z.string().trim().max(500).nullable(),
   location: z.string().trim().max(160).nullable(),
@@ -204,21 +183,23 @@ const physicalShape = {
   estimatedValue: serverMoney,
   currency: serverCurrency,
   notes: serverNotes,
+  /** Legacy facts stored in `metadata.profile` (see lib/types/asset-profile). */
+  profile: assetProfileSchema,
 };
 
 const digitalShape = {
   name: serverName,
   category: z.enum(
-    ["CRYPTO_WALLET", "ONLINE_ACCOUNT", "DOMAIN", "SUBSCRIPTION", "SOCIAL_MEDIA", "OTHER"],
-    {
-      error: "Choose a category",
-    },
+    DIGITAL_CATEGORIES.map((c) => c.value) as [DigitalAssetCategory, ...DigitalAssetCategory[]],
+    { error: "Choose a category" },
   ),
   platform: z.string().trim().max(120).nullable(),
   username: z.string().trim().max(120).nullable(),
   estimatedValue: serverMoney,
   currency: serverCurrency,
   notes: serverNotes,
+  /** Legacy facts stored in `metadata.profile` (see lib/types/asset-profile). */
+  profile: assetProfileSchema,
   credentials: secret,
   recoveryInfo: secret,
 };

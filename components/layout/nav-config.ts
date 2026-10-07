@@ -6,6 +6,7 @@ import {
   HeartHandshake,
   LayoutDashboard,
   ListChecks,
+  ScanSearch,
   ScrollText,
   Settings,
   ShieldAlert,
@@ -50,7 +51,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Vault",
     items: [
       { label: "Documents", href: "/documents", icon: FileText },
-      { label: "Assets", href: "/assets", icon: Wallet },
+      { label: "Asset Vault", href: "/assets", icon: Wallet },
       { label: "Video Legacy", href: "/video-legacy", icon: Video },
     ],
   },
@@ -74,7 +75,10 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: "Intelligence",
-    items: [{ label: "AI Copilot", href: "/ai", icon: Sparkles, ai: true }],
+    items: [
+      { label: "Legacy Intelligence", href: "/intelligence", icon: ScanSearch },
+      { label: "AI Copilot", href: "/ai", icon: Sparkles, ai: true },
+    ],
   },
   {
     label: "Security",
@@ -111,7 +115,7 @@ export const PAGE_TITLES: Record<string, string> = {
   "/legacy-plan": "My Will",
   "/legacy-plan/wizard": "Create Will",
   "/beneficiaries": "Beneficiaries",
-  "/assets": "Assets",
+  "/assets": "Asset Vault",
   "/assets/financial": "Financial Assets",
   "/assets/physical": "Physical Assets",
   "/assets/digital": "Digital Assets",
@@ -120,6 +124,7 @@ export const PAGE_TITLES: Record<string, string> = {
   "/dead-man-switch": "Dead Man's Switch",
   "/emergency-access": "Emergency Access",
   "/security-center": "Security Centre",
+  "/intelligence": "Legacy Intelligence",
   "/ai": "AI Copilot",
   "/activity": "Audit Centre",
   "/notifications": "Notifications",
@@ -139,7 +144,11 @@ export function breadcrumbsFor(pathname: string): { label: string; href: string 
   for (const segment of segments) {
     current += `/${segment}`;
     const label =
-      PAGE_TITLES[current] ?? segment.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+      PAGE_TITLES[current] ??
+      // A record id (e.g. /assets/financial/<uuid>) is not a name worth showing.
+      (/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(segment)
+        ? "Details"
+        : segment.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()));
     crumbs.push({ label, href: current });
   }
   return crumbs;

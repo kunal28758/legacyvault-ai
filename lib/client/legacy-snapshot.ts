@@ -88,6 +88,9 @@ export interface LegacySnapshotInput {
   documents: DocumentSummary[];
   /** Total from the API (the list itself may be a page). */
   documentTotal: number;
+  /** API totals for the asset and beneficiary lists, to tell a page from the whole set. */
+  assetTotal?: number;
+  beneficiaryTotal?: number;
   dms: DeadManSwitch | null;
   emergency: EmergencyAccessOverview | null;
 }

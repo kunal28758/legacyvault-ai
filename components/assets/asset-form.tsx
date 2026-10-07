@@ -24,8 +24,16 @@ import {
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { useCreateAsset, useUpdateAsset, type AssetFormValues } from "@/hooks/use-assets";
+import { useBeneficiaries } from "@/hooks/use-beneficiaries";
 import { ApiError } from "@/lib/client/api-client";
 import type { Asset, AssetKind } from "@/lib/types/asset";
+import {
+  ASSET_STATUS_LABELS,
+  ASSET_STATUSES,
+  assetProfileSchema,
+  cleanAssetProfile,
+  type AssetProfile,
+} from "@/lib/validators/asset-profile";
 import {
   CURRENCIES,
   DIGITAL_CATEGORIES,
@@ -81,6 +89,53 @@ function initialValues(kind: AssetKind, asset?: Asset | null): Values {
   return { ...common, platform: "", username: "", credentials: "", recoveryInfo: "" };
 }
 
+type ProfileValues = Record<
+  | "status"
+  | "acquiredOn"
+  | "reviewOn"
+  | "expiresOn"
+  | "lastReviewedOn"
+  | "nomineeName"
+  | "nomineeRelationship"
+  | "nomineeBeneficiaryId"
+  | "instructions",
+  string
+>;
+
+function initialProfile(asset?: Asset | null): ProfileValues {
+  const profile = asset?.profile ?? {};
+  return {
+    status: profile.status ?? "ACTIVE",
+    acquiredOn: profile.acquiredOn ?? "",
+    reviewOn: profile.reviewOn ?? "",
+    expiresOn: profile.expiresOn ?? "",
+    lastReviewedOn: profile.lastReviewedOn ?? "",
+    nomineeName: profile.nominee?.name ?? "",
+    nomineeRelationship: profile.nominee?.relationship ?? "",
+    nomineeBeneficiaryId: profile.nominee?.beneficiaryId ?? "",
+    instructions: profile.instructions ?? "",
+  };
+}
+
+function toProfile(values: ProfileValues): AssetProfile {
+  const text = (value: string) => value.trim() || null;
+  return {
+    status: values.status === "ACTIVE" ? null : (values.status as AssetProfile["status"]),
+    acquiredOn: text(values.acquiredOn),
+    reviewOn: text(values.reviewOn),
+    expiresOn: text(values.expiresOn),
+    lastReviewedOn: text(values.lastReviewedOn),
+    nominee: values.nomineeName.trim()
+      ? {
+          name: values.nomineeName.trim(),
+          relationship: text(values.nomineeRelationship),
+          beneficiaryId: text(values.nomineeBeneficiaryId),
+        }
+      : null,
+    instructions: text(values.instructions),
+  };
+}
+
 /**
  * Add / edit asset sheet.
  *
@@ -92,7 +147,7 @@ function initialValues(kind: AssetKind, asset?: Asset | null): Values {
 export function AssetFormSheet({ kind, open, onOpenChange, asset }: AssetFormSheetProps) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full overflow-y-auto glass-strong sm:max-w-md">
+      <SheetContent className="w-full overflow-y-auto glass-strong sm:max-w-lg">
         <AssetForm kind={kind} asset={asset ?? null} onOpenChange={onOpenChange} />
       </SheetContent>
     </Sheet>
@@ -113,6 +168,8 @@ function AssetForm({
   const update = useUpdateAsset(kind);
   const [values, setValues] = useState<Values>(() => initialValues(kind, asset));
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [profile, setProfile] = useState<ProfileValues>(() => initialProfile(asset));
+  const beneficiaries = useBeneficiaries();
   const editing = Boolean(asset);
   const busy = create.isPending || update.isPending;
 
@@ -122,6 +179,11 @@ function AssetForm({
   const set = (field: string, value: string) => {
     setValues((previous) => ({ ...previous, [field]: value }));
     setErrors((previous) => (previous[field] ? { ...previous, [field]: "" } : previous));
+  };
+  const setLegacy = (field: keyof ProfileValues, value: string) => {
+    setProfile((previous) => ({ ...previous, [field]: value }));
+    const key = `profile.${field}`;
+    setErrors((previous) => (previous[key] ? { ...previous, [key]: "" } : previous));
   };
 
   const categories =
@@ -158,8 +220,19 @@ function AssetForm({
           ? physicalAssetSchema
           : digitalAssetSchema;
     const parsed = schema.safeParse(values);
-    if (!parsed.success) {
-      setErrors(fieldErrors(parsed.error));
+    const legacy = assetProfileSchema.safeParse(toProfile(profile));
+    if (!parsed.success || !legacy.success) {
+      const legacyErrors: Record<string, string> = {};
+      for (const issue of legacy.error?.issues ?? []) {
+        const [head, sub] = issue.path.map(String);
+        // nominee.name → the "nomineeName" input, and so on.
+        const field =
+          head === "nominee"
+            ? `nominee${(sub ?? "name").replace(/^./, (c) => c.toUpperCase())}`
+            : head;
+        legacyErrors[`profile.${field}`] ??= issue.message;
+      }
+      setErrors({ ...(parsed.success ? {} : fieldErrors(parsed.error)), ...legacyErrors });
       return;
     }
 
@@ -193,6 +266,10 @@ function AssetForm({
       payload.credentials = secret("credentials");
       payload.recoveryInfo = secret("recoveryInfo");
     }
+
+    // On edit the profile is always sent, so a cleared field is really cleared;
+    // on create it is sent only when something was filled in.
+    if (asset || cleanAssetProfile(legacy.data)) payload.profile = legacy.data;
 
     try {
       if (asset) {
@@ -425,6 +502,163 @@ function AssetForm({
             )}
           </FormField>
         </div>
+        <fieldset className="space-y-4 rounded-xl border border-border p-4">
+          <legend className="px-1 text-sm font-semibold">Legacy details</legend>
+          <p className="-mt-1 text-xs text-muted-foreground">
+            Used by Legacy Intelligence to check this asset against your Will, documents and
+            beneficiaries. Only you can see these details.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField label="Status" error={errors["profile.status"]}>
+              {(props) => (
+                <Select
+                  value={profile.status}
+                  onValueChange={(value) => setLegacy("status", String(value ?? "ACTIVE"))}
+                  items={ASSET_STATUSES.map((value) => ({
+                    value,
+                    label: ASSET_STATUS_LABELS[value],
+                  }))}
+                >
+                  <SelectTrigger id={props.id} className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ASSET_STATUSES.map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {ASSET_STATUS_LABELS[value]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </FormField>
+            <FormField label="Acquired on" optional error={errors["profile.acquiredOn"]}>
+              {(props) => (
+                <Input
+                  {...props}
+                  type="date"
+                  value={profile.acquiredOn}
+                  onChange={(event) => setLegacy("acquiredOn", event.target.value)}
+                />
+              )}
+            </FormField>
+            <FormField label="Review on" optional error={errors["profile.reviewOn"]}>
+              {(props) => (
+                <Input
+                  {...props}
+                  type="date"
+                  value={profile.reviewOn}
+                  onChange={(event) => setLegacy("reviewOn", event.target.value)}
+                />
+              )}
+            </FormField>
+            <FormField
+              label="Expires or renews on"
+              optional
+              hint="Policy maturity, lease end, domain renewal…"
+              error={errors["profile.expiresOn"]}
+            >
+              {(props) => (
+                <Input
+                  {...props}
+                  type="date"
+                  value={profile.expiresOn}
+                  onChange={(event) => setLegacy("expiresOn", event.target.value)}
+                />
+              )}
+            </FormField>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField
+              label="Nominee"
+              optional
+              hint="As registered with the institution"
+              error={errors["profile.nomineeName"]}
+            >
+              {(props) => (
+                <Input
+                  {...props}
+                  value={profile.nomineeName}
+                  onChange={(event) => setLegacy("nomineeName", event.target.value)}
+                />
+              )}
+            </FormField>
+            <FormField
+              label="Nominee relationship"
+              optional
+              error={errors["profile.nomineeRelationship"]}
+            >
+              {(props) => (
+                <Input
+                  {...props}
+                  value={profile.nomineeRelationship}
+                  onChange={(event) => setLegacy("nomineeRelationship", event.target.value)}
+                />
+              )}
+            </FormField>
+          </div>
+          {(beneficiaries.data?.items.length ?? 0) > 0 && (
+            <FormField
+              label="Nominee is one of my beneficiaries"
+              optional
+              error={errors["profile.nomineeBeneficiaryId"]}
+            >
+              {(props) => {
+                const people = [
+                  { value: "none", label: "Not one of my beneficiaries" },
+                  ...(beneficiaries.data?.items ?? []).map((person) => ({
+                    value: person.id,
+                    label: person.name,
+                  })),
+                ];
+                return (
+                  <Select
+                    value={profile.nomineeBeneficiaryId || "none"}
+                    onValueChange={(value) => {
+                      const id = value && value !== "none" ? String(value) : "";
+                      setLegacy("nomineeBeneficiaryId", id);
+                      const person = beneficiaries.data?.items.find((p) => p.id === id);
+                      if (person && !profile.nomineeName.trim()) {
+                        setLegacy("nomineeName", person.name);
+                        if (!profile.nomineeRelationship.trim()) {
+                          setLegacy("nomineeRelationship", person.relationship);
+                        }
+                      }
+                    }}
+                    items={people}
+                  >
+                    <SelectTrigger id={props.id} className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {people.map((person) => (
+                        <SelectItem key={person.value} value={person.value}>
+                          {person.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                );
+              }}
+            </FormField>
+          )}
+          <FormField
+            label="Instructions"
+            optional
+            hint="What should happen to it, and where its access details are kept. Never enter a password, PIN, private key or recovery phrase here."
+            error={errors["profile.instructions"]}
+          >
+            {(props) => (
+              <Textarea
+                {...props}
+                rows={3}
+                value={profile.instructions}
+                onChange={(event) => setLegacy("instructions", event.target.value)}
+                placeholder="e.g. Transfer to my daughter. Statements are in the blue folder; the login is in my password manager."
+              />
+            )}
+          </FormField>
+        </fieldset>
         <FormField label="Notes" optional error={errors.notes}>
           {(props) => (
             <Textarea

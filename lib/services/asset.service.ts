@@ -6,6 +6,7 @@ import type { AppUser } from "@/lib/auth/ensure-app-user";
 import { assertAccountActive } from "@/lib/auth/require-user";
 import { createUserClient } from "@/lib/db/server";
 import * as assetRepository from "@/lib/repositories/asset.repository";
+import * as beneficiaryRepository from "@/lib/repositories/beneficiary.repository";
 import { decryptStoredEnvelope, encrypt } from "@/lib/security/encryption";
 import type {
   Asset,
@@ -16,6 +17,12 @@ import type {
   AssetWithAssignments,
   RevealedSensitiveFields,
 } from "@/lib/types/asset";
+import {
+  changedProfileFields,
+  cleanAssetProfile,
+  mergeAssetProfile,
+  type AssetProfile,
+} from "@/lib/validators/asset-profile";
 import type {
   AssetAssignBody,
   AssetCreateBody,
@@ -122,7 +129,12 @@ export async function createAsset(
   assertAccountActive(user);
   const db = await createUserClient();
 
-  const { plain, encrypted } = splitInput(kind, input as Record<string, unknown>);
+  const { profile, ...fields } = input as Record<string, unknown> & { profile?: AssetProfile };
+  await assertNomineeOwned(db, user.id, profile);
+  const { plain, encrypted } = splitInput(kind, fields);
+  // The profile is stored as metadata.profile; create_asset() allow-lists `metadata`.
+  const clean = profile ? cleanAssetProfile(profile) : null;
+  if (clean) plain.metadata = { profile: clean };
 
   // create_asset() re-validates the key allow-list, the currency pattern and
   // every envelope shape inside the transaction (`lv_envelope_text`).
@@ -154,8 +166,19 @@ export async function updateAsset(
   const before = await assetRepository.findById(db, user.id, kind, id);
   if (!before) throw ApiError.notFound();
 
-  const { plain, encrypted } = splitInput(kind, input as Record<string, unknown>);
+  const { profile, ...fields } = input as Record<string, unknown> & { profile?: AssetProfile };
+  const { plain, encrypted } = splitInput(kind, fields);
   const patch = toColumnPatch(kind, plain);
+
+  // The profile replaces metadata.profile only; other metadata keys are kept.
+  let profileFields: string[] = [];
+  if (profile !== undefined) {
+    await assertNomineeOwned(db, user.id, profile);
+    const metadata = await assetRepository.findMetadata(db, user.id, kind, id);
+    const merged = mergeAssetProfile(metadata, profile);
+    profileFields = changedProfileFields(before.profile, cleanAssetProfile(profile));
+    if (profileFields.length) patch.metadata = merged;
+  }
 
   let updated = before;
   if (Object.keys(patch).length > 0) {
@@ -186,8 +209,9 @@ export async function updateAsset(
     outcome: "SUCCESS",
     // Never the values: `changedEncrypted` names the fields only.
     metadata: {
-      changed: Object.keys(patch),
+      changed: Object.keys(patch).map((column) => (column === "metadata" ? "profile" : column)),
       changedEncrypted: encryptedKeys,
+      ...(profileFields.length ? { profileFields } : {}),
     },
     correlationId,
   });
@@ -336,6 +360,23 @@ export async function revealSensitiveFields(
 }
 
 /* ── Helpers ──────────────────────────────────────────────────────────────── */
+
+/**
+ * A nominee linked to a beneficiary must be one of the caller's own live
+ * beneficiaries. Unknown and foreign ids get the same 404, so the check never
+ * reveals whether somebody else's id exists.
+ */
+async function assertNomineeOwned(
+  db: Awaited<ReturnType<typeof createUserClient>>,
+  userId: string,
+  profile: AssetProfile | undefined,
+): Promise<void> {
+  const beneficiaryId = profile?.nominee?.beneficiaryId;
+  if (!beneficiaryId) return;
+  if (!(await beneficiaryRepository.findById(db, userId, beneficiaryId))) {
+    throw ApiError.notFound("That beneficiary was not found.");
+  }
+}
 
 function decryptStored(stored: string): string {
   try {

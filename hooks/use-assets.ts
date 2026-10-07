@@ -14,6 +14,7 @@ import {
   type AssetWithAssignments,
   type RevealedSensitiveFields,
 } from "@/lib/types/asset";
+import type { AssetProfile } from "@/lib/types/asset-profile";
 
 /**
  * Asset data hooks (tasks T079–T090 client half).
@@ -90,6 +91,8 @@ export interface AssetFormValues {
   policyNumber?: string | null;
   credentials?: string | null;
   recoveryInfo?: string | null;
+  /** Legacy facts (status, dates, nominee, instructions) → metadata.profile. */
+  profile?: AssetProfile;
 }
 
 function useInvalidateAssets() {

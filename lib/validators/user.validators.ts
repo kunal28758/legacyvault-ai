@@ -71,6 +71,11 @@ export const preferencesSchema = z
     compactSidebar: z.boolean().optional(),
     /** Owner-recorded life events (see lib/legacy-plan/life-events). */
     lifeEvents: lifeEventsSchema.optional(),
+    /** Intelligence findings the owner reviewed and set aside (see lib/client/intelligence). */
+    dismissedFindings: z
+      .array(z.string().regex(/^[A-Z][A-Z0-9-]{2,23}:[a-z0-9,-]{1,400}$/))
+      .max(200)
+      .optional(),
   })
   .strict();
 

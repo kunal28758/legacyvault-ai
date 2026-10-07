@@ -4,6 +4,7 @@ import {
   CalendarClock,
   FileImage,
   FileText,
+  Link2,
   Lock,
   MoreHorizontal,
   ShieldCheck,
@@ -65,6 +66,20 @@ export function SharingChip({ count, className }: { count: number; className?: s
     >
       <Lock className="size-3" aria-hidden />
       Private
+    </span>
+  );
+}
+
+/** Which of the owner's assets this document supports (relationship visibility). */
+export function SupportsChip({ document }: { document: DocumentSummary }) {
+  const assets = (document.attachments ?? []).filter(
+    (attachment) => attachment.resourceType !== "LEGACY_PLAN",
+  ).length;
+  if (!assets) return null;
+  return (
+    <span className="inline-flex h-6 items-center gap-1.5 rounded-full border border-primary/25 bg-primary/10 px-2.5 text-[11px] font-medium text-primary">
+      <Link2 className="size-3" aria-hidden />
+      Supports {pluralize(assets, "asset")}
     </span>
   );
 }
@@ -170,7 +185,10 @@ export function VaultCard({
           <DocumentProfileChips profile={document.profile} now={now} />
         )}
         <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-3">
-          <SharingChip count={sharedCount} />
+          <span className="flex flex-wrap items-center gap-1.5">
+            <SharingChip count={sharedCount} />
+            <SupportsChip document={document} />
+          </span>
           <p className="text-[11px] text-muted-foreground">
             Updated {formatDate(document.updatedAt)}
           </p>

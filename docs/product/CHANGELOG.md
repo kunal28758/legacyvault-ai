@@ -19,6 +19,30 @@ Format: newest first. Categories: *Governance*, *Specification*,
 
 ## [Unreleased]
 
+### Legacy Intelligence, Asset Vault and relationship graph — 2026-10-07
+
+- **Assets (added)**: Asset Vault (`/assets`) and asset pages
+  (`/assets/:type/:id`) with status, dates, nominee, instructions, supporting
+  documents and activity. The profile lives in the owner-only `metadata`
+  column — no new tables. Migration `0008_asset_categories.sql` adds enum
+  values only; apply it before deploying.
+- **Intelligence (added)**: typed relationship graph and deterministic findings
+  (Missing, Expiring, Stale, Conflict RULE-001…010, Unlinked), merged into the
+  Action Centre without duplicates, three conditional readiness criteria, a
+  dashboard summary, `/intelligence`, palette commands. See
+  [LEGACY_INTELLIGENCE.md](LEGACY_INTELLIGENCE.md).
+- **Copilot (changed)**: grounded with finding counts per rule — never names;
+  labels "Verified from your account", "System detected", "AI suggestion",
+  "Your input". Prompt version `assistant.v2`.
+- **Hardening (fixed)**: a beneficiary or asset beyond the first loaded page no
+  longer makes an asset read as "no beneficiary" (ASSET-BEN-001) or a document
+  as "not linked" (DOC-ASSET-001); `/intelligence` says when lists were
+  partial. Duplicate findings say "potential" and ask the owner to check. The
+  Will readiness criterion counts only conflicts that involve the Will. Asset
+  instructions also refuse labelled recovery phrases and raw private keys
+  (hex, WIF, `xprv`). The Asset Vault shows assets before intelligence has
+  finished loading.
+
 ### Malware scanning removed — 2026-10-04
 
 - **Uploads (changed)**: the ClamAV client, the `MALWARE_SCANNER_PROVIDER` /

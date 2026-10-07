@@ -31,6 +31,8 @@ export interface LegacyAction {
   /** ISO timestamp or date the action is due by, when there is one. */
   deadline?: string;
   completed: boolean;
+  /** Set when a Legacy Intelligence rule raised it (lib/client/intelligence). */
+  ruleId?: string;
 }
 
 export const PRIORITY_ORDER: ActionPriority[] = [

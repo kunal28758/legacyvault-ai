@@ -3,6 +3,7 @@ import "server-only";
 import type { TypedSupabaseClient } from "@/lib/db/server";
 import type { Asset, AssetKind } from "@/lib/types/asset";
 import type { Database } from "@/lib/types/database";
+import { readAssetProfile } from "@/lib/validators/asset-profile";
 
 /**
  * Asset data access for the three asset tables (tasks T079–T090).
@@ -51,6 +52,7 @@ export function toAsset(kind: AssetKind, row: AssetRow): Asset {
     estimatedValue: numeric(row.estimated_value),
     currency: row.currency,
     notes: row.notes,
+    profile: readAssetProfile(row.metadata),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -149,6 +151,24 @@ export async function findById(
   return data ? toAsset(kind, data as AssetRow) : null;
 }
 
+/** The stored metadata object, for a merge that keeps keys other than `profile`. */
+export async function findMetadata(
+  db: TypedSupabaseClient,
+  userId: string,
+  kind: AssetKind,
+  id: string,
+): Promise<unknown> {
+  const { data, error } = await db
+    .from(TABLE_BY_KIND[kind])
+    .select("metadata")
+    .eq("id", id)
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.metadata ?? null;
+}
+
 /** Ids of the caller's live assets, for the plan-completeness cross-check. */
 export async function listIds(
   db: TypedSupabaseClient,
@@ -174,7 +194,7 @@ export async function listIds(
 export type FinancialPatch = Partial<
   Pick<
     Database["public"]["Tables"]["financial_assets"]["Update"],
-    "name" | "category" | "institution" | "estimated_value" | "currency" | "notes"
+    "name" | "category" | "institution" | "estimated_value" | "currency" | "notes" | "metadata"
   >
 >;
 export type PhysicalPatch = Partial<
@@ -188,12 +208,20 @@ export type PhysicalPatch = Partial<
     | "currency"
     | "ownership_details"
     | "notes"
+    | "metadata"
   >
 >;
 export type DigitalPatch = Partial<
   Pick<
     Database["public"]["Tables"]["digital_assets"]["Update"],
-    "name" | "category" | "platform" | "username" | "estimated_value" | "currency" | "notes"
+    | "name"
+    | "category"
+    | "platform"
+    | "username"
+    | "estimated_value"
+    | "currency"
+    | "notes"
+    | "metadata"
   >
 >;
 export type AssetPatch = FinancialPatch | PhysicalPatch | DigitalPatch;

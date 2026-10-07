@@ -6,8 +6,9 @@ import { ChevronDown, ListChecks, ShieldCheck } from "lucide-react";
 import { ActionList, PriorityBadge } from "@/components/legacy/action-list";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ErrorState } from "@/components/shared/error-state";
-import { PageSkeleton } from "@/components/shared/loading-skeleton";
+import { CardSkeleton } from "@/components/shared/loading-skeleton";
 import { PageHeader } from "@/components/shared/page-header";
+import { StatCardSkeleton } from "@/components/shared/stat-card";
 import { Card, CardContent } from "@/components/ui/card";
 import { useLegacyState } from "@/hooks/use-legacy-snapshot";
 import { PRIORITY_LABELS, PRIORITY_ORDER, type ActionSource } from "@/lib/client/action-centre";
@@ -24,16 +25,43 @@ export function ActionCentreView() {
   const [source, setSource] = useState<ActionSource | "all">("all");
   const [showCompleted, setShowCompleted] = useState(false);
 
+  // The header renders at once; only the data below waits for the account.
+  const header = (
+    <PageHeader
+      eyebrow="Command Centre"
+      title="Action Centre"
+      description="What needs your attention, from your own account — nothing is estimated."
+    />
+  );
+
   if (isError) {
     return (
-      <ErrorState
-        title="Could not load your actions"
-        description="Your data is safe — this view could not reach it. Try again in a moment."
-        onRetry={refetch}
-      />
+      <div className="space-y-6">
+        {header}
+        <ErrorState
+          title="Could not load your actions"
+          description="Your data is safe — this view could not reach it. Try again in a moment."
+          onRetry={refetch}
+        />
+      </div>
     );
   }
-  if (isPending || !state) return <PageSkeleton stats={4} />;
+  if (isPending || !state) {
+    return (
+      <div className="space-y-6">
+        {header}
+        <div role="status" aria-label="Loading actions" className="space-y-6">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {PRIORITY_ORDER.map((priority) => (
+              <StatCardSkeleton key={priority} />
+            ))}
+          </div>
+          <CardSkeleton rows={5} />
+          <span className="sr-only">Loading…</span>
+        </div>
+      </div>
+    );
+  }
 
   const sources = [...new Set(state.actions.map((action) => action.source))];
   const visible = state.actions.filter((action) => source === "all" || action.source === source);
@@ -43,15 +71,12 @@ export function ActionCentreView() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow="Command Centre"
-        title="Action Centre"
-        description={
-          attention
-            ? `${pluralize(attention, "action")} need your attention. Everything here comes from your own account — nothing is estimated.`
-            : "Nothing urgent. The recommendations below keep your legacy current."
-        }
-      />
+      {header}
+      <p className="-mt-3 text-sm text-muted-foreground" role="status">
+        {attention
+          ? `${pluralize(attention, "action")} need your attention.`
+          : "Nothing urgent. The recommendations below keep your legacy current."}
+      </p>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {PRIORITY_ORDER.map((priority) => {

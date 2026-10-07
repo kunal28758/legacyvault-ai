@@ -49,14 +49,20 @@ export async function listDocuments(
   });
 
   const ids = rows.map((row) => row.id);
-  const [counts, shares] = await Promise.all([
+  const [counts, shares, attachments] = await Promise.all([
     documentRepository.versionCounts(db, ids),
     documentRepository.shareCounts(db, user.id, ids),
+    documentRepository.attachmentsFor(db, user.id, ids),
   ]);
 
   return {
     items: rows.map((row) =>
-      documentRepository.toDocumentSummary(row, counts.get(row.id) ?? 1, shares.get(row.id) ?? 0),
+      documentRepository.toDocumentSummary(
+        row,
+        counts.get(row.id) ?? 1,
+        shares.get(row.id) ?? 0,
+        attachments.get(row.id) ?? [],
+      ),
     ),
     total,
     page: query.page,
@@ -76,9 +82,8 @@ export async function getDocument(user: AppUser, id: string): Promise<DocumentDe
   ]);
 
   return {
-    ...documentRepository.toDocumentSummary(row, versions.length, shares.length),
+    ...documentRepository.toDocumentSummary(row, versions.length, shares.length, attachments),
     versions,
-    attachments,
     shares,
   };
 }
@@ -120,9 +125,12 @@ export async function updateDocument(
     correlationId,
   });
 
-  const versions = await documentRepository.listVersions(db, id, updated.current_version_id);
-  const shares = await listShares(db, user.id, id);
-  return documentRepository.toDocumentSummary(updated, versions.length, shares.length);
+  const [versions, shares, attachments] = await Promise.all([
+    documentRepository.listVersions(db, id, updated.current_version_id),
+    listShares(db, user.id, id),
+    documentRepository.listAttachments(db, user.id, id),
+  ]);
+  return documentRepository.toDocumentSummary(updated, versions.length, shares.length, attachments);
 }
 
 export async function deleteDocument(

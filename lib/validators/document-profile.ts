@@ -17,7 +17,7 @@ export {
  * for the model). Used by the PATCH /documents/:id body and when reading
  * stored metadata back.
  */
-const isoDate = z
+export const isoDate = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Use a date in YYYY-MM-DD form.")
   .refine((value) => {

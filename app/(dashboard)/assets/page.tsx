@@ -1,9 +1,16 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 
-import { AssetsOverview } from "./_components/assets-overview";
+import { PageSkeleton } from "@/components/shared/loading-skeleton";
 
-export const metadata: Metadata = { title: "Assets" };
+import { AssetVault } from "./_components/asset-vault";
+
+export const metadata: Metadata = { title: "Asset Vault" };
 
 export default function AssetsPage() {
-  return <AssetsOverview />;
+  return (
+    <Suspense fallback={<PageSkeleton stats={4} />}>
+      <AssetVault />
+    </Suspense>
+  );
 }

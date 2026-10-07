@@ -10,6 +10,7 @@ existing hooks (profile, plan, beneficiaries, assets ×3, documents, switch, eme
   └─ hooks/use-legacy-snapshot.ts  — waits until ALL sources loaded (no false "you have none")
        └─ lib/client/legacy-snapshot.ts  buildLegacySnapshot()   pure, `now` passed in
             ├─ lib/client/action-centre.ts  deriveActions()        rules → actions
+            ├─ lib/client/intelligence.ts   analyzeLegacy()        findings → merged actions
             └─ lib/client/readiness.ts      readiness()            6 weighted categories
 ```
 
@@ -31,7 +32,8 @@ Priorities: **Critical** (time-bound, act now) · **Important** · **Upcoming**
 | Beneficiaries | none (Important); pending invitations (Important); nothing assigned or shared (Recommended) | ≥1 beneficiary; something assigned |
 | Security | 2FA off, email unverified (Important); no recovery email (Recommended) | the control is on |
 | Vault | no documents (Important); expired (Important); expiring ≤ 60 days or review date ≤ 14 days (Upcoming); uncategorized documents, no Will & estate document (Recommended) | — |
-| Assets | assets without a beneficiary; no online accounts recorded (Recommended, worded as "if you have…") | all assigned; ≥1 digital asset |
+| Assets | held assets without a beneficiary (Important — now raised by Legacy Intelligence rule ASSET-BEN-001, same id `assets-unassigned`); no online accounts recorded (Recommended, worded as "if you have…") | all held assets assigned; ≥1 digital asset |
+| Legacy Intelligence | every other open finding not already covered by an action above — see [LEGACY_INTELLIGENCE.md](LEGACY_INTELLIGENCE.md) | the records change so the rule no longer applies, or the owner dismisses a heuristic finding |
 | Life events | each step of a recorded event | proven by state, or marked done by the owner |
 
 ## Legacy Readiness (lib/client/readiness.ts)
@@ -47,6 +49,11 @@ shown in the UI. Wording is "preparation", never legal completeness.
 | Emergency access (15) | emergency contact (35) · switch monitoring (35) · trusted contacts + release scope (15 + 15) |
 | Digital assets (10) | ≥1 recorded (50) · all assigned share (50) |
 | Security (10) | 2FA (50) · email verified (25) · recovery email (25) |
+
+Three conditional criteria come from Legacy Intelligence (documents: assets
+with a supporting document (20); Will: no unresolved conflicts involving the Will (20);
+beneficiaries: every held asset has a beneficiary (30)). Each counts only where
+it applies; weights are unchanged. Details in [LEGACY_INTELLIGENCE.md](LEGACY_INTELLIGENCE.md).
 
 "Improve readiness" opens the highest-priority open action.
 

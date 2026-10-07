@@ -8,6 +8,7 @@ import {
   CalendarClock,
   CheckCircle2,
   Lightbulb,
+  ScanSearch,
   type LucideIcon,
 } from "lucide-react";
 
@@ -72,6 +73,24 @@ export function PriorityBadge({ tone, className }: { tone: Tone; className?: str
   );
 }
 
+/**
+ * "System detected": a deterministic rule found this in the owner's records.
+ * Blue, not violet — violet is reserved for AI, and this is not AI.
+ */
+export function SystemDetectedBadge({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex h-5 items-center gap-1 rounded-full border border-primary/25 bg-primary/10 px-2 text-[10.5px] font-semibold text-primary",
+        className,
+      )}
+    >
+      <ScanSearch className="size-3" aria-hidden />
+      System detected
+    </span>
+  );
+}
+
 /** One action: what, why, where it came from, by when, and the next step. */
 export function ActionItem({
   action,
@@ -113,6 +132,7 @@ export function ActionItem({
         <div className="flex flex-wrap items-center gap-2 pt-0.5 text-[11px] text-muted-foreground">
           <PriorityBadge tone={tone} />
           <span className="rounded-full border border-border px-2 py-0.5">{action.source}</span>
+          {action.ruleId && <SystemDetectedBadge />}
           {action.deadline && !action.completed && (
             <span
               className={cn(

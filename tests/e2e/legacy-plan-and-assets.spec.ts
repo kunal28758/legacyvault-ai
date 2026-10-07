@@ -166,8 +166,18 @@ test.describe("legacy plan and assets", () => {
     await gotoAndSettle(page, "/beneficiaries", "/api/v1/beneficiaries");
     await page.getByRole("button", { name: `Actions for ${beneficiaryName}` }).click();
     await page.getByRole("menuitem", { name: "Remove" }).click();
-    await page.getByRole("checkbox").first().check();
-    await page.getByRole("button", { name: "Remove beneficiary" }).click();
+    // The dialog hides the table from the accessibility tree until it closes, so
+    // success is the server's answer, not the row's absence alone.
+    const removeDialog = page.getByRole("dialog");
+    await removeDialog.getByRole("checkbox").check();
+    const removed = page.waitForResponse(
+      (response) =>
+        response.request().method() === "DELETE" &&
+        response.url().includes("/api/v1/beneficiaries/"),
+    );
+    await removeDialog.getByRole("button", { name: "Remove beneficiary" }).click();
+    expect((await removed).ok()).toBe(true);
+    await expect(removeDialog).toBeHidden({ timeout: 30_000 });
     await expect(page.getByRole("table").locator("tr", { hasText: beneficiaryName })).toHaveCount(
       0,
       { timeout: 30_000 },
@@ -254,8 +264,18 @@ test.describe("asset allocation limits", () => {
     for (const person of [heir, other]) {
       await page.getByRole("button", { name: `Actions for ${person}` }).click();
       await page.getByRole("menuitem", { name: "Remove" }).click();
-      await page.getByRole("checkbox").first().check();
-      await page.getByRole("button", { name: "Remove beneficiary" }).click();
+      // The dialog hides the table from the accessibility tree until it closes, so
+      // success is the server's answer, not the row's absence alone.
+      const removeDialog = page.getByRole("dialog");
+      await removeDialog.getByRole("checkbox").check();
+      const removed = page.waitForResponse(
+        (response) =>
+          response.request().method() === "DELETE" &&
+          response.url().includes("/api/v1/beneficiaries/"),
+      );
+      await removeDialog.getByRole("button", { name: "Remove beneficiary" }).click();
+      expect((await removed).ok()).toBe(true);
+      await expect(removeDialog).toBeHidden({ timeout: 30_000 });
       await expect(page.getByRole("table").locator("tr", { hasText: person })).toHaveCount(0, {
         timeout: 30_000,
       });

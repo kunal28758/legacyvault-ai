@@ -6,6 +6,8 @@ import * as activityService from "@/lib/services/activity.service";
 const querySchema = z.object({
   page: z.coerce.number().int().min(1).max(10_000).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(25),
+  /** One record's history (e.g. an asset's Activity section). Still the caller's rows only. */
+  resourceId: z.uuid().optional(),
 });
 
 type Query = z.infer<typeof querySchema>;
