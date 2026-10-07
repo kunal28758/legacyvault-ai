@@ -186,6 +186,7 @@ describe.skipIf(!available)("document share links", () => {
     // The beneficiary opens the emailed link: activated, one document.
     const plaintext = secretOf(outbox.links[0]);
     const exchanged = await portal.exchange(plaintext, "test");
+    if (!("grant" in exchanged)) throw new Error("a direct share must open without a code");
     expect(exchanged.grant.counts.documents).toBe(1);
     const tokenId = await tokenIdOf(plaintext);
     const { data: token } = await service

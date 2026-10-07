@@ -24,6 +24,8 @@ export interface AccessTokenSummary {
   usedAt: string | null;
   lastUsedAt: string | null;
   createdAt: string;
+  /** Release links: when the contact confirmed a code. */
+  verifiedAt: string | null;
 }
 
 /** Returned once, on issue or resend, and never stored anywhere afterwards. */

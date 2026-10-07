@@ -177,6 +177,22 @@ const INVARIANT_MESSAGES: Partial<Record<string, { code: ApiErrorCode; message: 
     code: "BENEFICIARY_INACTIVE",
     message: "Inactive beneficiaries cannot receive assignments or access.",
   },
+  WARNING_WINDOW_INVALID: {
+    code: "VALIDATION_ERROR",
+    message: "Your check-in interval must be shorter than the inactivity threshold.",
+  },
+  CONTACTS_REQUIRED: {
+    code: "VALIDATION_ERROR",
+    message: "Choose at least one trusted contact.",
+  },
+  CONTACT_NOT_ELIGIBLE: {
+    code: "VALIDATION_ERROR",
+    message: "Trusted contacts must be your own active or invited beneficiaries.",
+  },
+  SCOPE_EMPTY: {
+    code: "VALIDATION_ERROR",
+    message: "Choose at least one resource to include.",
+  },
   UNAUTHENTICATED: { code: "UNAUTHENTICATED", message: "You need to sign in to continue." },
   FORBIDDEN: { code: "FORBIDDEN", message: "You do not have access to this resource." },
 };

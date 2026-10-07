@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { TypedSupabaseClient } from "@/lib/db/server";
+import { enqueue } from "@/lib/repositories/job.repository";
 import type { NotificationItem } from "@/lib/types/notification";
 import type { Database } from "@/lib/types/database";
 
@@ -113,15 +114,84 @@ export async function insertSystem(
   return data.id;
 }
 
+/**
+ * A system notification plus its delivery job. The row is the record; email
+ * is a separate retried job, so a slow provider never holds up the caller.
+ */
+export async function notifyOwner(
+  serviceDb: TypedSupabaseClient,
+  input: Omit<Parameters<typeof insertSystem>[1], "channel">,
+): Promise<string> {
+  const notificationId = await insertSystem(serviceDb, { ...input, channel: "BOTH" });
+  await enqueue(
+    serviceDb,
+    "notification.deliver",
+    { notificationId },
+    `notification.deliver:${notificationId}`,
+  );
+  return notificationId;
+}
+
 export async function markDelivered(
   serviceDb: TypedSupabaseClient,
   id: string,
   providerMessageId: string | null,
   status: Database["public"]["Enums"]["notification_delivery_status"],
+  provider: "resend" | "brevo" | null = null,
 ): Promise<void> {
   const { error } = await serviceDb
     .from("notifications")
-    .update({ delivery_status: status, provider_message_id: providerMessageId })
+    .update({
+      delivery_status: status,
+      provider_message_id: providerMessageId,
+      delivery_provider: provider,
+    })
     .eq("id", id);
   if (error) throw error;
 }
+
+/**
+ * Records what the provider reported for a message it had accepted. Only a
+ * row still at SENT moves: a webhook that got there first is not overwritten.
+ */
+export async function recordOutcome(
+  serviceDb: TypedSupabaseClient,
+  id: string,
+  status: "DELIVERED" | "BOUNCED" | "FAILED",
+): Promise<boolean> {
+  const { data, error } = await serviceDb
+    .from("notifications")
+    .update({ delivery_status: status })
+    .eq("id", id)
+    .eq("delivery_status", "SENT")
+    .select("id");
+  if (error) throw error;
+  return (data ?? []).length > 0;
+}
+
+/** The release warnings of one switch since a moment (the current cycle), newest first. */
+export async function listReleaseWarnings(
+  db: TypedSupabaseClient,
+  userId: string,
+  switchId: string,
+  since: string,
+): Promise<NotificationRow[]> {
+  const { data, error } = await db
+    .from("notifications")
+    .select("*")
+    .eq("user_id", userId)
+    .in("type", [...RELEASE_WARNING_TYPES])
+    .eq("metadata->>switchId", switchId)
+    .gte("created_at", since)
+    .order("created_at", { ascending: false })
+    .limit(20);
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** The owner warnings that can satisfy the release gate in dms_transition() (0009). */
+export const RELEASE_WARNING_TYPES = [
+  "dms.grace_period",
+  "dms.escalating",
+  "dms.release_held",
+] as const;

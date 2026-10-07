@@ -43,9 +43,10 @@ import { useAIAvailability } from "@/hooks/use-ai";
 import { useCheckIn, useDeadManSwitch } from "@/hooks/use-dead-man-switch";
 import { useLegacyState, type LegacyState } from "@/hooks/use-legacy-snapshot";
 import { useNow } from "@/hooks/use-now";
+import { isReverificationCancelled, useReverifiedAction } from "@/hooks/use-reverified-action";
 import { useVideos } from "@/hooks/use-videos";
 import { ApiError } from "@/lib/client/api-client";
-import { dmsView } from "@/lib/client/dms-presentation";
+import { CHECK_IN_STATES, dmsView } from "@/lib/client/dms-presentation";
 import { securityChecks, securityScore, type SecurityCheck } from "@/lib/client/security-checks";
 import { formatDate, formatRelative, pluralize } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -108,9 +109,7 @@ function SectionSkeleton({ rows = 4 }: { rows?: number }) {
 }
 
 function canCheckIn(state: LegacyState | null): boolean {
-  return Boolean(
-    state && ["ACTIVE", "REMINDER_SENT", "GRACE_PERIOD"].includes(state.snapshot.dms.status),
-  );
+  return Boolean(state && CHECK_IN_STATES.includes(state.snapshot.dms.status));
 }
 
 /**
@@ -268,6 +267,7 @@ export function DashboardView({ firstName }: { firstName: string | null }) {
             <QuickActions willLabel={willLabel} checkInAvailable={canCheckIn(state)} />
           </section>
           <IntelligenceCard state={state} />
+          <ExecutionCard state={state} now={now} />
           {state && <CopilotCard state={state} />}
         </div>
       </div>
@@ -452,7 +452,6 @@ function VaultOverviewCard({ state }: { state: LegacyState | null }) {
 
 function DeadlinesCard({ state, now }: { state: LegacyState | null; now: number }) {
   const dated = state?.open.filter((action) => action.deadline) ?? [];
-  const dms = state ? dmsView(state.snapshot.dms.status) : null;
   return (
     <Card className="glass md:col-span-2 xl:col-span-1">
       <PanelHeader
@@ -494,20 +493,77 @@ function DeadlinesCard({ state, now }: { state: LegacyState | null; now: number 
                 })}
               </ul>
             )}
-            <Link
-              href="/dead-man-switch"
-              className="flex items-center gap-3 rounded-lg px-1 py-1 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-            >
-              <TimerReset className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-              <span className="min-w-0 flex-1 text-muted-foreground">
-                Dead Man’s Switch · <span className="text-foreground">{dms?.label}</span>
-                {state.snapshot.dms.nextCheckInAt && canCheckIn(state)
-                  ? ` · next check-in ${formatRelative(state.snapshot.dms.nextCheckInAt, now)}`
-                  : ""}
-              </span>
-            </Link>
           </>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * The emergency release workflow at a glance. Derived from the shared legacy
+ * state, so it adds no request and never holds up the rest of the page.
+ */
+function ExecutionCard({ state, now }: { state: LegacyState | null; now: number }) {
+  if (!state) {
+    return (
+      <Card className="glass">
+        <PanelHeader icon={TimerReset} title="Emergency plan" />
+        <CardContent>
+          <SectionSkeleton rows={2} />
+        </CardContent>
+      </Card>
+    );
+  }
+  const dms = state.snapshot.dms;
+  const view = dmsView(dms.status);
+  const armed = !["INACTIVE", "PAUSED"].includes(dms.status);
+  const facts = [
+    dms.status === "ACTIVE" && dms.nextCheckInAt
+      ? `Next check-in ${formatRelative(dms.nextCheckInAt, now)}`
+      : null,
+    armed ? `${pluralize(dms.releaseScopeSize, "resource")} configured for release` : null,
+    armed ? `${pluralize(dms.trustedContacts, "trusted contact")}` : null,
+    dms.unavailableScopeItems
+      ? `${pluralize(dms.unavailableScopeItems, "selected item")} no longer exist`
+      : null,
+    dms.liveReleaseLinks ? `${pluralize(dms.liveReleaseLinks, "release link")} open` : null,
+  ].filter((fact): fact is string => fact !== null);
+  return (
+    <Card className="glass">
+      <PanelHeader
+        icon={TimerReset}
+        tone={view.tone}
+        title="Emergency plan"
+        description={<>Dead Man’s Switch · {view.label}</>}
+        action={<StatusBadge tone={view.tone}>{view.label}</StatusBadge>}
+      />
+      <CardContent className="space-y-3">
+        {armed ? (
+          <ul className="space-y-1.5 text-sm">
+            {facts.map((fact) => (
+              <li key={fact} className="flex items-center gap-2">
+                <CheckCircle2 className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                {fact}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            {dms.status === "PAUSED"
+              ? "Paused — no deadline runs and nothing can be released."
+              : "Not set up — nothing can be released. Optional: choose what reaches your trusted contacts if your check-ins stop."}
+          </p>
+        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          nativeButton={false}
+          render={<Link href="/dead-man-switch" />}
+        >
+          {armed ? "Open emergency plan" : "Set up"}
+          <ArrowRight data-icon="inline-end" />
+        </Button>
       </CardContent>
     </Card>
   );
@@ -626,11 +682,14 @@ function QuickActions({
   checkInAvailable: boolean;
 }) {
   const checkInMutation = useCheckIn();
+  const reverified = useReverifiedAction();
   const checkIn = async () => {
     try {
-      await checkInMutation.mutateAsync();
+      // Check-in is step-up verified; this opens the prompt instead of failing.
+      await reverified(() => checkInMutation.mutateAsync());
       toast.success("Check-in recorded — thank you");
     } catch (error) {
+      if (isReverificationCancelled(error)) return;
       toast.error(error instanceof ApiError ? error.message : "Could not record the check-in.");
     }
   };

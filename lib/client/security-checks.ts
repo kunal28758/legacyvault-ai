@@ -32,6 +32,7 @@ export interface SecurityInputs {
 export function securityChecks(input: SecurityInputs): SecurityCheck[] {
   const dmsStatus = input.deadManSwitch?.status ?? "INACTIVE";
   const dmsArmed = dmsStatus !== "INACTIVE" && dmsStatus !== "PAUSED";
+  const dmsPending = ["ESCALATING", "RELEASING", "RELEASED"].includes(dmsStatus);
 
   return [
     {
@@ -87,16 +88,36 @@ export function securityChecks(input: SecurityInputs): SecurityCheck[] {
     {
       id: "dms",
       title: "Dead Man’s Switch",
-      status: dmsArmed ? "good" : dmsStatus === "PAUSED" ? "attention" : "risk",
-      detail: dmsArmed
-        ? `Monitoring with ${input.deadManSwitch?.contacts.length ?? 0} trusted contact${
-            (input.deadManSwitch?.contacts.length ?? 0) === 1 ? "" : "s"
-          }.`
-        : dmsStatus === "PAUSED"
-          ? "Paused — no deadline is running while it stays paused."
-          : "Nothing will be released if you become unreachable.",
+      status: dmsPending
+        ? "attention"
+        : dmsArmed
+          ? "good"
+          : dmsStatus === "PAUSED"
+            ? "attention"
+            : "risk",
+      detail:
+        dmsStatus === "RELEASED"
+          ? "Release completed — review who has access, or recover to revoke every link."
+          : input.deadManSwitch?.releaseHold
+            ? "Release on hold: no warning email to you has been confirmed delivered, so nothing is released. Checking in stops it."
+            : dmsPending
+              ? "A release is pending because no check-in was recorded. Checking in stops it."
+              : dmsArmed
+                ? `Monitoring with ${input.deadManSwitch?.contacts.length ?? 0} trusted contact${
+                    (input.deadManSwitch?.contacts.length ?? 0) === 1 ? "" : "s"
+                  }.`
+                : dmsStatus === "PAUSED"
+                  ? "Paused — no deadline is running while it stays paused."
+                  : "Nothing will be released if your check-ins stop.",
       href: "/dead-man-switch",
-      action: dmsArmed ? undefined : "Configure the switch",
+      action:
+        dmsStatus === "RELEASED"
+          ? "Review release"
+          : dmsPending
+            ? "Check in"
+            : dmsArmed
+              ? undefined
+              : "Configure the switch",
     },
     {
       id: "emergency",

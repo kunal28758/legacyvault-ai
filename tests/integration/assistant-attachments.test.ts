@@ -242,7 +242,7 @@ describe.skipIf(!available)("assistant attachments", () => {
       .limit(1)
       .single();
     expect(usage).toMatchObject({
-      prompt_version: "assistant.attachments.v1",
+      prompt_version: "assistant.attachments.v2",
       input_summary: expect.stringContaining("1 attachments (plain-text)"),
     });
     expect(JSON.stringify(usage)).not.toMatch(/will\.txt|Priya|Arjun|12,50,000/);

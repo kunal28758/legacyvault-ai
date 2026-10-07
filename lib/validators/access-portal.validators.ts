@@ -10,6 +10,11 @@ import { PLAN_SECTION_KEYS } from "@/lib/types/legacy-plan";
  */
 export const exchangeBodySchema = z.object({
   token: z.string().min(20).max(512),
+  /** Release links: the one-time code emailed to the contact. */
+  code: z
+    .string()
+    .regex(/^\d{6}$/, "Enter the 6-digit code from the email.")
+    .optional(),
 });
 
 export const accessIdParamSchema = z.object({ id: z.uuid("Unknown resource.") });

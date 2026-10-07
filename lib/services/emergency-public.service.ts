@@ -1,13 +1,12 @@
 import "server-only";
 
-import { randomInt } from "node:crypto";
-
 import { ApiError } from "@/lib/api/errors";
 import { audit } from "@/lib/audit/audit.service";
 import { createServiceClient } from "@/lib/db/server";
 import { sendEmergencyCodeEmail, sendEmergencyDesignationEmail } from "@/lib/email/send";
 import { logger } from "@/lib/observability/logger";
-import { hashAccessToken } from "@/lib/security/access-token";
+import * as notificationRepository from "@/lib/repositories/notification.repository";
+import { hashAccessToken, oneTimeCode } from "@/lib/security/access-token";
 
 /**
  * The emergency contact's side of the flow (FR-J002–J004).
@@ -27,10 +26,6 @@ export interface EmergencySubmission {
   submitted: true;
 }
 
-function sixDigitCode(): string {
-  return String(randomInt(0, 1_000_000)).padStart(6, "0");
-}
-
 /**
  * Creates a request and emails the code.
  *
@@ -44,7 +39,7 @@ export async function requestAccess(
   correlationId: string,
 ): Promise<EmergencySubmission> {
   const db = createServiceClient();
-  const code = sixDigitCode();
+  const code = oneTimeCode();
 
   const { data: requestId, error } = await db.rpc("ea_request_access", {
     p_config_id: configId,
@@ -130,7 +125,48 @@ export async function verify(
     outcome: status === "VERIFIED" ? "SUCCESS" : "DENIED",
     correlationId,
   });
+  if (status === "VERIFIED") await notifyOwnerOfRequest(db, requestId);
   return { status };
+}
+
+/**
+ * The owner must hear about a verified request — it waits for their decision,
+ * and a timeout rule may decide for them. Always emailed (preferences.ts).
+ * The contact's answer does not depend on this: a failure is logged only.
+ */
+async function notifyOwnerOfRequest(
+  db: ReturnType<typeof createServiceClient>,
+  requestId: string,
+): Promise<void> {
+  try {
+    const { data, error } = await db
+      .from("emergency_access_requests")
+      .select("config_id, emergency_access_configs!inner(user_id, on_timeout, timeout_hours)")
+      .eq("id", requestId)
+      .maybeSingle();
+    if (error) throw error;
+    const config = data?.emergency_access_configs as unknown as {
+      user_id: string;
+      on_timeout: "WAIT" | "AUTO_GRANT" | "DENY";
+      timeout_hours: number | null;
+    } | null;
+    if (!config) return;
+    const timeout =
+      config.on_timeout === "AUTO_GRANT"
+        ? `If you do not answer within ${config.timeout_hours} hours, access is granted automatically under the rule you set.`
+        : config.on_timeout === "DENY"
+          ? `If you do not answer within ${config.timeout_hours} hours, it is denied automatically.`
+          : "It waits for your decision until the request expires.";
+    await notificationRepository.notifyOwner(db, {
+      userId: config.user_id,
+      type: "ea.request_pending",
+      title: "An emergency access request needs your decision",
+      content: `A designated emergency contact confirmed their identity and asked for access. Approve or deny it on the Emergency Access page. ${timeout}`,
+      metadata: { requestId, configId: data!.config_id },
+    });
+  } catch (cause) {
+    logger.error({ err: cause, requestId }, "emergency request notification failed");
+  }
 }
 
 export interface RequestStatus {

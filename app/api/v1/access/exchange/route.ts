@@ -10,7 +10,8 @@ import { exchangeBodySchema, type ExchangeBody } from "@/lib/validators/access-p
  *
  * Public by necessity and therefore rate-limited by IP. The plaintext arrives
  * in the body, is compared as a hash, and never appears in the response, the
- * path or a log line.
+ * path or a log line. A release link answers `verificationRequired` (a code
+ * was emailed) and sets no cookie until the same call carries that code.
  */
 export const POST = withApi<ExchangeBody>(
   {
@@ -21,9 +22,14 @@ export const POST = withApi<ExchangeBody>(
     auditResourceType: "access_token",
   },
   async ({ body, correlationId }) => {
-    const { cookie, grant } = await portal.exchange(body.token, correlationId);
-    const response = jsonSuccess(grant, { correlationId });
-    response.cookies.set(ACCESS_COOKIE_NAME, cookie.value, accessCookieOptions(cookie.maxAge));
+    const result = await portal.exchange(body.token, correlationId, body.code);
+    if ("verificationRequired" in result) return result;
+    const response = jsonSuccess(result.grant, { correlationId });
+    response.cookies.set(
+      ACCESS_COOKIE_NAME,
+      result.cookie.value,
+      accessCookieOptions(result.cookie.maxAge),
+    );
     return response as NextResponse;
   },
 );

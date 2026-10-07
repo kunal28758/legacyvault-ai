@@ -2,10 +2,21 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Download, FileText, Gem, Play, ScrollText, ShieldCheck, Video } from "lucide-react";
+import {
+  Download,
+  FileText,
+  Gem,
+  MailCheck,
+  Play,
+  ScrollText,
+  ShieldCheck,
+  Video,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError, apiClient } from "@/lib/client/api-client";
 import { formatBytes, formatDateTime } from "@/lib/format";
@@ -19,13 +30,24 @@ import type { PlanSectionKey } from "@/lib/types/legacy-plan";
  * Everything after that runs on the access cookie, which the browser sends only
  * to `/api/v1/access`. Nothing here can change anything: there is no write on
  * this surface at all.
+ *
+ * A release link first asks for a one-time code emailed to the contact. The
+ * token is kept in memory only (never in the URL or storage) until then.
  */
 interface Summary {
   ownerName: string;
   beneficiaryName: string;
   grantType: "DIRECT_SHARE" | "DMS_RELEASE" | "EMERGENCY_ACCESS";
   expiresAt: string;
+  issuedAt: string;
+  verifiedAt: string | null;
   counts: { documents: number; assets: number; videos: number; planSections: number };
+}
+
+interface Challenge {
+  verificationRequired: true;
+  sentTo: string;
+  codeExpiresAt: string;
 }
 
 interface Resources {
@@ -51,8 +73,12 @@ const GRANT_LABEL: Record<Summary["grantType"], string> = {
 
 export function AccessPortal() {
   const searchParams = useSearchParams();
-  const [state, setState] = useState<"opening" | "ready" | "refused">("opening");
+  const [state, setState] = useState<"opening" | "verify" | "ready" | "refused">("opening");
   const [message, setMessage] = useState<string | null>(null);
+  const [challenge, setChallenge] = useState<Challenge | null>(null);
+  const [code, setCode] = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const token = useRef<string | null>(null);
   const [resources, setResources] = useState<Resources | null>(null);
   const [section, setSection] = useState<{ key: string; data: Record<string, unknown> } | null>(
     null,
@@ -71,12 +97,20 @@ export function AccessPortal() {
     exchanged.current = true;
 
     void (async () => {
-      const token = searchParams.get("t");
+      token.current = searchParams.get("t");
       try {
-        if (token) {
-          await apiClient.post<Summary>("/access/exchange", { token });
+        if (token.current) {
           // The secret must not stay in the address bar or the history entry.
           window.history.replaceState(null, "", window.location.pathname);
+          const { data } = await apiClient.post<Summary | Challenge>("/access/exchange", {
+            token: token.current,
+          });
+          if ("verificationRequired" in data) {
+            setChallenge(data);
+            setState("verify");
+            return;
+          }
+          token.current = null;
         }
         await load();
       } catch (error) {
@@ -89,6 +123,40 @@ export function AccessPortal() {
       }
     })();
   }, [searchParams, load]);
+
+  const submitCode = async () => {
+    if (!token.current) return;
+    setVerifying(true);
+    setMessage(null);
+    try {
+      await apiClient.post<Summary>("/access/exchange", { token: token.current, code });
+      token.current = null;
+      setCode("");
+      await load();
+    } catch (error) {
+      setMessage(error instanceof ApiError ? error.message : "That code could not be checked.");
+      if (error instanceof ApiError && error.status === 401) setState("refused");
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const sendNewCode = async () => {
+    if (!token.current) return;
+    setVerifying(true);
+    setMessage(null);
+    try {
+      const { data } = await apiClient.post<Summary | Challenge>("/access/exchange", {
+        token: token.current,
+      });
+      if ("verificationRequired" in data) setChallenge(data);
+      setCode("");
+    } catch (error) {
+      setMessage(error instanceof ApiError ? error.message : "A new code could not be sent.");
+    } finally {
+      setVerifying(false);
+    }
+  };
 
   const openDocument = async (id: string) => {
     try {
@@ -136,6 +204,71 @@ export function AccessPortal() {
     );
   }
 
+  if (state === "verify" && challenge) {
+    return (
+      <Card className="glass">
+        <CardHeader>
+          <h1 className="flex items-center gap-2 font-heading text-xl font-semibold">
+            <MailCheck className="size-5 text-primary" aria-hidden />
+            Confirm it is you
+          </h1>
+        </CardHeader>
+        <CardContent className="space-y-4 text-sm">
+          <p className="text-muted-foreground">
+            This link was shared under an emergency release. Before anything opens, enter the
+            6-digit code we just sent to <span className="text-foreground">{challenge.sentTo}</span>
+            . It expires at {formatDateTime(challenge.codeExpiresAt)}.
+          </p>
+          <form
+            className="space-y-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitCode();
+            }}
+          >
+            <div className="space-y-1.5">
+              <Label htmlFor="release-code">Verification code</Label>
+              <Input
+                id="release-code"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9]{6}"
+                maxLength={6}
+                value={code}
+                onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))}
+                aria-describedby={message ? "release-code-error" : undefined}
+                aria-invalid={message ? true : undefined}
+                className="max-w-40 text-lg tracking-[0.3em]"
+              />
+              {message && (
+                <p id="release-code-error" role="alert" className="text-xs text-destructive">
+                  {message}
+                </p>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" disabled={verifying || code.length !== 6}>
+                Confirm and open
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={verifying}
+                onClick={() => void sendNewCode()}
+              >
+                Send a new code
+              </Button>
+            </div>
+          </form>
+          <p className="text-xs text-muted-foreground">
+            Three wrong attempts end a code. If you did not expect this, close the page — nothing
+            opens without the code.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
   if (state === "refused" || !resources) {
     return (
       <Card className="glass">
@@ -153,7 +286,8 @@ export function AccessPortal() {
   const { grant } = resources;
 
   return (
-    <div className="space-y-6">
+    // Names can be one long word (an address, a long surname): wrap rather than overflow.
+    <div className="space-y-6 break-words">
       <header className="space-y-2">
         <p className="text-sm text-muted-foreground">Hello {grant.beneficiaryName},</p>
         <h1 className="text-2xl font-semibold sm:text-3xl">
@@ -164,6 +298,43 @@ export function AccessPortal() {
           Read-only access, open until {formatDateTime(grant.expiresAt)}.
         </p>
       </header>
+
+      {grant.grantType === "DMS_RELEASE" && (
+        <Card className="glass" aria-labelledby="release-context">
+          <CardHeader>
+            <CardTitle id="release-context" className="text-base">
+              Why you can see this
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <p className="text-muted-foreground">
+              {grant.ownerName} chose, in advance, to share these items with you if their check-ins
+              stopped. Their emergency release workflow completed after a period with no recent
+              activity on their account. That is all LegacyVault knows — it is not a statement about{" "}
+              {grant.ownerName}.
+            </p>
+            <dl className="grid gap-3 sm:grid-cols-3">
+              <div>
+                <dt className="text-xs text-muted-foreground">Authorized by</dt>
+                <dd className="font-medium">{grant.ownerName}, in advance</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">Released</dt>
+                <dd className="font-medium">{formatDateTime(grant.issuedAt)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">Access until</dt>
+                <dd className="font-medium">{formatDateTime(grant.expiresAt)}</dd>
+              </div>
+            </dl>
+            <p className="text-xs text-muted-foreground">
+              Status: released{grant.verifiedAt ? ", identity confirmed by code" : ""}. Only the
+              items below were included; nothing else in {grant.ownerName}&apos;s vault is visible
+              to you.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {message && (
         <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">

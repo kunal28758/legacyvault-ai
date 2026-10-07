@@ -52,6 +52,9 @@ const REDACTED_KEYS = new Set([
   "otp",
   "otpHash",
   "otp_hash",
+  "verificationCode",
+  "verificationCodeHash",
+  "verification_code_hash",
   "password",
   "secret",
 ]);

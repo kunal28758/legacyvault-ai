@@ -2,9 +2,11 @@ import "server-only";
 
 import { sendNotificationEmail } from "@/lib/email/send";
 import {
+  ALWAYS_SENT,
   asNotificationPreferences,
   shouldEmailNotification,
 } from "@/lib/notifications/preferences";
+import * as jobRepository from "@/lib/repositories/job.repository";
 import { logger } from "@/lib/observability/logger";
 import * as notificationRepository from "@/lib/repositories/notification.repository";
 import { payloadOf, requireString, type JobHandler } from "@/lib/jobs/types";
@@ -54,16 +56,38 @@ export const notificationDeliverHandler: JobHandler = async (job, db) => {
     return;
   }
 
+  let sent: Awaited<ReturnType<typeof sendNotificationEmail>>;
   try {
-    const sent = await sendNotificationEmail({
+    sent = await sendNotificationEmail({
       to: user.email,
       title: notification.title,
       content: notification.content,
       idempotencyKey: `notification:${notificationId}`,
     });
-    await notificationRepository.markDelivered(db, notificationId, sent.providerMessageId, "SENT");
   } catch (cause) {
     await notificationRepository.markDelivered(db, notificationId, null, "FAILED");
     throw cause;
   }
+  await notificationRepository.markDelivered(
+    db,
+    notificationId,
+    sent.providerMessageId,
+    "SENT",
+    sent.provider,
+  );
+
+  // SENT only means the provider took it. For the messages a release or an
+  // emergency grant depends on, ask the provider shortly for the outcome.
+  if (ALWAYS_SENT.has(notification.type)) {
+    await jobRepository.enqueue(
+      db,
+      "notification.confirm",
+      { notificationId },
+      `notification.confirm:${notificationId}`,
+      new Date(Date.now() + CONFIRM_AFTER_MS).toISOString(),
+    );
+  }
 };
+
+/** Providers usually report delivery within seconds; give them a little longer. */
+const CONFIRM_AFTER_MS = 2 * 60_000;

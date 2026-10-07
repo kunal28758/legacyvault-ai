@@ -25,6 +25,11 @@ export const E2E_USERS = {
   assetVault: "e2e-vault+clerk_test@example.com",
   assetGuard: "e2e-vault-guard+clerk_test@example.com",
   intelligence: "e2e-intel+clerk_test@example.com",
+  execution: "e2e-execution+clerk_test@example.com",
+  // A second owner, only to prove the first one's release stays theirs.
+  executionOther: "e2e-execution-other+clerk_test@example.com",
+  // Emergency access spends step-up ("sensitive") budget of its own.
+  executionEmergency: "e2e-execution-ea+clerk_test@example.com",
 } as const;
 
 export const E2E_USER_EMAILS = Object.values(E2E_USERS);

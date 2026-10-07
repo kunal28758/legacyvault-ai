@@ -83,11 +83,21 @@ export function AccessOverview({ snapshot }: { snapshot: LegacySnapshot | null }
     {
       icon: TimerReset,
       label: "Dead Man’s Switch release",
-      detail: armed
-        ? `${pluralize(s.dms.trustedContacts, "trusted contact")} · ${pluralize(s.dms.releaseScopeSize, "item")} in the release scope`
-        : "Not monitoring — nothing will be released",
+      detail:
+        s.dms.status === "RELEASED"
+          ? `Released · ${pluralize(s.dms.liveReleaseLinks, "release link")} open`
+          : ["ESCALATING", "RELEASING"].includes(s.dms.status)
+            ? "Release pending — a check-in stops it"
+            : armed
+              ? `${pluralize(s.dms.trustedContacts, "trusted contact")} · ${pluralize(s.dms.releaseScopeSize, "item")} in the release scope`
+              : "Not monitoring — nothing will be released",
       href: "/dead-man-switch",
-      tone: armed ? "text-success" : "text-muted-foreground",
+      tone:
+        s.dms.status === "RELEASED" || ["ESCALATING", "RELEASING"].includes(s.dms.status)
+          ? "text-warning"
+          : armed
+            ? "text-success"
+            : "text-muted-foreground",
     },
   ];
   return (

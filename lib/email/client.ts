@@ -37,6 +37,8 @@ export interface SendEmailInput {
 
 export interface SendEmailResult {
   providerMessageId: string;
+  /** Who actually carried it (a Brevo request falls back to Resend when Brevo is not set up). */
+  provider: EmailProvider;
 }
 
 let client: Resend | null = null;
@@ -97,10 +99,11 @@ async function sendWithResend(input: SendEmailInput): Promise<SendEmailResult> {
   );
 
   if (error || !data) failed("resend", error?.name ?? "no_response", error?.statusCode ?? null);
-  return { providerMessageId: data.id };
+  return { providerMessageId: data.id, provider: "resend" };
 }
 
 const BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email";
+const BREVO_EVENTS_ENDPOINT = "https://api.brevo.com/v3/smtp/statistics/events";
 const BREVO_TIMEOUT_MS = 15_000;
 
 async function sendWithBrevo(
@@ -156,7 +159,97 @@ async function sendWithBrevo(
           : "unknown_error";
     failed("brevo", code, response.status);
   }
-  return { providerMessageId: messageId };
+  return { providerMessageId: messageId, provider: "brevo" };
+}
+
+/**
+ * What the provider knows about a message it accepted.
+ *
+ * `delivered` means the recipient's mail server accepted it — the strongest
+ * delivery evidence either provider offers (opens are not required: images
+ * are blocked and proxies preload them). `bounced` and `failed` mean it did
+ * not arrive; `pending` means no outcome yet. Anything unrecognised is
+ * `pending`, never `delivered`, and an unreachable provider throws, so a
+ * caller can only ever under-claim a delivery.
+ */
+export type DeliveryOutcome = "delivered" | "bounced" | "failed" | "pending";
+
+const RESEND_OUTCOME: Partial<Record<string, DeliveryOutcome>> = {
+  delivered: "delivered",
+  opened: "delivered",
+  clicked: "delivered",
+  bounced: "bounced",
+  complained: "failed",
+  failed: "failed",
+  canceled: "failed",
+  suppressed: "failed",
+};
+
+/** Brevo's transactional event names, lower-cased, singular or plural. */
+const BREVO_DELIVERED = new Set([
+  "delivered",
+  "opened",
+  "uniqueopened",
+  "click",
+  "clicks",
+  "loadedbyproxy",
+]);
+const BREVO_BOUNCED = new Set([
+  "hardbounce",
+  "hardbounces",
+  "softbounce",
+  "softbounces",
+  "bounce",
+  "bounces",
+]);
+const BREVO_FAILED = new Set(["blocked", "invalid", "invalid_email", "spam", "complaint", "error"]);
+
+/** Reduces Brevo's event log for one message to an outcome (exported for tests). */
+export function brevoOutcome(
+  events: { event?: unknown; messageId?: unknown }[],
+  messageId: string,
+): DeliveryOutcome {
+  // Only events for this message: a mis-scoped answer must never confirm it.
+  const names = events
+    .filter((item) => item.messageId === messageId && typeof item.event === "string")
+    .map((item) => (item.event as string).toLowerCase());
+  if (names.some((name) => BREVO_FAILED.has(name))) return "failed";
+  if (names.some((name) => BREVO_DELIVERED.has(name))) return "delivered";
+  // A soft bounce is often retried by Brevo; only a hard one is final.
+  if (names.some((name) => name === "hardbounce" || name === "hardbounces")) return "bounced";
+  if (names.some((name) => BREVO_BOUNCED.has(name))) return "pending";
+  return "pending";
+}
+
+export async function lookupDelivery(
+  provider: EmailProvider,
+  messageId: string,
+): Promise<DeliveryOutcome> {
+  if (provider === "resend") {
+    const { data, error } = await resend().emails.get(messageId);
+    if (error || !data) failed("resend", error?.name ?? "no_response", error?.statusCode ?? null);
+    return RESEND_OUTCOME[data.last_event] ?? "pending";
+  }
+
+  const brevo = brevoSettings();
+  if (!brevo) failed("brevo", "not_configured", null);
+  const query = new URLSearchParams({ messageId, days: "30", limit: "100", sort: "desc" });
+  let response: Response;
+  try {
+    response = await fetch(`${BREVO_EVENTS_ENDPOINT}?${query.toString()}`, {
+      headers: { "api-key": brevo.apiKey, accept: "application/json" },
+      signal: AbortSignal.timeout(BREVO_TIMEOUT_MS),
+    });
+  } catch (cause) {
+    const timedOut = cause instanceof Error && cause.name === "TimeoutError";
+    failed("brevo", timedOut ? "timeout" : "network_error", null);
+  }
+  if (!response.ok) failed("brevo", "events_lookup_failed", response.status);
+  const body = (await response.json().catch(() => null)) as { events?: unknown } | null;
+  const events = Array.isArray(body?.events)
+    ? (body.events as { event?: unknown; messageId?: unknown }[])
+    : [];
+  return brevoOutcome(events, messageId);
 }
 
 /** `Name <address>` or a bare address — the form the sender variables are written in. */

@@ -22,6 +22,7 @@ import { PageHeader, SectionHeading } from "@/components/shared/page-header";
 import { PageSkeleton } from "@/components/shared/loading-skeleton";
 import { ProgressRing } from "@/components/shared/progress-card";
 import { AccessOverview, AuthenticationCard } from "@/components/security/access-overview";
+import { LiveAccessLinks } from "@/components/security/live-access-links";
 import { SecurityCard } from "@/components/security/security-card";
 import { StaggerGrid, StaggerItem } from "@/components/shared/page-transition";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -209,6 +210,8 @@ export function SecurityCenterView() {
           events={activity.data?.items ?? []}
         />
       </div>
+
+      <LiveAccessLinks />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="glass">

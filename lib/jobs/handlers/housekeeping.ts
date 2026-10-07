@@ -3,6 +3,7 @@ import "server-only";
 import type { TypedSupabaseClient } from "@/lib/db/server";
 import type { JobHandler } from "@/lib/jobs/types";
 import { logger } from "@/lib/observability/logger";
+import * as notificationRepository from "@/lib/repositories/notification.repository";
 import type { UploadStatus } from "@/lib/repositories/upload.repository";
 import {
   BUCKETS,
@@ -53,7 +54,9 @@ export async function runHousekeeping(
 async function applyEmergencyTimeoutRules(db: TypedSupabaseClient, now: Date): Promise<number> {
   const { data, error } = await db
     .from("emergency_access_requests")
-    .select("id, updated_at, config_id, emergency_access_configs!inner(on_timeout, timeout_hours)")
+    .select(
+      "id, updated_at, config_id, emergency_access_configs!inner(user_id, on_timeout, timeout_hours)",
+    )
     .eq("status", "VERIFIED")
     .is("decided_at", null)
     .limit(200);
@@ -62,6 +65,7 @@ async function applyEmergencyTimeoutRules(db: TypedSupabaseClient, now: Date): P
   let applied = 0;
   for (const row of data ?? []) {
     const config = row.emergency_access_configs as unknown as {
+      user_id: string;
       on_timeout: "WAIT" | "AUTO_GRANT" | "DENY";
       timeout_hours: number | null;
     };
@@ -81,6 +85,16 @@ async function applyEmergencyTimeoutRules(db: TypedSupabaseClient, now: Date): P
       continue;
     }
     applied += 1;
+    if (config.on_timeout === "AUTO_GRANT") {
+      // Access was granted without the owner's answer: they must be told.
+      await notificationRepository.notifyOwner(db, {
+        userId: config.user_id,
+        type: "ea.access_granted",
+        title: "Emergency access was granted automatically",
+        content: `A verified emergency request was not answered within ${config.timeout_hours} hours, so your timeout rule granted time-limited access. You can revoke it on the Emergency Access page.`,
+        metadata: { requestId: row.id },
+      });
+    }
   }
   return applied;
 }

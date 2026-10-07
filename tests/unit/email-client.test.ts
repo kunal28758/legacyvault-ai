@@ -2,6 +2,7 @@ import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const send = vi.fn();
+const get = vi.fn();
 const env = vi.hoisted(() => ({
   from: "LegacyVault AI <no-reply@example.com>",
   brevoFrom: "LegacyVault AI <brevo-sender@example.com>" as string | undefined,
@@ -11,7 +12,7 @@ const env = vi.hoisted(() => ({
 
 vi.mock("resend", () => ({
   Resend: class {
-    emails = { send };
+    emails = { send, get };
   },
 }));
 vi.mock("@/lib/config/env", () => ({
@@ -28,7 +29,7 @@ vi.mock("@/lib/observability/logger", () => ({
   logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
 }));
 
-import { emailConfigured, sendEmail } from "@/lib/email/client";
+import { brevoOutcome, emailConfigured, lookupDelivery, sendEmail } from "@/lib/email/client";
 import { logger } from "@/lib/observability/logger";
 
 /**
@@ -65,6 +66,7 @@ async function failureOf(promise: Promise<unknown>): Promise<Error> {
 
 beforeEach(() => {
   send.mockReset();
+  get.mockReset();
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
   env.resend = true;
@@ -80,7 +82,10 @@ describe("sendEmail — Resend", () => {
   it("passes the idempotency key to the provider and returns its message id", async () => {
     send.mockResolvedValue({ data: { id: "msg_1" }, error: null });
 
-    await expect(sendEmail(input)).resolves.toEqual({ providerMessageId: "msg_1" });
+    await expect(sendEmail(input)).resolves.toEqual({
+      providerMessageId: "msg_1",
+      provider: "resend",
+    });
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ to: input.to, from: env.from }), {
       idempotencyKey: input.idempotencyKey,
     });
@@ -124,6 +129,7 @@ describe("sendEmail — Brevo", () => {
 
     await expect(sendEmail({ ...input, provider: "brevo" })).resolves.toEqual({
       providerMessageId: BREVO_ID,
+      provider: "brevo",
     });
 
     expect(send).not.toHaveBeenCalled();
@@ -192,8 +198,10 @@ describe("sendEmail — Brevo", () => {
     unset();
     send.mockResolvedValue({ data: { id: "msg_1" }, error: null });
 
+    // The result names the carrier that actually sent it, so its outcome is asked of Resend.
     await expect(sendEmail({ ...input, provider: "brevo" })).resolves.toEqual({
       providerMessageId: "msg_1",
+      provider: "resend",
     });
     expect(fetchMock).not.toHaveBeenCalled();
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ from: env.from }), {
@@ -212,5 +220,80 @@ describe("emailConfigured", () => {
     // A Brevo key without Brevo's own sender cannot send.
     env.brevoFrom = undefined;
     expect(emailConfigured()).toBe(false);
+  });
+});
+
+/**
+ * What became of an accepted message (release gate, migration 0009). Only an
+ * explicit delivery event can confirm a delivery; anything else — no event
+ * yet, an unknown event, another message's event — stays unconfirmed, and an
+ * unreachable provider throws rather than answering.
+ */
+describe("lookupDelivery", () => {
+  it.each([
+    ["delivered", "delivered"],
+    ["opened", "delivered"],
+    ["clicked", "delivered"],
+    ["bounced", "bounced"],
+    ["complained", "failed"],
+    ["failed", "failed"],
+    ["suppressed", "failed"],
+    ["sent", "pending"],
+    ["queued", "pending"],
+    ["delivery_delayed", "pending"],
+    ["something_new", "pending"],
+  ])("reads Resend's last event %s as %s", async (lastEvent, outcome) => {
+    get.mockResolvedValue({ data: { id: "msg_1", last_event: lastEvent }, error: null });
+    await expect(lookupDelivery("resend", "msg_1")).resolves.toBe(outcome);
+    expect(get).toHaveBeenCalledWith("msg_1");
+  });
+
+  it("throws when Resend cannot answer", async () => {
+    get.mockResolvedValue({ data: null, error: { name: "not_found", statusCode: 404 } });
+    await expect(lookupDelivery("resend", "msg_1")).rejects.toThrow("email send failed: not_found");
+  });
+
+  it("asks Brevo's event log for exactly this message", async () => {
+    fetchMock.mockResolvedValue(
+      brevoReply(200, { events: [{ event: "delivered", messageId: BREVO_ID }] }),
+    );
+    await expect(lookupDelivery("brevo", BREVO_ID)).resolves.toBe("delivered");
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(new URL(url).pathname).toBe("/v3/smtp/statistics/events");
+    expect(new URL(url).searchParams.get("messageId")).toBe(BREVO_ID);
+    expect(init.headers).toMatchObject({ "api-key": "xkeysib-test-placeholder" });
+  });
+
+  it.each([
+    [[{ event: "requests" }], "pending"],
+    [[{ event: "requests" }, { event: "delivered" }], "delivered"],
+    [[{ event: "deferred" }, { event: "softBounces" }], "pending"],
+    [[{ event: "hardBounces" }], "bounced"],
+    [[{ event: "blocked" }], "failed"],
+    [[{ event: "invalid" }], "failed"],
+    [[{ event: "spam" }, { event: "delivered" }], "failed"],
+    [[{ event: "error" }], "failed"],
+    [[], "pending"],
+  ])("reduces Brevo events %j to %s", (events, outcome) => {
+    const own = (events as { event: string }[]).map((item) => ({ ...item, messageId: BREVO_ID }));
+    expect(brevoOutcome(own, BREVO_ID)).toBe(outcome);
+  });
+
+  it("never confirms a message from another message's events", () => {
+    expect(brevoOutcome([{ event: "delivered", messageId: "<other@smtp-relay>" }], BREVO_ID)).toBe(
+      "pending",
+    );
+    expect(brevoOutcome([{ event: "delivered" }], BREVO_ID)).toBe("pending");
+  });
+
+  it("throws when Brevo refuses the lookup or is not configured", async () => {
+    fetchMock.mockResolvedValue(brevoReply(401, { code: "unauthorized" }));
+    await expect(lookupDelivery("brevo", BREVO_ID)).rejects.toThrow(
+      "email send failed: events_lookup_failed",
+    );
+    env.brevoKey = undefined;
+    await expect(lookupDelivery("brevo", BREVO_ID)).rejects.toThrow(
+      "email send failed: not_configured",
+    );
   });
 });

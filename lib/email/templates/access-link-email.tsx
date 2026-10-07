@@ -24,9 +24,11 @@ export function AccessLinkEmail({
   expiresAt: string;
   grantType: "DIRECT_SHARE" | "DMS_RELEASE" | "EMERGENCY_ACCESS";
 }) {
+  // A release follows the owner's own instructions after a long period with no
+  // check-in. It says that, and never more: inactivity is not proof of anything.
   const reason =
     grantType === "DMS_RELEASE"
-      ? `${ownerName} set up LegacyVault to release information to you if they became unreachable. That has now happened.`
+      ? `${ownerName} arranged in advance for LegacyVault to share selected information with you if their check-ins stopped. Their emergency release workflow has completed after a period with no recent activity. You will be asked for a code sent to this address before anything opens.`
       : grantType === "EMERGENCY_ACCESS"
         ? `Your emergency access request for ${ownerName}'s LegacyVault has been approved.`
         : `${ownerName} has shared part of their LegacyVault with you.`;

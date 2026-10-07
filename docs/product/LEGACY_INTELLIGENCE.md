@@ -84,6 +84,7 @@ Critical; Critical stays reserved for time-bound emergencies.
 | ASSET-BEN-001 | Missing | Important | a held asset has no beneficiary (its own assignment list, so a beneficiary beyond the loaded page still counts) | no | replaces `assets-unassigned` (was Recommended; completed when none left) |
 | ASSET-DOC-001 | Missing | Recommended | a held financial/physical asset has no linked document (only with all documents loaded) | yes | new |
 | ASSET-INSTR-001 | Missing | Recommended | a held asset has no instructions | yes | new |
+| ASSET-REL-001 | Missing | Recommended | a held asset with a beneficiary is in neither the switch's release scope nor any emergency access scope (only when one of them exists) | yes | new |
 | DOC-CAT-001 | Missing | Recommended | documents without a category | no | covered by `documents-categorize` |
 | EA-CONTACT-001 | Missing | Recommended | no emergency contact | no | covered by `emergency-contact` |
 | WILL-001 | Missing | Important | Will not started / draft incomplete (same condition as `will`) | no | covered by `will` |

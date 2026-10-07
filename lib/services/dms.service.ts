@@ -5,6 +5,7 @@ import type { AppUser } from "@/lib/auth/ensure-app-user";
 import { assertAccountActive } from "@/lib/auth/require-user";
 import { createUserClient } from "@/lib/db/server";
 import * as dmsRepository from "@/lib/repositories/dms.repository";
+import * as notificationRepository from "@/lib/repositories/notification.repository";
 import type { DeadManSwitch } from "@/lib/types/dms";
 import type { DmsConfigureBody } from "@/lib/validators/dms.validators";
 
@@ -20,11 +21,39 @@ export async function getSwitch(user: AppUser): Promise<DeadManSwitch | null> {
   const row = await dmsRepository.findForUser(db, user.id);
   if (!row) return null;
 
-  const [contacts, events] = await Promise.all([
+  const [contacts, events, unavailable, issued, warnings] = await Promise.all([
     dmsRepository.listContacts(db, user.id, row.id),
     dmsRepository.listEvents(db, row.id),
+    dmsRepository.countUnavailable(db, user.id, dmsRepository.asScope(row.release_scope)),
+    dmsRepository.listReleaseAccess(db, row.id),
+    // Only once warnings exist: nothing is fetched for a switch on schedule.
+    row.status === "ACTIVE" || row.status === "INACTIVE" || row.status === "PAUSED"
+      ? Promise.resolve([])
+      : notificationRepository.listReleaseWarnings(
+          db,
+          user.id,
+          row.id,
+          row.last_check_in_at ?? row.created_at,
+        ),
   ]);
-  return dmsRepository.toDeadManSwitch(row, contacts, events);
+  const names = new Map(
+    contacts.map((contact) => [contact.beneficiaryId, contact.beneficiaryName]),
+  );
+  const releaseAccess = issued.map((link) => ({
+    ...link,
+    beneficiaryName: names.get(link.beneficiaryId) ?? "Former contact",
+  }));
+  const latest = warnings[0];
+  return dmsRepository.toDeadManSwitch(
+    row,
+    contacts,
+    events,
+    releaseAccess,
+    unavailable,
+    latest
+      ? { type: latest.type, status: latest.delivery_status, createdAt: latest.created_at }
+      : null,
+  );
 }
 
 export async function configure(

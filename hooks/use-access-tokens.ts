@@ -37,6 +37,19 @@ export function useAccessTokens(beneficiaryId: string | null): UseQueryResult<{
   });
 }
 
+/** Every live link across beneficiaries (Security Centre). */
+export function useLiveAccessLinks(): UseQueryResult<{ items: AccessTokenSummary[] }> {
+  return useQuery({
+    queryKey: queryKeys.accessTokens.live(),
+    queryFn: async ({ signal }) => {
+      const { data } = await apiClient.get<{ items: AccessTokenSummary[] }>("/access-links", {
+        signal,
+      });
+      return data;
+    },
+  });
+}
+
 function useInvalidateTokens() {
   const queryClient = useQueryClient();
   return () => queryClient.invalidateQueries({ queryKey: queryKeys.accessTokens.all() });

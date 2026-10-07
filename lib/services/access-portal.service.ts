@@ -3,7 +3,10 @@ import "server-only";
 import { ApiError } from "@/lib/api/errors";
 import { audit } from "@/lib/audit/audit.service";
 import { createServiceClient, type TypedSupabaseClient } from "@/lib/db/server";
-import { hashAccessToken } from "@/lib/security/access-token";
+import { sendReleaseCodeEmail } from "@/lib/email/send";
+import { logger } from "@/lib/observability/logger";
+import { hashAccessToken, oneTimeCode } from "@/lib/security/access-token";
+import { checkRateLimit } from "@/lib/security/rate-limit";
 import {
   ACCESS_COOKIE_TTL_SECONDS,
   sealAccessSession,
@@ -38,18 +41,27 @@ export interface AccessGrant {
   grantType: AccessGrantType;
   scope: AccessScope;
   expiresAt: string;
+  /** When this link was issued: for a release, when the release happened. */
+  issuedAt: string;
+  /** Release links only: when the contact first confirmed a code. */
+  verifiedAt: string | null;
 }
 
-export interface ExchangeResult {
-  cookie: { value: string; maxAge: number };
-  grant: AccessSummary;
-}
+/**
+ * Either a session, or (for a release link) a code was sent and must be
+ * entered first. No cookie exists until then.
+ */
+export type ExchangeResult =
+  | { cookie: { value: string; maxAge: number }; grant: AccessSummary }
+  | { verificationRequired: true; sentTo: string; codeExpiresAt: string };
 
 export interface AccessSummary {
   ownerName: string;
   beneficiaryName: string;
   grantType: AccessGrantType;
   expiresAt: string;
+  issuedAt: string;
+  verifiedAt: string | null;
   counts: { documents: number; assets: number; videos: number; planSections: number };
 }
 
@@ -63,6 +75,10 @@ interface TokenRow {
   revoked_at: string | null;
   used_at: string | null;
   follows_document_shares: boolean;
+  dead_man_switch_id: string | null;
+  emergency_request_id: string | null;
+  created_at: string;
+  verified_at: string | null;
 }
 
 function asScope(value: unknown): AccessScope {
@@ -85,32 +101,77 @@ function refused(): ApiError {
   return new ApiError(401, "UNAUTHENTICATED", "This link is no longer valid.");
 }
 
-async function loadGrant(db: TypedSupabaseClient, tokenId: string): Promise<AccessGrant> {
+/**
+ * Is the grant behind a system link still standing? A release link works only
+ * while its switch is RELEASED (recovery, disabling or a check-in end it here
+ * even if a revocation were somehow missed), and an emergency link only while
+ * its request is granted.
+ */
+async function grantStands(db: TypedSupabaseClient, token: TokenRow): Promise<boolean> {
+  if (token.grant_type === "DMS_RELEASE") {
+    if (!token.dead_man_switch_id) return false;
+    const { data, error } = await db
+      .from("dead_man_switches")
+      .select("status")
+      .eq("id", token.dead_man_switch_id)
+      .eq("user_id", token.owner_user_id)
+      .maybeSingle();
+    if (error) throw error;
+    return data?.status === "RELEASED";
+  }
+  if (token.grant_type === "EMERGENCY_ACCESS") {
+    if (!token.emergency_request_id) return false;
+    const { data, error } = await db
+      .from("emergency_access_requests")
+      .select("status")
+      .eq("id", token.emergency_request_id)
+      .maybeSingle();
+    if (error) throw error;
+    return ["APPROVED", "AUTO_GRANTED", "ACTIVE"].includes(data?.status ?? "");
+  }
+  return true;
+}
+
+async function loadGrant(
+  db: TypedSupabaseClient,
+  tokenId: string,
+  { requireVerified = true }: { requireVerified?: boolean } = {},
+): Promise<AccessGrant & { beneficiaryEmail: string }> {
   const { data: token, error } = await db
     .from("access_tokens")
     .select(
-      "id, owner_user_id, beneficiary_id, grant_type, scope, expires_at, revoked_at, used_at, follows_document_shares",
+      "id, owner_user_id, beneficiary_id, grant_type, scope, expires_at, revoked_at, used_at, follows_document_shares, dead_man_switch_id, emergency_request_id, created_at, verified_at",
     )
     .eq("id", tokenId)
     .maybeSingle<TokenRow>();
   if (error) throw error;
   if (!token || token.revoked_at || Date.parse(token.expires_at) <= Date.now()) throw refused();
+  // A release session exists only after a confirmed code; one without is refused.
+  if (requireVerified && token.grant_type === "DMS_RELEASE" && !token.verified_at) throw refused();
 
-  const { data: beneficiary, error: beneficiaryError } = await db
-    .from("beneficiaries")
-    .select("id, name, status, deleted_at, user_id")
-    .eq("id", token.beneficiary_id)
-    .maybeSingle();
+  const [beneficiaryResult, ownerResult, stands] = await Promise.all([
+    db
+      .from("beneficiaries")
+      .select("id, name, email, status, deleted_at, user_id")
+      .eq("id", token.beneficiary_id)
+      .maybeSingle(),
+    db.from("users").select("id, name, deleted_at").eq("id", token.owner_user_id).maybeSingle(),
+    grantStands(db, token),
+  ]);
+  const { data: beneficiary, error: beneficiaryError } = beneficiaryResult;
   if (beneficiaryError) throw beneficiaryError;
-  if (!beneficiary || beneficiary.deleted_at || beneficiary.status === "INACTIVE") throw refused();
-
-  const { data: owner, error: ownerError } = await db
-    .from("users")
-    .select("id, name, deleted_at")
-    .eq("id", token.owner_user_id)
-    .maybeSingle();
+  if (
+    !beneficiary ||
+    beneficiary.deleted_at ||
+    beneficiary.status === "INACTIVE" ||
+    beneficiary.user_id !== token.owner_user_id
+  ) {
+    throw refused();
+  }
+  const { data: owner, error: ownerError } = ownerResult;
   if (ownerError) throw ownerError;
   if (!owner || owner.deleted_at) throw refused();
+  if (!stands) throw refused();
 
   const scope = asScope(token.scope);
   if (token.grant_type === "DIRECT_SHARE") {
@@ -126,6 +187,9 @@ async function loadGrant(db: TypedSupabaseClient, tokenId: string): Promise<Acce
     grantType: token.grant_type,
     scope,
     expiresAt: token.expires_at,
+    issuedAt: token.created_at,
+    verifiedAt: token.verified_at,
+    beneficiaryEmail: beneficiary.email,
   };
 }
 
@@ -159,6 +223,8 @@ function summarize(grant: AccessGrant): AccessSummary {
     beneficiaryName: grant.beneficiaryName,
     grantType: grant.grantType,
     expiresAt: grant.expiresAt,
+    issuedAt: grant.issuedAt,
+    verifiedAt: grant.verifiedAt,
     counts: {
       documents: grant.scope.documents.length,
       assets: grant.scope.assets.length,
@@ -175,7 +241,11 @@ function summarize(grant: AccessGrant): AccessSummary {
  * logged or echoed. First use marks the token and promotes a still-pending
  * beneficiary to ACTIVE.
  */
-export async function exchange(token: string, correlationId: string): Promise<ExchangeResult> {
+export async function exchange(
+  token: string,
+  correlationId: string,
+  code?: string,
+): Promise<ExchangeResult> {
   const db = createServiceClient();
   const { data: row, error } = await db
     .from("access_tokens")
@@ -196,7 +266,14 @@ export async function exchange(token: string, correlationId: string): Promise<Ex
     throw refused();
   }
 
-  const grant = await loadGrant(db, row.id);
+  let grant = await loadGrant(db, row.id, { requireVerified: false });
+  if (grant.grantType === "DMS_RELEASE") {
+    // Every new session on a release link needs a fresh code sent to the
+    // contact's own address: holding the link alone opens nothing.
+    if (!code) return startVerification(db, grant, correlationId);
+    await checkVerification(db, grant.tokenId, code);
+    grant = await loadGrant(db, row.id);
+  }
   const now = new Date().toISOString();
 
   const { error: usedError } = await db
@@ -239,6 +316,90 @@ export async function exchange(token: string, correlationId: string): Promise<Ex
   };
 
   return { cookie: { value: sealAccessSession(session), maxAge }, grant: summarize(grant) };
+}
+
+/** "j•••@example.com": enough to know which inbox to check. */
+function maskEmail(email: string): string {
+  const [local, domain] = email.split("@");
+  return `${local.slice(0, 1)}•••@${domain ?? ""}`;
+}
+
+async function startVerification(
+  db: TypedSupabaseClient,
+  grant: AccessGrant & { beneficiaryEmail: string },
+  correlationId: string,
+): Promise<ExchangeResult> {
+  const budget = await checkRateLimit({
+    policy: "sensitive",
+    subject: `release-code:${grant.tokenId}`,
+  });
+  if (!budget.allowed) {
+    throw new ApiError(
+      429,
+      "RATE_LIMITED",
+      "Too many codes were requested for this link. Try again in a few minutes.",
+    );
+  }
+
+  const code = oneTimeCode();
+  const { data: codeExpiresAt, error } = await db.rpc("system_start_release_verification", {
+    p_token_id: grant.tokenId,
+    p_code_hash: hashAccessToken(code),
+  });
+  if (error) {
+    if (error.code === "LV409") throw refused();
+    throw error;
+  }
+
+  try {
+    await sendReleaseCodeEmail({
+      to: grant.beneficiaryEmail,
+      beneficiaryName: grant.beneficiaryName,
+      ownerName: grant.ownerName,
+      code,
+      // Each code is its own message; nothing reuses a previous one.
+      idempotencyKey: `release-code:${grant.tokenId}:${codeExpiresAt as string}`,
+    });
+  } catch (cause) {
+    // Nobody knows the code now, so it simply expires.
+    logger.error({ err: cause, correlationId }, "release code email failed");
+    throw new ApiError(
+      503,
+      "SERVICE_UNAVAILABLE",
+      "We could not send your code. Please try again in a few minutes.",
+    );
+  }
+  return {
+    verificationRequired: true,
+    sentTo: maskEmail(grant.beneficiaryEmail),
+    codeExpiresAt: codeExpiresAt as string,
+  };
+}
+
+const VERIFICATION_ERRORS: Record<string, string> = {
+  RETRY: "That code is not right. Check the latest email and try again.",
+  LOCKED: "Too many wrong codes. Send a new code to try again.",
+  EXPIRED: "That code has expired. Send a new code to try again.",
+  NO_CHALLENGE: "Send a new code to continue.",
+};
+
+/** Throws unless the code matches the live challenge; attempts are counted in the database. */
+async function checkVerification(
+  db: TypedSupabaseClient,
+  tokenId: string,
+  code: string,
+): Promise<void> {
+  const { data, error } = await db.rpc("system_check_release_verification", {
+    p_token_id: tokenId,
+    p_code_hash: hashAccessToken(code),
+  });
+  if (error) throw error;
+  const outcome = data as string;
+  if (outcome === "VERIFIED") return;
+  if (outcome === "NOT_LIVE") throw refused();
+  throw new ApiError(422, "VALIDATION_ERROR", VERIFICATION_ERRORS[outcome] ?? "Send a new code.", {
+    details: { restart: outcome !== "RETRY" },
+  });
 }
 
 /** Re-checks the grant behind a cookie. Every resource endpoint starts here. */

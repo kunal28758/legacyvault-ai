@@ -12,7 +12,7 @@ import type { AccessTokenSummary } from "@/lib/types/access";
  * columns explicitly to make that visible at the call site too.
  */
 const TOKEN_COLUMNS =
-  "id, beneficiary_id, grant_type, scope, expires_at, revoked_at, revoked_reason, delivered_at, used_at, last_used_at, created_at";
+  "id, beneficiary_id, grant_type, scope, expires_at, revoked_at, revoked_reason, delivered_at, used_at, last_used_at, created_at, verified_at";
 
 function asScope(value: unknown): AccessScope {
   const scope =
@@ -41,6 +41,7 @@ interface TokenRow {
   used_at: string | null;
   last_used_at: string | null;
   created_at: string;
+  verified_at: string | null;
 }
 
 function toSummary(row: TokenRow, beneficiaryName: string): AccessTokenSummary {
@@ -57,7 +58,36 @@ function toSummary(row: TokenRow, beneficiaryName: string): AccessTokenSummary {
     usedAt: row.used_at,
     lastUsedAt: row.last_used_at,
     createdAt: row.created_at,
+    verifiedAt: row.verified_at,
   };
+}
+
+/** Every link of the owner's that still opens something: not revoked, not expired. */
+export async function listLive(
+  db: TypedSupabaseClient,
+  userId: string,
+  now: Date,
+): Promise<AccessTokenSummary[]> {
+  const { data, error } = await db
+    .from("access_tokens")
+    .select(TOKEN_COLUMNS)
+    .eq("owner_user_id", userId)
+    .is("revoked_at", null)
+    .gt("expires_at", now.toISOString())
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (error) throw error;
+  const rows = (data ?? []) as TokenRow[];
+  if (rows.length === 0) return [];
+
+  const { data: people, error: peopleError } = await db
+    .from("beneficiaries")
+    .select("id, name")
+    .eq("user_id", userId)
+    .in("id", [...new Set(rows.map((row) => row.beneficiary_id))]);
+  if (peopleError) throw peopleError;
+  const names = new Map((people ?? []).map((person) => [person.id, person.name]));
+  return rows.map((row) => toSummary(row, names.get(row.beneficiary_id) ?? "Beneficiary"));
 }
 
 export async function listForBeneficiary(

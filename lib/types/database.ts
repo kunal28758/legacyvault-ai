@@ -56,6 +56,10 @@ export type Database = {
           scope: Json
           token_hash: string
           used_at: string | null
+          verification_attempts: number
+          verification_code_hash: string | null
+          verification_expires_at: string | null
+          verified_at: string | null
         }
         Insert: {
           beneficiary_id: string
@@ -78,6 +82,10 @@ export type Database = {
           scope: Json
           token_hash: string
           used_at?: string | null
+          verification_attempts?: number
+          verification_code_hash?: string | null
+          verification_expires_at?: string | null
+          verified_at?: string | null
         }
         Update: {
           beneficiary_id?: string
@@ -100,6 +108,10 @@ export type Database = {
           scope?: Json
           token_hash?: string
           used_at?: string | null
+          verification_attempts?: number
+          verification_code_hash?: string | null
+          verification_expires_at?: string | null
+          verified_at?: string | null
         }
         Relationships: [
           {
@@ -578,6 +590,8 @@ export type Database = {
           last_check_in_at: string | null
           next_check_in_at: string | null
           paused_at: string | null
+          release_held_at: string | null
+          release_hold_checked_at: string | null
           release_scope: Json
           status: Database["public"]["Enums"]["dms_status"]
           updated_at: string
@@ -594,6 +608,8 @@ export type Database = {
           last_check_in_at?: string | null
           next_check_in_at?: string | null
           paused_at?: string | null
+          release_held_at?: string | null
+          release_hold_checked_at?: string | null
           release_scope?: Json
           status?: Database["public"]["Enums"]["dms_status"]
           updated_at?: string
@@ -610,6 +626,8 @@ export type Database = {
           last_check_in_at?: string | null
           next_check_in_at?: string | null
           paused_at?: string | null
+          release_held_at?: string | null
+          release_hold_checked_at?: string | null
           release_scope?: Json
           status?: Database["public"]["Enums"]["dms_status"]
           updated_at?: string
@@ -1264,6 +1282,7 @@ export type Database = {
           channel: Database["public"]["Enums"]["notification_channel"]
           content: string
           created_at: string
+          delivery_provider: string | null
           delivery_status: Database["public"]["Enums"]["notification_delivery_status"]
           id: string
           last_retry_at: string | null
@@ -1279,6 +1298,7 @@ export type Database = {
           channel: Database["public"]["Enums"]["notification_channel"]
           content: string
           created_at?: string
+          delivery_provider?: string | null
           delivery_status?: Database["public"]["Enums"]["notification_delivery_status"]
           id?: string
           last_retry_at?: string | null
@@ -1294,6 +1314,7 @@ export type Database = {
           channel?: Database["public"]["Enums"]["notification_channel"]
           content?: string
           created_at?: string
+          delivery_provider?: string | null
           delivery_status?: Database["public"]["Enums"]["notification_delivery_status"]
           id?: string
           last_retry_at?: string | null
@@ -1889,6 +1910,14 @@ export type Database = {
         Args: { p_field: string; p_value: Json }
         Returns: string[]
       }
+      lv_live_scope: {
+        Args: {
+          p_grant: Database["public"]["Enums"]["access_grant_type"]
+          p_owner: string
+          p_scope: Json
+        }
+        Returns: Json
+      }
       lv_raise_409: {
         Args: { p_code: string; p_detail?: Json }
         Returns: undefined
@@ -1996,6 +2025,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      system_check_release_verification: {
+        Args: { p_code_hash: string; p_token_id: string }
+        Returns: string
+      }
       system_issue_access_token: {
         Args: {
           p_beneficiary_id: string
@@ -2019,6 +2052,10 @@ export type Database = {
           p_reason: Database["public"]["Enums"]["token_revoked_reason"]
           p_token_hash: string
         }
+        Returns: string
+      }
+      system_start_release_verification: {
+        Args: { p_code_hash: string; p_token_id: string }
         Returns: string
       }
       unassign_beneficiary: {

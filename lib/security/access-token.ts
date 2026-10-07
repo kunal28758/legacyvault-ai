@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 
 import { getEnvGroup } from "@/lib/config/env";
 
@@ -30,6 +30,14 @@ export function mintAccessToken(): MintedToken {
 
 export function hashAccessToken(plaintext: string): string {
   return createHash("sha256").update(plaintext, "utf8").digest("hex");
+}
+
+/**
+ * A six-digit one-time code (emergency requests, release verification). Like a
+ * token, only `hashAccessToken(code)` is ever stored.
+ */
+export function oneTimeCode(): string {
+  return String(randomInt(0, 1_000_000)).padStart(6, "0");
 }
 
 /** Constant-time comparison, for the exchange endpoint. */

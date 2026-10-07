@@ -2,8 +2,10 @@ import "server-only";
 
 import { createServiceClient } from "@/lib/db/server";
 import { accessDeliverHandler } from "@/lib/jobs/handlers/access-deliver";
+import { dmsContactNoticeHandler } from "@/lib/jobs/handlers/dms-contact-notice";
 import { dmsScanHandler } from "@/lib/jobs/handlers/dms-scan";
 import { housekeepingHandler } from "@/lib/jobs/handlers/housekeeping";
+import { notificationConfirmHandler } from "@/lib/jobs/handlers/notification-confirm";
 import { notificationDeliverHandler } from "@/lib/jobs/handlers/notification-deliver";
 import { securityNewDeviceHandler } from "@/lib/jobs/handlers/security-new-device";
 import { storageRemoveObjectHandler } from "@/lib/jobs/handlers/storage-remove-object";
@@ -22,8 +24,10 @@ import * as jobRepository from "@/lib/repositories/job.repository";
 const HANDLERS: Record<string, JobHandler> = {
   "access.deliver": accessDeliverHandler,
   "notification.deliver": notificationDeliverHandler,
+  "notification.confirm": notificationConfirmHandler,
   "storage.remove-object": storageRemoveObjectHandler,
   "dms.scan": dmsScanHandler,
+  "dms.contact-notice": dmsContactNoticeHandler,
   housekeeping: housekeepingHandler,
   "security.new-device": securityNewDeviceHandler,
 };

@@ -86,7 +86,10 @@ beforeEach(() => {
     remaining: 4,
     retryAfterSeconds: 900,
   });
-  vi.mocked(sendAccessLinkEmail).mockResolvedValue({ providerMessageId: "msg_1" });
+  vi.mocked(sendAccessLinkEmail).mockResolvedValue({
+    providerMessageId: "msg_1",
+    provider: "brevo",
+  });
   vi.mocked(audit.log).mockReset();
   vi.mocked(accessTokenRepository.findById).mockResolvedValue({ id: TOKEN_ID } as never);
 });

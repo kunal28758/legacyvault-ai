@@ -90,7 +90,7 @@ export function AdminView() {
           icon={ShieldCheck}
           label="Protection"
           value={String(stats?.protection.switchesActive ?? 0)}
-          hint={`${stats?.protection.switchesReleased ?? 0} released · ${stats?.protection.emergencyPending ?? 0} awaiting a decision`}
+          hint={`${stats?.protection.switchesReleased ?? 0} released · ${stats?.protection.switchesHeld ?? 0} release held · ${stats?.protection.emergencyPending ?? 0} awaiting a decision`}
         />
         <StatCard
           icon={HardDrive}

@@ -8,7 +8,8 @@ import { dmsConfigureBodySchema, type DmsConfigureBody } from "@/lib/validators/
  * `GET` returns the switch with its contacts and recent events, or null when
  * one has never been configured. `POST` configures or reconfigures it through
  * `dms_configure()`, which validates the ranges, the contacts and the release
- * scope inside the transaction.
+ * scope inside the transaction. Choosing who receives what is step-up verified:
+ * a borrowed session must not be able to redirect a release.
  */
 export const GET = withApi(
   {
@@ -24,6 +25,7 @@ export const POST = withApi<DmsConfigureBody>(
   {
     auth: "user",
     rateLimit: "default",
+    reverification: "strict",
     schema: { body: dmsConfigureBodySchema },
     auditAction: "dms.configured",
     auditResourceType: "dead_man_switch",

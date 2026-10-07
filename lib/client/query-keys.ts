@@ -52,6 +52,7 @@ export const queryKeys = {
   accessTokens: {
     all: () => ["access-tokens"] as const,
     forBeneficiary: (id: string) => ["access-tokens", id] as const,
+    live: () => ["access-tokens", "live"] as const,
   },
   legacyPlan: {
     all: () => ["legacy-plan"] as const,

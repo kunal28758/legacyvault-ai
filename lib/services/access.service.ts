@@ -72,6 +72,12 @@ export async function listTokens(
   };
 }
 
+/** Security Centre: every live link across beneficiaries, newest first. */
+export async function listLiveLinks(user: AppUser): Promise<{ items: AccessTokenSummary[] }> {
+  const db = await createUserClient();
+  return { items: await accessTokenRepository.listLive(db, user.id, new Date()) };
+}
+
 export async function issueToken(
   user: AppUser,
   beneficiaryId: string,

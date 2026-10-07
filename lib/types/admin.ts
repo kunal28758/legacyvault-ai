@@ -55,7 +55,13 @@ export interface AdminAnalytics {
     documents: { count: number; bytes: number };
     videos: { count: number; bytes: number };
   };
-  protection: { switchesActive: number; switchesReleased: number; emergencyPending: number };
+  protection: {
+    switchesActive: number;
+    switchesReleased: number;
+    /** At the release point but held: no warning to the owner confirmed delivered. */
+    switchesHeld: number;
+    emergencyPending: number;
+  };
   jobs: { queued: number; running: number; dead: number; succeededLastDay: number };
 }
 

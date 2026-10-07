@@ -30,6 +30,8 @@ function useInvalidateDms() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: queryKeys.deadManSwitch.all() }),
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all() }),
+      // Disabling or recovering revokes release links.
+      queryClient.invalidateQueries({ queryKey: queryKeys.accessTokens.all() }),
     ]);
   };
 }

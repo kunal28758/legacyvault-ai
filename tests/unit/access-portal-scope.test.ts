@@ -19,11 +19,24 @@ const SHARED_NOW = ["doc-will", "doc-deed"];
 
 let assignmentReads = 0;
 
-function fakeDb(token: Record<string, unknown>) {
+function fakeDb(
+  token: Record<string, unknown>,
+  state: { switchStatus?: string; requestStatus?: string } = {},
+) {
   const rows: Record<string, unknown> = {
     access_tokens: token,
-    beneficiaries: { id: "b1", name: "Asha", status: "ACTIVE", deleted_at: null, user_id: "u1" },
+    beneficiaries: {
+      id: "b1",
+      name: "Asha",
+      email: "asha@example.com",
+      status: "ACTIVE",
+      deleted_at: null,
+      user_id: "u1",
+    },
     users: { id: "u1", name: "Priya", deleted_at: null },
+    // The grant behind a system link must still stand (migration 0009).
+    dead_man_switches: { status: state.switchStatus ?? "RELEASED" },
+    emergency_access_requests: { status: state.requestStatus ?? "ACTIVE" },
   };
   return {
     from: (table: string) => {
@@ -59,6 +72,11 @@ function token(grantType: string, documents: string[], followsShares = false) {
     revoked_at: null,
     used_at: null,
     follows_document_shares: followsShares,
+    dead_man_switch_id: grantType === "DMS_RELEASE" ? "s1" : null,
+    emergency_request_id: grantType === "EMERGENCY_ACCESS" ? "r1" : null,
+    created_at: new Date().toISOString(),
+    // A release session exists only after the contact confirmed a code.
+    verified_at: grantType === "DMS_RELEASE" ? new Date().toISOString() : null,
   };
 }
 
@@ -101,4 +119,33 @@ describe("document scope by link kind", () => {
     expect(grant.scope.documents).toEqual(expected);
     expect(assignmentReads).toBe(reads);
   });
+});
+
+describe("system links work only while their grant stands", () => {
+  it("refuses a release link whose contact never confirmed a code", async () => {
+    vi.mocked(createServiceClient).mockReturnValue(
+      fakeDb({ ...token("DMS_RELEASE", ["doc-released"]), verified_at: null }) as never,
+    );
+    await expect(requireGrant("t1")).rejects.toMatchObject({ status: 401 });
+  });
+
+  it.each(["ACTIVE", "PAUSED", "INACTIVE", "ESCALATING"])(
+    "refuses a release link once the switch is %s again",
+    async (switchStatus) => {
+      vi.mocked(createServiceClient).mockReturnValue(
+        fakeDb(token("DMS_RELEASE", ["doc-released"]), { switchStatus }) as never,
+      );
+      await expect(requireGrant("t1")).rejects.toMatchObject({ status: 401 });
+    },
+  );
+
+  it.each(["REVOKED", "EXPIRED", "DENIED"])(
+    "refuses an emergency link once the request is %s",
+    async (requestStatus) => {
+      vi.mocked(createServiceClient).mockReturnValue(
+        fakeDb(token("EMERGENCY_ACCESS", ["doc-released"]), { requestStatus }) as never,
+      );
+      await expect(requireGrant("t1")).rejects.toMatchObject({ status: 401 });
+    },
+  );
 });

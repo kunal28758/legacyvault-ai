@@ -11,6 +11,7 @@ import { computeCompleteness } from "@/lib/legacy-plan/completeness";
 import { logger } from "@/lib/observability/logger";
 import * as aiRepository from "@/lib/repositories/ai.repository";
 import * as assetRepository from "@/lib/repositories/asset.repository";
+import { dmsView } from "@/lib/client/dms-presentation";
 import * as dmsRepository from "@/lib/repositories/dms.repository";
 import * as planRepository from "@/lib/repositories/legacy-plan.repository";
 import { enforceRateLimit } from "@/lib/security/rate-limit";
@@ -58,6 +59,7 @@ export async function buildAccountOverview(
     latest,
     dms,
     emergencyContacts,
+    trustedContacts,
   ] = await Promise.all([
     db.from("beneficiaries").select("id, status").eq("user_id", user.id).is("deleted_at", null),
     assetRepository.listIds(db, user.id, "FINANCIAL_ASSET"),
@@ -78,6 +80,8 @@ export async function buildAccountOverview(
         .eq("user_id", user.id)
         .is("deleted_at", null),
     ),
+    // RLS limits contacts to the caller's own switch.
+    count(db.from("dead_man_switch_contacts").select("beneficiary_id", head)),
   ]);
   if (beneficiaries.error) throw beneficiaries.error;
   if (assignedRows.error) throw assignedRows.error;
@@ -112,11 +116,34 @@ export async function buildAccountOverview(
     `- Beneficiaries: ${beneficiaryRows.length} (${beneficiaryRows.filter((b) => b.status === "ACTIVE").length} active, ${beneficiaryRows.filter((b) => b.status === "PENDING").length} pending)`,
     `- Assets: ${financialIds.length} financial, ${physicalIds.length} physical, ${digitalIds.length} digital; ${unassigned} with no beneficiary assigned`,
     `- Documents in the vault: ${documents}; video messages: ${videos}`,
-    `- Dead Man's Switch: ${dms ? `${dms.status.toLowerCase()}, check-in every ${dms.check_in_frequency_days} days` : "not configured"}`,
+    `- Dead Man's Switch (emergency release workflow): ${describeSwitch(dms, trustedContacts)}`,
     `- Emergency access contacts: ${emergencyContacts}`,
     `- Two-factor authentication: ${user.mfaEnabled ? "on" : "off"}`,
   ];
   return lines.join("\n");
+}
+
+/** Counts and settings only — never names, ids or what the items are. */
+function describeSwitch(
+  dms: Awaited<ReturnType<typeof dmsRepository.findForUser>>,
+  trustedContacts: number,
+): string {
+  if (!dms || dms.status === "INACTIVE") return "not configured";
+  const scope = dmsRepository.asScope(dms.release_scope);
+  const label = dmsView(dms.status).label.toLowerCase();
+  return [
+    `state: ${label}`,
+    `check-in every ${dms.check_in_frequency_days} days`,
+    `inactivity threshold ${dms.inactivity_period_days} days`,
+    `grace period ${dms.escalation_delay_hours} hours`,
+    dms.status === "ACTIVE" && dms.next_check_in_at
+      ? `next check-in due ${dms.next_check_in_at.slice(0, 10)}`
+      : null,
+    `${trustedContacts} trusted contact${trustedContacts === 1 ? "" : "s"}`,
+    `release scope: ${scope.documents.length} documents, ${scope.assets.length} assets, ${scope.videos.length} videos, ${scope.planSections.length} plan sections`,
+  ]
+    .filter(Boolean)
+    .join("; ");
 }
 
 /**

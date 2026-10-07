@@ -1,5 +1,6 @@
 import "server-only";
 
+import { audit } from "@/lib/audit/audit.service";
 import { logger } from "@/lib/observability/logger";
 import { sendAccessLinkEmail } from "@/lib/email/send";
 import { accessLinkFor, expiryFromHours, mintAccessToken } from "@/lib/security/access-token";
@@ -61,11 +62,16 @@ export const accessDeliverHandler: JobHandler = async (job, db) => {
     if (!switchId) throw new Error("DMS delivery is missing switchId");
     const { data: dms, error } = await db
       .from("dead_man_switches")
-      .select("release_scope")
+      .select("release_scope, status")
       .eq("id", switchId)
       .maybeSingle();
     if (error) throw error;
     if (!dms) throw new Error("switch not found for access delivery");
+    if (dms.status !== "RELEASED") {
+      // The owner recovered or disabled the switch after this was queued.
+      logger.info({ jobId: job.id }, "access delivery skipped: release no longer stands");
+      return;
+    }
     scope = dms.release_scope;
     expiresAt = expiryFromHours(DMS_RELEASE_TTL_HOURS);
   } else {
@@ -130,6 +136,19 @@ export const accessDeliverHandler: JobHandler = async (job, db) => {
       p_expires_at: expiresAt,
       ...(grantType === "DMS_RELEASE" ? { p_dms_id: switchId! } : { p_request_id: requestId! }),
     });
+    if (error?.message?.startsWith("SCOPE_EMPTY")) {
+      // Everything configured was deleted since: there is nothing to grant, and
+      // retrying cannot change that. Recorded, never retried, nothing issued.
+      await audit.log({
+        actorId: null,
+        action: "access.delivery_skipped",
+        resourceType: grantType === "DMS_RELEASE" ? "dead_man_switch" : "emergency_access_request",
+        resourceId: grantType === "DMS_RELEASE" ? switchId : requestId,
+        outcome: "FAILURE",
+        metadata: { ownerUserId: beneficiary.user_id, beneficiaryId, reason: "SCOPE_EMPTY" },
+      });
+      return;
+    }
     if (error) throw error;
     tokenId = data as string;
   }

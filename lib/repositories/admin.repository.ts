@@ -236,9 +236,14 @@ export async function analytics(
     sizeOf(serviceDb, "video_messages"),
   ]);
 
-  const [switchesActive, switchesReleased, emergencyPending] = await Promise.all([
+  const [switchesActive, switchesReleased, switchesHeld, emergencyPending] = await Promise.all([
     countWhere(serviceDb, "dead_man_switches", [["eq", "status", "ACTIVE"]]),
     countWhere(serviceDb, "dead_man_switches", [["eq", "status", "RELEASED"]]),
+    // At the release point, but no owner warning confirmed delivered (0009).
+    countWhere(serviceDb, "dead_man_switches", [
+      ["eq", "status", "ESCALATING"],
+      ["not_is", "release_held_at", null],
+    ]),
     countWhere(serviceDb, "emergency_access_requests", [["eq", "status", "VERIFIED"]]),
   ]);
 
@@ -256,7 +261,7 @@ export async function analytics(
     users: { total, active, pendingDeletion, superAdmins },
     registrations: [...byDay.entries()].map(([day, count]) => ({ day, count })),
     storage: { documents, videos },
-    protection: { switchesActive, switchesReleased, emergencyPending },
+    protection: { switchesActive, switchesReleased, switchesHeld, emergencyPending },
     jobs: { queued, running, dead, succeededLastDay },
   };
 }

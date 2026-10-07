@@ -6,9 +6,11 @@ import { motion } from "framer-motion";
 import {
   AlertTriangle,
   CheckCircle2,
+  Circle,
   Clock,
   FileText,
   Gem,
+  KeyRound,
   Pause,
   Play,
   Power,
@@ -35,7 +37,7 @@ import {
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { PageHeader, SectionHeading } from "@/components/shared/page-header";
 import { PageSkeleton } from "@/components/shared/loading-skeleton";
-import { StatusBadge } from "@/components/shared/status-badge";
+import { StatusBadge, type StatusTone } from "@/components/shared/status-badge";
 import { Timeline } from "@/components/shared/timeline";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -64,8 +66,14 @@ import { useNow } from "@/hooks/use-now";
 import { isReverificationCancelled, useReverifiedAction } from "@/hooks/use-reverified-action";
 import { ApiError } from "@/lib/client/api-client";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
-import { DMS_STAGES, dmsView } from "@/lib/client/dms-presentation";
-import type { DeadManSwitch, DmsEventType } from "@/lib/types/dms";
+import {
+  CHECK_IN_STATES,
+  DMS_STAGES,
+  dmsExplanation,
+  dmsView,
+  projectSchedule,
+} from "@/lib/client/dms-presentation";
+import type { DeadManSwitch, DmsEventType, DmsReleaseAccess } from "@/lib/types/dms";
 import type { AccessScopeInput } from "@/lib/validators/dms.validators";
 import { formatDateTime, formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -90,21 +98,51 @@ const eventTone: Record<DmsEventType, "neutral" | "success" | "warning" | "dange
 
 const eventLabel: Record<DmsEventType, string> = {
   CHECK_IN: "Checked in",
-  MISSED_CHECK_IN: "Missed check-in",
+  MISSED_CHECK_IN: "No check-in recorded",
   ESCALATION_STEP: "Escalation step",
-  RECOVERY: "Recovered",
-  RELEASE: "Release executed",
+  RECOVERY: "Recovered — release cancelled",
+  RELEASE: "Release completed",
   PAUSE: "Paused",
   RESUME: "Resumed",
   CONFIG_CHANGE: "Configuration changed",
 };
 
+const CONTACT_STATUS: Record<
+  DeadManSwitch["contacts"][number]["status"],
+  { label: string; tone: StatusTone }
+> = {
+  ACTIVE: { label: "Active", tone: "success" },
+  PENDING: { label: "Invited", tone: "info" },
+  INACTIVE: { label: "Inactive — skipped at release", tone: "danger" },
+};
+
+/** What became of a warning email, in words (never colour alone). */
+const WARNING_STATUS: Record<NonNullable<DeadManSwitch["latestWarning"]>["status"], string> = {
+  PENDING: "waiting to be sent",
+  SENT: "sent, delivery not yet confirmed",
+  DELIVERED: "delivered",
+  BOUNCED: "bounced",
+  FAILED: "could not be sent",
+};
+
+function releaseLinkState(
+  link: DmsReleaseAccess,
+  now: number,
+): { label: string; tone: StatusTone } {
+  if (link.revokedAt) return { label: "Revoked", tone: "neutral" };
+  if (Date.parse(link.expiresAt) <= now) return { label: "Expired", tone: "neutral" };
+  if (link.verifiedAt) return { label: "Verified", tone: "success" };
+  if (link.deliveredAt) return { label: "Sent — awaiting verification", tone: "warning" };
+  return { label: "Being delivered", tone: "info" };
+}
+
 /**
- * Dead Man's Switch (FR-I001–I012).
+ * Dead Man's Switch — the owner's emergency release workflow (FR-I001–I012).
  *
- * Every control here asks the server for a transition; the state shown is
- * whatever came back. The timed transitions — reminder, grace period,
- * escalation, release — are applied by the scheduled scan, not by this page.
+ * Every control asks the server for a transition; the state shown is whatever
+ * came back. Reminders, grace period, contact notices and release are applied
+ * by the scheduled scan, never by this page, and a verified check-in stops any
+ * of them before release.
  */
 export function DeadManSwitchView() {
   const switchQuery = useDeadManSwitch();
@@ -135,28 +173,35 @@ export function DeadManSwitchView() {
     inactivityPeriodDays: 90,
     checkInFrequencyDays: 30,
     escalationDelayHours: 24,
+    escalationSteps: 2,
     lastCheckInAt: null,
     nextCheckInAt: null,
     currentEscalationStep: 0,
     pausedAt: null,
     releaseScope: EMPTY_SCOPE,
+    unavailableScopeItems: 0,
     contacts: [],
+    releaseAccess: [],
+    releaseHold: null,
+    latestWarning: null,
     events: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
   const view = dmsView(dms.status);
-  const canCheckIn = ["ACTIVE", "REMINDER_SENT", "GRACE_PERIOD"].includes(dms.status);
-  const escalated = ["ESCALATING", "RELEASING", "RELEASED"].includes(dms.status);
+  const held = dms.releaseHold !== null;
+  const canCheckIn = CHECK_IN_STATES.includes(dms.status);
+  const pendingRelease = dms.status === "ESCALATING" || dms.status === "RELEASING";
   const monitoring = dms.status !== "INACTIVE" && dms.status !== "PAUSED";
   const contacts = dms.contacts;
   const scope = dms.releaseScope;
   const scopeNames = describeScope(scope, scopeCatalog);
+  const schedule = projectSchedule(dms, now);
   const dueMs = dms.nextCheckInAt ? Date.parse(dms.nextCheckInAt) - now : null;
   const windowMs = dms.checkInFrequencyDays * 86_400_000;
   const windowPct = dueMs === null ? 0 : Math.max(0, Math.min(100, 100 - (dueMs / windowMs) * 100));
 
-  // Check-in and recovery are re-verified (FR-I003/I007); the gate is a no-op
+  // Check-in, recovery and disabling are step-up verified; the gate is a no-op
   // for the actions that are not.
   const run = async (action: () => Promise<unknown>, success: string) => {
     try {
@@ -173,7 +218,7 @@ export function DeadManSwitchView() {
       <PageHeader
         eyebrow="Protection"
         title="Dead Man’s Switch"
-        description="Confirms you are active on a schedule. If check-ins stop, it escalates step by step — and only at the very end releases the resources you chose to your trusted contacts."
+        description="Your emergency release workflow. If check-ins stop, LegacyVault warns you, waits through a grace period, tells your trusted contacts, and only then releases the resources you chose. No recent activity is never treated as proof of anything — a check-in stops it at any point before release."
         actions={
           <>
             <Button variant="outline" onClick={() => setConfigOpen(true)}>
@@ -182,9 +227,14 @@ export function DeadManSwitchView() {
             </Button>
             <Button
               variant="success"
-              disabled={!canCheckIn}
+              disabled={!canCheckIn || checkInMutation.isPending}
               onClick={() =>
-                void run(() => checkInMutation.mutateAsync(), "Check-in recorded — thank you")
+                void run(
+                  () => checkInMutation.mutateAsync(),
+                  pendingRelease
+                    ? "Checked in — the pending release is cancelled"
+                    : "Check-in recorded — thank you",
+                )
               }
             >
               <CheckCircle2 data-icon="inline-start" />
@@ -210,10 +260,10 @@ export function DeadManSwitchView() {
           )}
         />
         <CardHeader className="relative flex flex-row flex-wrap items-start justify-between gap-3 space-y-0">
-          <div className="flex items-center gap-4">
+          <div className="flex min-w-0 items-center gap-4">
             <span
               className={cn(
-                "icon-tile size-14 rounded-2xl",
+                "icon-tile size-14 shrink-0 rounded-2xl",
                 view.tone === "success"
                   ? "text-success shadow-glow-success"
                   : view.tone === "danger"
@@ -225,28 +275,17 @@ export function DeadManSwitchView() {
             >
               <TimerReset className="size-7" aria-hidden />
             </span>
-            <div>
+            <div className="min-w-0">
               <p className="text-[11px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
                 Current state
               </p>
-              <CardTitle className="font-heading text-2xl font-semibold tracking-tight">
-                {escalated
-                  ? view.label
-                  : monitoring
-                    ? "Active"
-                    : dms.status === "PAUSED"
-                      ? "Paused"
-                      : "Inactive"}
+              <CardTitle
+                className="font-heading text-2xl font-semibold tracking-tight"
+                data-testid="dms-state"
+              >
+                {view.label}
               </CardTitle>
-              <p className="text-sm text-muted-foreground">
-                {dms.status === "INACTIVE"
-                  ? "The switch is disabled — nothing is monitored."
-                  : dms.status === "PAUSED"
-                    ? "Monitoring is paused. Resume to restart the schedule."
-                    : escalated
-                      ? "Escalation in progress. You can recover at any stage with re-verification."
-                      : "Monitoring on schedule."}
-              </p>
+              <p className="text-sm text-muted-foreground">{dmsExplanation(dms.status)}</p>
             </div>
           </div>
           <StatusBadge
@@ -279,6 +318,7 @@ export function DeadManSwitchView() {
                 <li
                   key={stage.status}
                   className="relative flex flex-col items-center gap-2 text-center"
+                  aria-current={state === "current" ? "step" : undefined}
                 >
                   <motion.span
                     layout
@@ -297,7 +337,7 @@ export function DeadManSwitchView() {
                         "border-border bg-card text-muted-foreground",
                     )}
                   >
-                    {index + 1}
+                    {state === "past" ? <CheckCircle2 className="size-4" aria-hidden /> : index + 1}
                   </motion.span>
                   <span
                     className={cn(
@@ -310,7 +350,11 @@ export function DeadManSwitchView() {
                   <span className="hidden text-[11px] leading-tight text-muted-foreground lg:block">
                     {stage.description}
                   </span>
-                  {state === "current" && <span className="sr-only">(current)</span>}
+                  {state === "current" && (
+                    <span className="rounded-full bg-foreground/10 px-1.5 text-[10px] font-semibold tracking-wide text-foreground uppercase">
+                      Now
+                    </span>
+                  )}
                 </li>
               );
             })}
@@ -323,11 +367,15 @@ export function DeadManSwitchView() {
               <p className="text-xs text-muted-foreground">{formatDateTime(dms.lastCheckInAt)}</p>
             </div>
             <div className="rounded-xl border border-border/70 bg-surface/40 p-4">
-              <p className="text-xs text-muted-foreground">Next check-in</p>
-              <p className="mt-1 font-medium">
-                {dms.nextCheckInAt && monitoring ? formatRelative(dms.nextCheckInAt, now) : "—"}
+              <p className="text-xs text-muted-foreground">
+                {dms.status === "ACTIVE" ? "Next check-in" : "Next scheduled step"}
               </p>
-              {monitoring && dms.nextCheckInAt && (
+              <p className="mt-1 font-medium">
+                {dms.nextCheckInAt && monitoring && dms.status !== "RELEASED"
+                  ? formatRelative(dms.nextCheckInAt, now)
+                  : "—"}
+              </p>
+              {dms.status === "ACTIVE" && dms.nextCheckInAt && (
                 <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden>
                   <div
                     className={cn(
@@ -343,16 +391,14 @@ export function DeadManSwitchView() {
               <p className="text-xs text-muted-foreground">Inactivity threshold</p>
               <p className="mt-1 font-medium">{dms.inactivityPeriodDays} days</p>
               <p className="text-xs text-muted-foreground">
-                Check-in every {dms.checkInFrequencyDays} days
+                Check in every {dms.checkInFrequencyDays} days
               </p>
             </div>
             <div className="rounded-xl border border-border/70 bg-surface/40 p-4">
-              <p className="text-xs text-muted-foreground">Escalation</p>
-              <p className="mt-1 font-medium">
-                {escalated ? `Step ${dms.currentEscalationStep}` : "Not escalating"}
-              </p>
+              <p className="text-xs text-muted-foreground">Grace period</p>
+              <p className="mt-1 font-medium">{dms.escalationDelayHours} hours</p>
               <p className="text-xs text-muted-foreground">
-                {dms.escalationDelayHours} h between steps
+                Then {dms.escalationSteps} × {dms.escalationDelayHours} h before release
               </p>
             </div>
           </div>
@@ -369,21 +415,21 @@ export function DeadManSwitchView() {
             ) : (
               <Button
                 variant="outline"
-                disabled={!monitoring}
+                disabled={dms.status !== "ACTIVE"}
                 onClick={() => void run(() => pauseMutation.mutateAsync(), "Monitoring paused")}
               >
                 <Pause data-icon="inline-start" />
                 Pause
               </Button>
             )}
-            {(escalated || dms.status === "GRACE_PERIOD" || dms.status === "REMINDER_SENT") && (
+            {dms.status === "RELEASED" && (
               <Button
                 variant="outline"
                 className="border-warning/40 text-warning"
                 onClick={() => setRecoverOpen(true)}
               >
                 <RotateCcw data-icon="inline-start" />
-                Cancel escalation & recover
+                Recover and revoke access
               </Button>
             )}
             <Button
@@ -397,18 +443,110 @@ export function DeadManSwitchView() {
             </Button>
             <span className="mx-1 hidden h-6 w-px bg-border sm:block" aria-hidden />
             <span className="text-xs text-muted-foreground">
-              Reminders, escalation and release are applied by the scheduled scan.
+              {dms.status === "ACTIVE"
+                ? "Pausing stops the clock while you are away for a known reason."
+                : "Reminders, contact notices and release are applied by the scheduled check."}
             </span>
           </div>
+          {pendingRelease && !held && (
+            <p className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/5 px-3 py-2 text-sm">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+              Nothing has been released. Check in now to cancel the pending release.
+            </p>
+          )}
+          {held && dms.releaseHold && (
+            <div
+              role="status"
+              data-testid="dms-release-held"
+              className="space-y-1.5 rounded-lg border border-warning/40 bg-warning/5 px-3 py-2.5 text-sm"
+            >
+              <p className="flex items-start gap-2 font-medium">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+                Release on hold: nothing has been released.
+              </p>
+              <p className="text-muted-foreground">
+                The release point was reached, but no warning email to you has been confirmed
+                delivered, so LegacyVault will not release anything yet. It continues only once a
+                warning is confirmed delivered. Checking in cancels it.
+              </p>
+              <dl className="grid gap-x-4 gap-y-1 text-xs text-muted-foreground sm:grid-cols-3">
+                <div>
+                  <dt className="inline">Held since </dt>
+                  <dd className="inline text-foreground">
+                    {formatDateTime(dms.releaseHold.since)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="inline">Last checked </dt>
+                  <dd className="inline text-foreground">
+                    {formatDateTime(dms.releaseHold.lastCheckedAt)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="inline">Latest warning </dt>
+                  <dd className="inline text-foreground">
+                    {dms.latestWarning
+                      ? `${WARNING_STATUS[dms.latestWarning.status]} \u00b7 ${formatDateTime(dms.latestWarning.createdAt)}`
+                      : "none sent yet"}
+                  </dd>
+                </div>
+              </dl>
+              <p className="text-xs text-muted-foreground">The next check runs within the hour.</p>
+            </div>
+          )}
           {dms.status === "RELEASED" && (
             <p className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
               <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
-              Release executed: access links for the release scope are queued for your trusted
-              contacts. Recovering revokes them.
+              Release completed. What a contact already opened cannot be taken back, but recovering
+              revokes every release link at once.
             </p>
           )}
         </CardContent>
       </Card>
+
+      {schedule.length > 0 && (
+        <Card className="glass">
+          <CardHeader>
+            <CardTitle className="text-base">If you stop checking in</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              The earliest each step can happen. The scheduled check runs hourly, and release also
+              waits until a warning email to you has been sent.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <ol
+              className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+              aria-label="Projected schedule"
+            >
+              {schedule.map((step) => (
+                <li
+                  key={step.id}
+                  className={cn(
+                    "rounded-xl border p-4",
+                    step.reached
+                      ? "border-border/60 bg-muted/30"
+                      : "border-border/70 bg-surface/40",
+                  )}
+                >
+                  <p className="flex items-center gap-2 text-sm font-medium">
+                    {step.reached ? (
+                      <CheckCircle2 className="size-4 text-muted-foreground" aria-hidden />
+                    ) : (
+                      <Circle className="size-4 text-primary" aria-hidden />
+                    )}
+                    {step.label}
+                    {step.reached && <span className="sr-only">(reached)</span>}
+                  </p>
+                  <p className="mt-1 text-sm tabular-nums">
+                    {step.at ? formatDateTime(step.at) : step.reached ? "Reached" : "—"}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">{step.detail}</p>
+                </li>
+              ))}
+            </ol>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="glass">
@@ -416,7 +554,8 @@ export function DeadManSwitchView() {
             <div>
               <CardTitle className="text-base">Trusted contacts</CardTitle>
               <p className="text-sm text-muted-foreground">
-                Notified in order during escalation; receive release links.
+                Told when the workflow starts; receive release links, opened only with a code sent
+                to their own email.
               </p>
             </div>
             <Button variant="ghost" size="sm" onClick={() => setConfigOpen(true)}>
@@ -433,7 +572,7 @@ export function DeadManSwitchView() {
                 {contacts.map((contact, index) => (
                   <li
                     key={contact.beneficiaryId}
-                    className="flex items-center gap-3 rounded-lg border border-border px-3 py-2.5"
+                    className="flex flex-wrap items-center gap-3 rounded-lg border border-border px-3 py-2.5"
                   >
                     <span className="flex size-7 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary ring-1 ring-primary/25">
                       {index + 1}
@@ -444,7 +583,9 @@ export function DeadManSwitchView() {
                         Notified in position {contact.notifyOrder}
                       </p>
                     </div>
-                    <Users className="size-4 text-muted-foreground" aria-hidden />
+                    <StatusBadge tone={CONTACT_STATUS[contact.status].tone}>
+                      {CONTACT_STATUS[contact.status].label}
+                    </StatusBadge>
                   </li>
                 ))}
               </ol>
@@ -456,10 +597,22 @@ export function DeadManSwitchView() {
           <CardHeader>
             <CardTitle className="text-base">Release scope</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Only these resources are released — never your whole vault.
+              These are the resources that may be released — nothing else in your vault.
             </p>
           </CardHeader>
           <CardContent className="space-y-3">
+            {dms.unavailableScopeItems > 0 && (
+              <p
+                role="status"
+                className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/5 px-3 py-2 text-sm"
+              >
+                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+                {dms.unavailableScopeItems === 1
+                  ? "1 selected item no longer exists and will be skipped."
+                  : `${dms.unavailableScopeItems} selected items no longer exist and will be skipped.`}{" "}
+                Review the scope.
+              </p>
+            )}
             {[
               {
                 icon: FileText,
@@ -496,12 +649,52 @@ export function DeadManSwitchView() {
             ))}
             <p className="flex items-start gap-2 text-xs leading-5 text-muted-foreground">
               <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-success" aria-hidden />
-              Videos in the scope must be marked “Immediate” or “On switch release”. Release links
-              are hash-only, expire, and are revoked on recovery.
+              Release links are stored as hashes, expire after 30 days, open only after the contact
+              confirms a code, and are revoked when you recover. Account numbers and credentials are
+              never part of a release.
             </p>
           </CardContent>
         </Card>
       </div>
+
+      {dms.releaseAccess.length > 0 && (
+        <Card className="glass">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <KeyRound className="size-4 text-primary" aria-hidden />
+              Release access
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Every release link issued, what happened to it, and when it ends.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-2">
+              {dms.releaseAccess.map((link) => {
+                const state = releaseLinkState(link, now);
+                return (
+                  <li
+                    key={link.tokenId}
+                    className="flex flex-wrap items-center gap-3 rounded-lg border border-border px-3 py-2.5"
+                  >
+                    <Users className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{link.beneficiaryName}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Issued {formatDateTime(link.issuedAt)}
+                        {link.revokedAt
+                          ? ` · revoked ${formatDateTime(link.revokedAt)}`
+                          : ` · expires ${formatDateTime(link.expiresAt)}`}
+                      </p>
+                    </div>
+                    <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
+                  </li>
+                );
+              })}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="space-y-4">
         <SectionHeading
@@ -522,7 +715,7 @@ export function DeadManSwitchView() {
                 items={dms.events.slice(0, 12).map((event) => ({
                   id: event.id,
                   title: eventLabel[event.eventType],
-                  description: `${event.previousState.replace(/_/g, " ").toLowerCase()} → ${event.newState.replace(/_/g, " ").toLowerCase()}${typeof event.metadata.note === "string" ? ` · ${event.metadata.note}` : ""}`,
+                  description: `${event.previousState.replace(/_/g, " ").toLowerCase()} → ${event.newState.replace(/_/g, " ").toLowerCase()}`,
                   timestamp: event.createdAt,
                   tone: eventTone[event.eventType],
                   icon:
@@ -549,7 +742,7 @@ export function DeadManSwitchView() {
         open={disableOpen}
         onOpenChange={setDisableOpen}
         title="Disable the Dead Man’s Switch?"
-        description="Monitoring stops immediately and no release can happen until you enable it again. This is a sensitive change."
+        description="Monitoring stops immediately, any release link is revoked, and nothing can be released until you enable it again."
         confirmLabel="Disable switch"
         variant="destructive"
         requiresReverification
@@ -558,12 +751,12 @@ export function DeadManSwitchView() {
       <ConfirmDialog
         open={recoverOpen}
         onOpenChange={setRecoverOpen}
-        title="Cancel the escalation and recover?"
-        description="The switch returns to Active with a fresh check-in. Any release links already issued are revoked."
+        title="Recover and revoke release access?"
+        description="The switch returns to Active with a fresh check-in, and every release link stops working immediately. Anything a contact already opened cannot be taken back."
         confirmLabel="Recover now"
         requiresReverification
         onConfirm={() =>
-          run(() => cancelMutation.mutateAsync(), "Escalation cancelled — switch is Active again")
+          run(() => cancelMutation.mutateAsync(), "Recovered — release links revoked")
         }
       />
     </div>
@@ -575,6 +768,8 @@ function DmsConfigForm({ onClose }: { onClose: () => void }) {
   const switchQuery = useDeadManSwitch();
   const beneficiariesQuery = useBeneficiaries();
   const configure = useConfigureDms();
+  const reverified = useReverifiedAction();
+  const now = useNow(60_000);
 
   const dms = switchQuery.data;
   const status = dms?.status ?? "INACTIVE";
@@ -590,6 +785,27 @@ function DmsConfigForm({ onClose }: { onClose: () => void }) {
   const [scope, setScope] = useState<AccessScopeInput>(dms?.releaseScope ?? EMPTY_SCOPE);
   const [uploadOpen, setUploadOpen] = useState(false);
   const catalog = useScopeCatalog(true);
+
+  const windowError =
+    form.checkInFrequencyDays >= form.inactivityPeriodDays
+      ? "Must be shorter than the inactivity threshold, so there is time to warn you."
+      : undefined;
+  const incomplete = form.contactIds.length === 0 || scopeSize(scope) === 0;
+  // What would happen if the owner stopped checking in right after saving.
+  const preview = projectSchedule(
+    {
+      status: "ACTIVE",
+      lastCheckInAt: new Date(now).toISOString(),
+      nextCheckInAt: null,
+      checkInFrequencyDays: form.checkInFrequencyDays,
+      inactivityPeriodDays: form.inactivityPeriodDays,
+      escalationDelayHours: form.escalationDelayHours,
+      escalationSteps: dms?.escalationSteps ?? 2,
+      currentEscalationStep: 0,
+    },
+    now,
+  );
+
   return (
     <>
       <SheetHeader className="pr-10">
@@ -597,14 +813,30 @@ function DmsConfigForm({ onClose }: { onClose: () => void }) {
           {status === "INACTIVE" ? "Enable the Dead Man’s Switch" : "Configure the switch"}
         </SheetTitle>
         <SheetDescription>
-          Schedule, escalation timing and who is contacted. Saving requires re-verification in the
-          live application.
+          Schedule, grace period, who is contacted and exactly what may be released. Saving asks you
+          to confirm it is you.
         </SheetDescription>
       </SheetHeader>
       <div className="space-y-5 px-4">
         <FormField
-          label="Inactivity period (days)"
-          hint="7–365. After this much inactivity the escalation completes."
+          label="Check-in interval (days)"
+          hint="1–90. How often you confirm you are active."
+          error={windowError}
+        >
+          {(props) => (
+            <Input
+              {...props}
+              type="number"
+              min={1}
+              max={90}
+              value={form.checkInFrequencyDays}
+              onChange={(e) => setForm({ ...form, checkInFrequencyDays: Number(e.target.value) })}
+            />
+          )}
+        </FormField>
+        <FormField
+          label="Inactivity threshold (days)"
+          hint="7–365 days without a check-in before the grace period starts. Longer than the check-in interval."
         >
           {(props) => (
             <Input
@@ -618,21 +850,9 @@ function DmsConfigForm({ onClose }: { onClose: () => void }) {
           )}
         </FormField>
         <FormField
-          label="Check-in frequency (days)"
-          hint="1–90. How often you confirm you are active."
+          label="Grace period (hours)"
+          hint="1–168. Also the wait between each later step."
         >
-          {(props) => (
-            <Input
-              {...props}
-              type="number"
-              min={1}
-              max={90}
-              value={form.checkInFrequencyDays}
-              onChange={(e) => setForm({ ...form, checkInFrequencyDays: Number(e.target.value) })}
-            />
-          )}
-        </FormField>
-        <FormField label="Escalation delay (hours)" hint="1–168 between escalation steps.">
           {(props) => (
             <Input
               {...props}
@@ -644,9 +864,25 @@ function DmsConfigForm({ onClose }: { onClose: () => void }) {
             />
           )}
         </FormField>
+        {!windowError && preview.length > 0 && (
+          <div className="rounded-lg border border-border/70 bg-surface/40 p-3 text-xs">
+            <p className="font-medium text-foreground">If you stopped checking in today</p>
+            <ul className="mt-1.5 space-y-1 text-muted-foreground">
+              {preview.map((step) => (
+                <li key={step.id} className="flex justify-between gap-3">
+                  <span>{step.label}</span>
+                  <span className="tabular-nums">{step.at ? formatDateTime(step.at) : "—"}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <fieldset className="space-y-2">
           <legend className="text-sm font-medium">Trusted contacts</legend>
-          <p className="text-xs text-muted-foreground">Choose at least one active beneficiary.</p>
+          <p className="text-xs text-muted-foreground">
+            Choose at least one active or invited beneficiary. Being a beneficiary alone releases
+            nothing — only the people chosen here receive the release.
+          </p>
           <ul className="space-y-2">
             {beneficiaries
               .filter((b) => b.status !== "INACTIVE")
@@ -704,7 +940,7 @@ function DmsConfigForm({ onClose }: { onClose: () => void }) {
         />
       </div>
       <SheetFooter className="flex-col items-stretch gap-2 border-t border-border sm:flex-row sm:items-center sm:justify-end">
-        {form.contactIds.length === 0 || scopeSize(scope) === 0 ? (
+        {incomplete ? (
           <p className="flex-1 text-xs text-muted-foreground">
             Choose at least one trusted contact and at least one thing to release.
           </p>
@@ -713,22 +949,25 @@ function DmsConfigForm({ onClose }: { onClose: () => void }) {
           Cancel
         </Button>
         <Button
-          disabled={configure.isPending || form.contactIds.length === 0 || scopeSize(scope) === 0}
+          disabled={configure.isPending || incomplete || Boolean(windowError)}
           onClick={() => {
             void (async () => {
               try {
-                await configure.mutateAsync({
-                  inactivityPeriodDays: form.inactivityPeriodDays,
-                  checkInFrequencyDays: form.checkInFrequencyDays,
-                  escalationDelayHours: form.escalationDelayHours,
-                  contactBeneficiaryIds: form.contactIds,
-                  releaseScope: scope,
-                });
+                await reverified(() =>
+                  configure.mutateAsync({
+                    inactivityPeriodDays: form.inactivityPeriodDays,
+                    checkInFrequencyDays: form.checkInFrequencyDays,
+                    escalationDelayHours: form.escalationDelayHours,
+                    contactBeneficiaryIds: form.contactIds,
+                    releaseScope: scope,
+                  }),
+                );
                 toast.success(
                   status === "INACTIVE" ? "Dead Man’s Switch enabled" : "Configuration saved",
                 );
                 onClose();
               } catch (error) {
+                if (isReverificationCancelled(error)) return;
                 toast.error(
                   error instanceof ApiError ? error.message : "Could not save this configuration.",
                 );

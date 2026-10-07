@@ -127,6 +127,7 @@ describe.skipIf(!available)("access portal", () => {
     const share = await shareOne();
 
     const result = await portal.exchange(share.plaintext, "test-exchange");
+    if (!("grant" in result)) throw new Error("a direct share must open without a code");
     expect(result.grant.ownerName).toBe("Alice Owner");
     expect(result.grant.grantType).toBe("DIRECT_SHARE");
     expect(result.grant.counts.assets).toBe(1);

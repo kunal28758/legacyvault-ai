@@ -90,6 +90,7 @@ export type RuleId =
   | "ASSET-BEN-001"
   | "ASSET-DOC-001"
   | "ASSET-INSTR-001"
+  | "ASSET-REL-001"
   | "DOC-CAT-001"
   | "EA-CONTACT-001"
   | "WILL-001"
@@ -167,6 +168,16 @@ export const RULES: Record<RuleId, RuleDefinition> = {
     listHref: "/assets?rule=ASSET-INSTR-001",
     summary: (c) => `${n(c, "asset")} ${c === 1 ? "has" : "have"} no instructions`,
     why: "Say what should happen to each asset and where its access details are kept — never the secret itself.",
+  },
+  "ASSET-REL-001": {
+    type: "MISSING",
+    name: "Assigned asset is outside every emergency release",
+    dismissible: true,
+    source: "Assets",
+    cta: "Review release scope",
+    listHref: "/intelligence?rule=ASSET-REL-001",
+    summary: (c) => `${n(c, "assigned asset")} outside your emergency release`,
+    why: "Your trusted contacts would not learn about these assets through a release. Add them to the release scope if they should — nothing is changed for you.",
   },
   "DOC-CAT-001": {
     type: "MISSING",
@@ -535,6 +546,26 @@ export function analyzeLegacy(
           "Instructions tell your family what should happen to this asset and where its access details are kept.",
         recommendedAction: "Add instructions",
         destination: href,
+      });
+    }
+  }
+
+  // Only when the owner has an emergency release of some kind: then an asset
+  // someone is meant to receive, but that no release covers, is a likely gap.
+  const releasePlanned =
+    (input.dms !== null && input.dms.status !== "INACTIVE") ||
+    (input.emergency?.contacts.length ?? 0) > 0;
+  if (releasePlanned) {
+    for (const item of held) {
+      const key = assetKey(item.asset.id);
+      if (item.assignments.length === 0 || graph.out(key, "protected_by").length > 0) continue;
+      add("ASSET-REL-001", sources(key), {
+        severity: "RECOMMENDED",
+        title: `${assetLabel(item)} is outside your emergency release`,
+        explanation:
+          "This asset has a beneficiary, but neither your Dead Man’s Switch release nor any emergency access scope includes it, so its details would not reach anyone through a release. If that is intended, dismiss this.",
+        recommendedAction: "Review the release scope",
+        destination: "/dead-man-switch",
       });
     }
   }

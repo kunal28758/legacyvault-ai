@@ -37,14 +37,20 @@ export const accessScopeSchema = z.object({
     .default([]),
 });
 
-export const dmsConfigureBodySchema = z.object({
-  inactivityPeriodDays: z.number().int().min(7).max(365),
-  checkInFrequencyDays: z.number().int().min(1).max(90),
-  escalationDelayHours: z.number().int().min(1).max(168).default(24),
-  contactBeneficiaryIds: z.array(z.uuid()).min(1, "Choose at least one trusted contact").max(10),
-  releaseScope: accessScopeSchema,
-  escalationRules: z.object({ steps: z.number().int().min(1).max(10).optional() }).default({}),
-});
+export const dmsConfigureBodySchema = z
+  .object({
+    inactivityPeriodDays: z.number().int().min(7).max(365),
+    checkInFrequencyDays: z.number().int().min(1).max(90),
+    escalationDelayHours: z.number().int().min(1).max(168).default(24),
+    contactBeneficiaryIds: z.array(z.uuid()).min(1, "Choose at least one trusted contact").max(10),
+    releaseScope: accessScopeSchema,
+    escalationRules: z.object({ steps: z.number().int().min(1).max(10).optional() }).default({}),
+  })
+  // The warning window — from the missed check-in to the grace period — must exist.
+  .refine((body) => body.checkInFrequencyDays < body.inactivityPeriodDays, {
+    path: ["checkInFrequencyDays"],
+    message: "The check-in interval must be shorter than the inactivity threshold.",
+  });
 
 export const dmsActionBodySchema = z.object({
   confirmed: z.literal(true, { error: "Confirm this change to continue." }),

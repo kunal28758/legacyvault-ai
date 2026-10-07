@@ -92,7 +92,10 @@ beforeEach(() => {
     beneficiary({ invitedAt: at }),
   );
   vi.mocked(emailConfigured).mockReturnValue(true);
-  vi.mocked(sendBeneficiaryInvitationEmail).mockResolvedValue({ providerMessageId: "msg_1" });
+  vi.mocked(sendBeneficiaryInvitationEmail).mockResolvedValue({
+    providerMessageId: "msg_1",
+    provider: "brevo",
+  });
   vi.mocked(audit.log).mockReset();
   vi.mocked(beneficiaryRepository.findByEmail).mockResolvedValue(null);
   vi.mocked(beneficiaryRepository.insert).mockResolvedValue(beneficiary());
@@ -154,7 +157,10 @@ describe("inviteBeneficiary — delivery", () => {
 
   it("records a Brevo message id unchanged and keeps the response shape", async () => {
     const brevoId = "<202610050900.1234567890@smtp-relay.mailin.fr>";
-    vi.mocked(sendBeneficiaryInvitationEmail).mockResolvedValue({ providerMessageId: brevoId });
+    vi.mocked(sendBeneficiaryInvitationEmail).mockResolvedValue({
+      providerMessageId: brevoId,
+      provider: "brevo",
+    });
 
     const result = await inviteBeneficiary(user, BENEFICIARY_ID, "corr");
 

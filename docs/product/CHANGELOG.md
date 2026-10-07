@@ -19,6 +19,51 @@ Format: newest first. Categories: *Governance*, *Specification*,
 
 ## [Unreleased]
 
+### Legacy Execution Engine — 2026-10-07
+
+- **Production gate (closing)**: release is authorized only on a warning the
+  provider confirmed *delivered* — SENT, BOUNCED and FAILED never count;
+  `notification.confirm` asks Brevo or Resend for the outcome; held releases
+  are real state (`release_held_at`, `release_hold_checked_at`), audited once
+  per hold and shown on the switch page, Action Centre, Security Centre and
+  admin console; every email goes through the verified sender (Brevo); the
+  beneficiary portal no longer overflows on phones with long names.
+
+- **Database (migration `0009_legacy_execution.sql`, additive)**: release-link
+  verification columns on `access_tokens` (code hash never granted to
+  owners); `lv_live_scope()`; `dms_configure` requires the check-in interval
+  to be shorter than the inactivity threshold; `dms_check_in` is authoritative
+  until release (from `ESCALATING`/`RELEASING` it cancels the release);
+  `dms_cancel_escalation` works from `REMINDER_SENT`; `dms_pause` only from
+  `ACTIVE`; `dms_transition` queues a contact notice when escalation starts and
+  holds release until a warning to the owner was accepted by the email
+  provider; `system_issue_access_token` issues the live part of the scope.
+  Apply it before deploying.
+- **Security (fixed)**: configuring and disabling the switch now require
+  step-up verification (the page already said so); pause + resume can no
+  longer end an escalation or hide a release; release links open only after a
+  one-time code to the contact's own email, for every new session; the portal
+  refuses release links whose switch is no longer `RELEASED` and emergency
+  links whose request is no longer granted.
+- **Safety (fixed)**: turning off check-in reminders or all email no longer
+  silences the grace, escalation and release warnings; emergency requests that
+  wait for the owner, or were auto-granted by the timeout rule, now notify the
+  owner by email; a deleted document or asset no longer breaks the whole
+  release; deliveries left over after recovery do nothing.
+- **Honesty (fixed)**: the escalation notice said trusted contacts were being
+  notified when nothing contacted them — they are now told (no link, nothing
+  released); the release email no longer says the owner "became unreachable";
+  the "Cancel escalation & recover" button no longer fails in the warning and
+  grace stages.
+- **UI**: switch page with "If you stop checking in" schedule, plain-language
+  state, contact status, scope health and per-contact release status; portal
+  code step and "Why you can see this"; dashboard *Emergency plan* card; Action
+  Centre released/schedule actions; Security Centre *Live access links*;
+  intelligence rule ASSET-REL-001; Copilot grounding with release counts and
+  explicit limits (prompt `assistant.v3`, `assistant.attachments.v2`).
+- **API**: `GET /api/v1/access-links`; `POST /api/v1/access/exchange` accepts an
+  optional `code`.
+
 ### Legacy Intelligence, Asset Vault and relationship graph — 2026-10-07
 
 - **Assets (added)**: Asset Vault (`/assets`) and asset pages

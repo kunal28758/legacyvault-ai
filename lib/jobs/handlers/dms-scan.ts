@@ -1,5 +1,6 @@
 import "server-only";
 
+import { escalationStepCount } from "@/lib/client/dms-presentation";
 import { logger } from "@/lib/observability/logger";
 import * as dmsRepository from "@/lib/repositories/dms.repository";
 import * as emergencyRepository from "@/lib/repositories/emergency-access.repository";
@@ -28,7 +29,9 @@ import type { Database } from "@/lib/types/database";
  *
  * No email is sent from here. Each transition writes a notification row and
  * queues `notification.deliver`, so a slow mail provider can never hold up or
- * partially apply a state change.
+ * partially apply a state change. Trusted contacts are told by jobs that
+ * `dms_transition()` itself queues: `dms.contact-notice` when escalation
+ * starts, `access.deliver` on release.
  */
 type DmsStatus = Database["public"]["Enums"]["dms_status"];
 type DmsEventType = Database["public"]["Enums"]["dms_event_type"];
@@ -56,15 +59,6 @@ export interface DmsStep {
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
-function escalationSteps(rules: unknown): number {
-  const record =
-    rules && typeof rules === "object" && !Array.isArray(rules)
-      ? (rules as Record<string, unknown>)
-      : {};
-  const steps = Number(record.steps);
-  return Number.isFinite(steps) && steps >= 1 && steps <= 10 ? Math.floor(steps) : 2;
-}
-
 /**
  * The next scheduled action for a switch, as a pure function of its row and
  * the clock. Exported so the timeline can be asserted without a database.
@@ -85,7 +79,7 @@ export function nextDmsStep(row: DmsScanRow, now: Date): DmsStep | null {
           type: "dms.reminder",
           title: "Your LegacyVault check-in is due",
           content:
-            "Your Dead Man's Switch is waiting for a check-in. One click keeps everything as it is.",
+            "No recent check-in was recorded. Check in to keep your emergency release workflow on schedule — nothing is shared while it waits for you.",
         },
       };
     case "REMINDER_SENT":
@@ -97,7 +91,7 @@ export function nextDmsStep(row: DmsScanRow, now: Date): DmsStep | null {
           type: "dms.grace_period",
           title: "Your LegacyVault check-in is overdue",
           content:
-            "You are inside the grace period. Check in now, or LegacyVault will start contacting the people you nominated.",
+            "Your emergency release workflow is in its grace period because no recent activity was detected. Check in to stop it. If you do not, your trusted contacts will be told the workflow has started; nothing is released at that point.",
         },
       };
     case "GRACE_PERIOD":
@@ -108,13 +102,13 @@ export function nextDmsStep(row: DmsScanRow, now: Date): DmsStep | null {
         escalationStep: 1,
         notify: {
           type: "dms.escalating",
-          title: "LegacyVault has started escalating",
+          title: "Your emergency release workflow has started",
           content:
-            "Your trusted contacts are being notified. You can still stop this by checking in.",
+            "No check-in was recorded during the grace period, so your trusted contacts are being told the workflow has started. Nothing has been released. Check in now to cancel it.",
         },
       };
     case "ESCALATING": {
-      const total = escalationSteps(row.escalation_rules);
+      const total = escalationStepCount(row.escalation_rules);
       if (row.current_escalation_step < total) {
         return {
           to: "ESCALATING",
@@ -132,9 +126,9 @@ export function nextDmsStep(row: DmsScanRow, now: Date): DmsStep | null {
         nextAt: null,
         notify: {
           type: "dms.released",
-          title: "LegacyVault has released access to your trusted contacts",
+          title: "Your emergency release workflow completed",
           content:
-            "Your Dead Man's Switch reached its release point. You can revoke this from the Dead Man's Switch page.",
+            "Your trusted contacts are being sent secure, expiring links to the resources you selected. Each must confirm a code sent to their own email before anything opens. If this was a mistake, recover from the Dead Man's Switch page — that revokes the links.",
         },
       };
     default:
@@ -150,7 +144,7 @@ export async function runDmsScan(db: TypedSupabaseClient, now = new Date()): Pro
     const step = nextDmsStep(row, now);
     if (!step) continue;
 
-    const { error } = await db.rpc("dms_transition", {
+    const { data: eventId, error } = await db.rpc("dms_transition", {
       p_switch_id: row.id,
       p_from: row.status,
       p_to: step.to,
@@ -168,29 +162,72 @@ export async function runDmsScan(db: TypedSupabaseClient, now = new Date()): Pro
       logger.warn({ switchId: row.id, code: error.code }, "dms transition skipped");
       continue;
     }
+    if (step.to === "RELEASING" && eventId === null) {
+      // Held: no warning has been confirmed delivered this cycle (0009).
+      await keepTryingToWarn(db, row, now);
+      continue;
+    }
     applied += 1;
 
     if (step.notify) {
-      const notificationId = await notificationRepository.insertSystem(db, {
+      // Delivery is a separate job: mail must never delay a state change. The
+      // `switchId` is what dms_transition() checks before authorizing release.
+      await notificationRepository.notifyOwner(db, {
         userId: row.user_id,
         type: step.notify.type,
         title: step.notify.title,
         content: step.notify.content,
-        channel: "BOTH",
         metadata: { switchId: row.id, status: step.to },
       });
-      // Delivery is a separate job: mail must never delay a state change.
-      await jobRepository.enqueue(
-        db,
-        "notification.deliver",
-        { notificationId },
-        `notification.deliver:${notificationId}`,
-      );
     }
   }
 
   await expireEmergencyRequests(db, now);
   return applied;
+}
+
+const HELD_NOTICE = {
+  type: "dms.release_held",
+  title: "Your emergency release is waiting on a warning to you",
+  content:
+    "Your emergency release workflow reached its release point, but LegacyVault could not confirm that a warning email reached you, so nothing has been released. If you are reading this, check in to cancel it. Once a warning like this one is confirmed delivered, the release you configured can proceed.",
+};
+
+/**
+ * While a release is held, keep establishing whether the owner was warned:
+ * ask the provider again about every warning still at SENT, and — when none
+ * is on its way at all (each failed, bounced or was never sent) — send a fresh
+ * one, at most once a day. Nothing here can release anything; only a
+ * DELIVERED warning lets dms_transition() authorize the release.
+ */
+async function keepTryingToWarn(
+  db: TypedSupabaseClient,
+  row: dmsRepository.DmsRow,
+  now: Date,
+): Promise<void> {
+  const since = row.last_check_in_at ?? row.created_at;
+  const warnings = await notificationRepository.listReleaseWarnings(db, row.user_id, row.id, since);
+  const hour = now.toISOString().slice(0, 13);
+  for (const warning of warnings.filter((item) => item.delivery_status === "SENT")) {
+    await jobRepository.enqueue(
+      db,
+      "notification.confirm",
+      { notificationId: warning.id },
+      `notification.confirm:${warning.id}:${hour}`,
+    );
+  }
+  const inFlight = warnings.some((item) => ["PENDING", "SENT"].includes(item.delivery_status));
+  const noticedToday = warnings.some(
+    (item) =>
+      item.type === HELD_NOTICE.type && now.getTime() - Date.parse(item.created_at) < DAY_MS,
+  );
+  if (!inFlight && !noticedToday) {
+    await notificationRepository.notifyOwner(db, {
+      userId: row.user_id,
+      ...HELD_NOTICE,
+      metadata: { switchId: row.id, status: row.status },
+    });
+  }
 }
 
 /** Times out emergency requests and lets expired grants lapse (FR-J006). */

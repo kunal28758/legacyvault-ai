@@ -68,7 +68,16 @@ export interface LegacySnapshot {
     status: DmsStatus;
     nextCheckInAt: string | null;
     trustedContacts: number;
+    /** Items a release would include today (deleted ones are not counted). */
     releaseScopeSize: number;
+    /** Configured items that no longer exist and would be skipped. */
+    unavailableScopeItems: number;
+    /** The check-in interval leaves a warning window before the grace period. */
+    warningWindowValid: boolean;
+    /** Release links still open (not revoked, not expired). */
+    liveReleaseLinks: number;
+    /** At the release point but held: no warning to the owner confirmed delivered. */
+    releaseHeld: boolean;
   };
   emergency: { contacts: number; openRequests: { id: string; expiresAt: string }[] };
   lifeEvents: StoredLifeEvent[];
@@ -199,11 +208,23 @@ export function buildLegacySnapshot(input: LegacySnapshotInput): LegacySnapshot 
       nextCheckInAt: input.dms?.nextCheckInAt ?? null,
       trustedContacts: input.dms?.contacts.length ?? 0,
       releaseScopeSize: scope
-        ? scope.documents.length +
-          scope.assets.length +
-          scope.videos.length +
-          scope.planSections.length
+        ? Math.max(
+            0,
+            scope.documents.length +
+              scope.assets.length +
+              scope.videos.length +
+              scope.planSections.length -
+              (input.dms?.unavailableScopeItems ?? 0),
+          )
         : 0,
+      unavailableScopeItems: input.dms?.unavailableScopeItems ?? 0,
+      warningWindowValid: input.dms
+        ? input.dms.checkInFrequencyDays < input.dms.inactivityPeriodDays
+        : true,
+      releaseHeld: Boolean(input.dms?.releaseHold),
+      liveReleaseLinks: (input.dms?.releaseAccess ?? []).filter(
+        (link) => !link.revokedAt && Date.parse(link.expiresAt) > now,
+      ).length,
     },
     emergency: {
       contacts: input.emergency?.contacts.length ?? 0,

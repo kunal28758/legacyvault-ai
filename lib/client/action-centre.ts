@@ -74,15 +74,31 @@ export function deriveActions(s: LegacySnapshot): LegacyAction[] {
     });
   }
 
-  if (["ESCALATING", "RELEASING"].includes(s.dms.status)) {
+  if (s.dms.status === "RELEASED") {
     add({
-      id: "dms-escalating",
-      title: "Your Dead Man’s Switch is escalating",
+      id: "dms-released",
+      title: "Your emergency release completed",
       explanation:
-        "Check-ins stopped and contacts are being notified. Recover now if you are active — release happens only at the final stage.",
+        s.dms.liveReleaseLinks > 0
+          ? `${plural(s.dms.liveReleaseLinks, "release link")} still open. If this was not intended, recover now — every link stops working at once.`
+          : "Your trusted contacts were sent release links. If this was not intended, recover to revoke them.",
       priority: "CRITICAL",
       source: "Dead Man’s Switch",
-      cta: "Recover",
+      cta: "Review release",
+      href: "/dead-man-switch",
+    });
+  } else if (["ESCALATING", "RELEASING"].includes(s.dms.status)) {
+    add({
+      id: "dms-escalating",
+      title: s.dms.releaseHeld
+        ? "Release on hold — check in to stop it"
+        : "A release is pending — check in to stop it",
+      explanation: s.dms.releaseHeld
+        ? "The release point was reached, but no warning email to you has been confirmed delivered, so nothing has been released. A check-in cancels it."
+        : "No check-in was recorded, so your trusted contacts were told the workflow started. Nothing has been released; a check-in cancels it.",
+      priority: "CRITICAL",
+      source: "Dead Man’s Switch",
+      cta: "Check in",
       href: "/dead-man-switch",
     });
   } else if (["REMINDER_SENT", "GRACE_PERIOD"].includes(s.dms.status)) {
@@ -280,11 +296,24 @@ export function deriveActions(s: LegacySnapshot): LegacyAction[] {
       href: "/dead-man-switch",
     });
   }
+  if (armed && !s.dms.warningWindowValid) {
+    add({
+      id: "dms-schedule",
+      title: "Review your check-in schedule",
+      explanation:
+        "Your check-in interval is not shorter than your inactivity threshold, so there is almost no time to warn you before the grace period.",
+      priority: "IMPORTANT",
+      source: "Dead Man’s Switch",
+      cta: "Review",
+      href: "/dead-man-switch",
+    });
+  }
   if (armed && s.dms.releaseScopeSize === 0) {
     add({
       id: "dms-scope",
       title: "Choose what the switch releases",
-      explanation: "Nothing is selected for release yet — only what you choose is ever shared.",
+      explanation:
+        "Nothing that still exists is selected for release — only what you choose is ever shared.",
       priority: "IMPORTANT",
       source: "Dead Man’s Switch",
       cta: "Choose",

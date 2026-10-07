@@ -10,6 +10,9 @@ import "server-only";
  *  • **Security alerts always send.** The toggle for them is locked on in the
  *    product, because being told that someone signed in as you is not a
  *    preference. They ignore the master email switch for the same reason.
+ *    So do the emergency-release warnings (grace period, escalation, release)
+ *    and emergency-access alerts: they are the owner's last chance to stop a
+ *    release, so "check-in reminders" governs only the routine reminder.
  *  • **Anything unrecognised sends.** A new notification type is far more
  *    likely to be consequential (an access link, an emergency request) than
  *    promotional, and silently dropping it would be the worse failure.
@@ -23,13 +26,28 @@ export interface NotificationPreferences {
 
 export type EmailDecision = { send: true } | { send: false; reason: string };
 
+/**
+ * Every release stage after the routine reminder, and an emergency request that
+ * a timeout rule could grant: the owner may be about to lose control.
+ */
+export const ALWAYS_SENT = new Set([
+  "dms.grace_period",
+  "dms.escalating",
+  "dms.released",
+  "dms.release_held",
+  "ea.request_pending",
+  "ea.access_granted",
+]);
+
 export function shouldEmailNotification(
   type: string,
   preferences: NotificationPreferences | null | undefined,
 ): EmailDecision {
   const prefs = preferences ?? {};
 
-  if (type.startsWith("security.") || type.startsWith("admin.")) return { send: true };
+  if (type.startsWith("security.") || type.startsWith("admin.") || ALWAYS_SENT.has(type)) {
+    return { send: true };
+  }
 
   if (prefs.email === false) return { send: false, reason: "email_disabled" };
 
