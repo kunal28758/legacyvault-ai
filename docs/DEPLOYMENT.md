@@ -373,7 +373,7 @@ own approval:
 If 0011 were applied before the release, the old code's repeat shares would
 fail closed (no new link, "email could not be sent") — safe, but noisy.
 
-## 7e. Production rollout runbook — 0010 + 0011 (prepared 2026-10-08; 0010 applied 2026-10-09)
+## 7e. Production rollout runbook — 0010 + 0011 (prepared 2026-10-08; run 2026-10-09 — state in § 7f)
 
 Every step that changes production needs its own explicit approval. Never
 print a secret; never paste one into a shell that logs. Production is the
@@ -460,6 +460,43 @@ duplicate diagnostic current; this runbook reviewed.
   they fix. Prefer a forward fix.
 - Revoked duplicate links are not restored (the audit trail stays true); a
   beneficiary who needs a link gets a fresh one from the owner's resend.
+
+## 7f. Production state and free-tier limitations (verified 2026-10-09)
+
+**Live.** Release `39f7bfc` on the Vercel project `legacyvault-ai-uh7s`
+(`https://legacyvault-ai-uh7s.vercel.app`); database at migration **0011**
+(catalog identical to a local 0001→0011 replay apart from the hosted
+`service_role` EXECUTE defaults); the 3 duplicate share links revoked
+(audited, `share-link-cleanup-0011`), 0 remaining; SSL enforcement **on**;
+28/28 tables with RLS, 0 `anon` grants, buckets private (documents 50 MB,
+videos 500 MB); `AI_DOCUMENT_PROVIDERS` unset, so vault documents reach no AI
+provider.
+
+**Scheduler.** `pg_cron` jobs and Vault `legacyvault_app_url` are in place.
+Vault `legacyvault_cron_secret` must hold the Vercel Production `CRON_SECRET`;
+Vercel stores it as a Secret that cannot be read back, so only the owner can
+copy it (Supabase → Integrations → Vault → Add new secret). Until it exists the
+database ticks do nothing, the GitHub Actions backup (every 3–7 h) is the only
+caller, and `/api/v1/health` reports `down` once the last DMS scan is over 2 h
+old. Then run § 7e step 8.
+
+**Accepted limitations (free tier, by the owner's decision).**
+- *Backups*: the Supabase free plan keeps no restorable backups and has no
+  PITR. Recovery relies on the manual logical dump (schema + data, SHA-256
+  recorded) taken before the 2026-10-09 rollout and restore-tested (28/28
+  tables, identical row counts); it is kept privately, outside git. Take a new
+  one (§ 7e step 1) before any future production write.
+- *Clerk*: production uses the Clerk **development** instance. A production
+  instance needs an owned domain (not `*.vercel.app`) and a re-mapping of
+  `users.clerk_user_id` first — new instance ids would otherwise lock existing
+  users out (`users.email` is unique).
+- *Email*: Brevo sends all mail; authenticating a sending domain (SPF, DKIM,
+  DMARC) needs an owned domain.
+- *Sentry*: no DSN is configured, so error reporting is off; the scrubbing
+  code is in place for when one is added.
+- A second Vercel project, `legacyvault-ai`, also deploys this repository
+  (`https://legacyvault-ai.vercel.app`) without email settings; it is not the
+  production entry point.
 
 ## 8. Deployment pipeline
 

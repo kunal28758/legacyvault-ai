@@ -19,6 +19,16 @@ Format: newest first. Categories: *Governance*, *Specification*,
 
 ## [Unreleased]
 
+### Production rollout — 2026-10-09
+
+- Released `39f7bfc`; migrations 0010 and 0011 applied (0010 first — the
+  release reads its column); the 3 duplicate share links revoked under audit;
+  SSL enforcement on; a manual production dump taken and restore-tested.
+- Free-tier limitations accepted by the owner (no PITR, Clerk development
+  instance, no sending-domain authentication, no Sentry DSN) and the one step
+  left to the owner (Vault `legacyvault_cron_secret`) are recorded in
+  DEPLOYMENT.md § 7f.
+
 ### Share-link and access-token hardening — 2026-10-08
 
 - **One live share link per beneficiary** (migration 0011): sharing again
