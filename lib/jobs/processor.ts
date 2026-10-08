@@ -40,11 +40,15 @@ export interface JobRunSummary {
 }
 
 export async function runDueJobs(runnerId: string, limit = 10): Promise<JobRunSummary> {
+  const runStarted = Date.now();
   const db = createServiceClient();
   const jobs = await jobRepository.claim(db, runnerId, limit);
   const summary: JobRunSummary = { claimed: jobs.length, succeeded: 0, failed: 0, skipped: 0 };
 
   for (const job of jobs) {
+    const started = Date.now();
+    // Ids, types and timings only: payloads can name people.
+    const fields = { jobId: job.id, type: job.type, attempt: job.attempts };
     const handler = HANDLERS[job.type];
     if (!handler) {
       summary.skipped += 1;
@@ -56,14 +60,26 @@ export async function runDueJobs(runnerId: string, limit = 10): Promise<JobRunSu
       await handler(job, db);
       await jobRepository.markSucceeded(db, job.id);
       summary.succeeded += 1;
+      logger.info({ ...fields, durationMs: Date.now() - started }, "job succeeded");
     } catch (cause) {
       summary.failed += 1;
       const message = cause instanceof Error ? cause.message : "job failed";
-      logger.error({ err: cause, jobId: job.id, type: job.type }, "job failed");
+      logger.error(
+        {
+          err: cause,
+          ...fields,
+          final: job.attempts >= job.max_attempts,
+          durationMs: Date.now() - started,
+        },
+        "job failed",
+      );
       await jobRepository.markFailed(db, job, message);
     }
   }
 
+  if (jobs.length > 0) {
+    logger.info({ runnerId, ...summary, durationMs: Date.now() - runStarted }, "job run complete");
+  }
   return summary;
 }
 

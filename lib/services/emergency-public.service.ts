@@ -133,8 +133,9 @@ export async function verify(
  * The owner must hear about a verified request — it waits for their decision,
  * and a timeout rule may decide for them. Always emailed (preferences.ts).
  * The contact's answer does not depend on this: a failure is logged only.
+ * Housekeeping sends it again while an automatic grant is held (0010).
  */
-async function notifyOwnerOfRequest(
+export async function notifyOwnerOfRequest(
   db: ReturnType<typeof createServiceClient>,
   requestId: string,
 ): Promise<void> {

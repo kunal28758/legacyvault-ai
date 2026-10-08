@@ -70,7 +70,7 @@ data call services, and client components call the API.
 | Migrations | `supabase/migrations/NNNN_*.sql` — append-only; never edit an applied migration |
 | Scripts | `scripts/` (`check-env.ts`, `seed-admin.ts`) |
 | Security logic | `lib/security/` (encryption, access tokens and cookie, file validation, rate limiting), `lib/auth/` (session → app user, roles, access grants), `lib/api/with-api.ts` (CSRF, step-up), `lib/audit/` (append-only audit), `proxy.ts` (CSP, protected-first routing) |
-| Jobs / cron | `lib/jobs/` (runner and handlers), triggered by `app/api/internal/cron/*` (Vercel Cron, `CRON_SECRET`) |
+| Jobs / cron | `lib/jobs/` (runner and handlers), triggered by `app/api/internal/cron/*` (`CRON_SECRET` bearer) — called by `pg_cron` + `pg_net` from the database (migration 0010), with GitHub Actions as a backup |
 
 ### `components/` by feature
 

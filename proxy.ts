@@ -67,12 +67,33 @@ const cspDirectives = {
   ...(isProduction ? { "upgrade-insecure-requests": [] } : {}),
 };
 
+/**
+ * An access link from before secrets moved into the fragment (`/access?t=…`).
+ *
+ * Its request line has already reached the platform log; what this prevents
+ * is the page rendering the secret into server HTML or the RSC payload, or the
+ * browser keeping it in history: the browser goes straight to `/access#t=…`,
+ * which the portal consumes and clears. Remove once every such link has
+ * expired (30 days after the release that changed `accessLinkFor`).
+ */
+function legacyAccessLink(request: NextRequest): NextResponse | null {
+  const { pathname, searchParams } = request.nextUrl;
+  if (pathname !== "/access" || !searchParams.has("t")) return null;
+  const target = new URL("/access", request.url);
+  target.hash = `t=${encodeURIComponent(searchParams.get("t") ?? "")}`;
+  const response = NextResponse.redirect(target, 303);
+  response.headers.set("Cache-Control", "no-store");
+  return response;
+}
+
 const clerkConfigured = Boolean(
   process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY,
 );
 
 const clerkProxy = clerkMiddleware(
   async (auth, request) => {
+    const legacy = legacyAccessLink(request);
+    if (legacy) return legacy;
     if (isPublicRoute(request)) return;
 
     // API routes must answer with the JSON error envelope, not a redirect to a
@@ -97,6 +118,8 @@ const clerkProxy = clerkMiddleware(
  * protected route.
  */
 function unconfiguredProxy(request: NextRequest): NextResponse {
+  const legacy = legacyAccessLink(request);
+  if (legacy) return legacy;
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
   const csp = [
     `default-src 'self'`,

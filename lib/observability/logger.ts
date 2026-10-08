@@ -8,7 +8,8 @@ import pino, { type Logger } from "pino";
  * Nothing sensitive may be logged: no passwords, tokens, keys, cookies,
  * encrypted envelopes, document content or access-link plaintext. Redaction is
  * applied by path, and `/access` style request paths are scrubbed because the
- * emailed link carries a bearer secret in `?t=`.
+ * emailed link carries a bearer secret (in the `#t=` fragment; legacy links in
+ * `?t=`, which `proxy.ts` redirects).
  */
 const REDACT_PATHS = [
   "req.headers.authorization",

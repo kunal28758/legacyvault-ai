@@ -57,8 +57,19 @@ interface Chain {
 type Operation = "text" | "structured" | "stream";
 type AIEnv = ReturnType<typeof getEnvGroup<"ai">>;
 
-/** Providers that may receive vault documents unless configured otherwise. */
-const DEFAULT_DOCUMENT_PROVIDERS: AIProviderName[] = ["gemini", "openai"];
+/**
+ * Providers that may receive vault documents when `AI_DOCUMENT_PROVIDERS` is
+ * unset. In production: none. Whether a provider may read a will, a deed or an
+ * identity document depends on the terms of the account behind its key (an
+ * unpaid API tier may use submissions to improve the vendor's products), and
+ * no code can see those terms — so in production vault documents reach no AI
+ * until an operator names the approved providers explicitly. Fail closed:
+ * document requests answer "no configured AI provider is approved to read
+ * vault documents"; chat without attachments is unaffected.
+ */
+function defaultDocumentProviders(): AIProviderName[] {
+  return process.env.NODE_ENV === "production" ? [] : ["gemini", "openai"];
+}
 
 const warned = new Set<string>();
 function warnOnce(key: string, fields: Record<string, unknown>, message: string): void {
@@ -107,7 +118,7 @@ function chain(): Chain {
     (env.AI_DEFAULT_PROVIDER === "gemini" ? ["gemini", "openai"] : ["openai", "gemini"]);
   return {
     providers: order.map((name) => build(name, env)).filter((p): p is AIProvider => Boolean(p)),
-    documentProviders: new Set(env.AI_DOCUMENT_PROVIDERS ?? DEFAULT_DOCUMENT_PROVIDERS),
+    documentProviders: new Set(env.AI_DOCUMENT_PROVIDERS ?? defaultDocumentProviders()),
   };
 }
 

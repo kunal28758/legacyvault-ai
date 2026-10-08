@@ -16,8 +16,10 @@ type IdParams = { id: string };
  * beneficiary-status checks. Documents carry no allocation percentage.
  *
  * The share then emails the beneficiary a link that follows their shares
- * (migration 0007); `accessEmailSent` reports whether it went out. A failed
- * email never undoes the share.
+ * (migration 0007). A beneficiary has at most one live such link (0011): when
+ * they already hold it, nothing is minted and a link-free notice goes instead.
+ * `accessLink` says which (`new` | `existing` | `none`); `accessEmailSent`
+ * whether an email went out. A failed email never undoes the share.
  */
 export const POST = withApi<DocumentShareBody, undefined, IdParams>(
   {

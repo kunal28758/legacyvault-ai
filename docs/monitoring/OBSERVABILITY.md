@@ -54,7 +54,7 @@ traced across API, database and audit trail.
   upload from CI.
 - Capture points: the `withApi()` error mapper and the job runner. Clients
   receive only the safe error envelope (FR-Q016).
-- PII scrubbing in `beforeSend` (strip `t` query parameters and cookies);
+- PII scrubbing in `beforeSend` / `beforeSendTransaction` / `beforeBreadcrumb` (`lib/client/sensitive-url.ts`): every URL loses its query **and fragment** (where access-link secrets travel), Referer/Cookie/Authorization headers and cookies are dropped, span `*.query`/`*.fragment` attributes removed;
   breadcrumbs sanitized (T172 audits this).
 
 ## 5. Health (T030, T183)

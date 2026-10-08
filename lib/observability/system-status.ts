@@ -28,7 +28,7 @@ import type {
  */
 const PROBE_TIMEOUT_MS = 4_000;
 const CACHE_MS = 30_000;
-/** The DMS scan runs hourly; twice that without a heartbeat is a failure. */
+/** The DMS scan runs hourly (one job per hour by key; 0010 ticks at :07 and :37); twice that without a heartbeat is a failure. */
 const JOBS_STALE_SECONDS = 2 * 3600;
 
 const LABELS: Record<ServiceId, string> = {

@@ -14,10 +14,6 @@ import { AccessPortal } from "@/app/(public)/access/_components/access-portal";
  */
 const TOKEN = "release-secret-token-value-0123456789";
 
-vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(`t=${TOKEN}`),
-}));
-
 function ok(data: unknown) {
   return new Response(JSON.stringify({ success: true, data, meta: { correlationId: "t" } }), {
     status: 200,
@@ -44,8 +40,14 @@ const SUMMARY = {
 
 const exchanges: Record<string, unknown>[] = [];
 
+/** Where the address bar stood when each exchange request went out. */
+const addressAtExchange: string[] = [];
+
 beforeEach(() => {
   exchanges.length = 0;
+  addressAtExchange.length = 0;
+  // The emailed link: the secret is in the fragment, never in the request line.
+  window.history.replaceState(null, "", `/access#t=${TOKEN}`);
   vi.spyOn(window.history, "replaceState");
   vi.stubGlobal(
     "fetch",
@@ -54,6 +56,9 @@ beforeEach(() => {
       if (url.includes("/access/exchange")) {
         const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
         exchanges.push(body);
+        addressAtExchange.push(
+          `${window.location.pathname}${window.location.search}${window.location.hash}`,
+        );
         if (!body.code) {
           return ok({
             verificationRequired: true,
@@ -93,8 +98,21 @@ describe("release link in the portal", () => {
     expect(screen.getByText(/a•••@example\.com/)).toBeInTheDocument();
     expect(screen.getByLabelText("Verification code")).toBeInTheDocument();
     expect(screen.queryByText("Letter to Asha.pdf")).not.toBeInTheDocument();
-    // The secret left the address bar before anything else happened.
+    // The secret left the address bar before anything else happened: the
+    // exchange went out from the bare path, with the secret in its body only.
     expect(window.history.replaceState).toHaveBeenCalled();
+    expect(addressAtExchange).toEqual(["/access"]);
+    expect(window.location.hash).toBe("");
+    expect(exchanges).toEqual([{ token: TOKEN }]);
+  });
+
+  it("still opens a legacy query link, clearing it the same way", async () => {
+    window.history.replaceState(null, "", `/access?t=${TOKEN}`);
+    render(<AccessPortal />);
+
+    expect(await screen.findByRole("heading", { name: "Confirm it is you" })).toBeInTheDocument();
+    expect(addressAtExchange).toEqual(["/access"]);
+    expect(window.location.search).toBe("");
     expect(exchanges).toEqual([{ token: TOKEN }]);
   });
 

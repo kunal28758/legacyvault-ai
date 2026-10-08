@@ -145,7 +145,7 @@ logic lives in `lib/services`, data access in `lib/repositories`.
 **PostgreSQL** (SQL migrations, RLS on every table, transactional SQL
 functions) and **private object storage** (quarantine → validate/scan →
 promote; signed URLs). Background work = **PostgreSQL job table drained by
-Vercel Cron** (+ `pg_cron` redundancy in production) — **no Redis/BullMQ**.
+`pg_cron` + `pg_net`** in the database calling the protected cron routes (migration 0010; GitHub Actions as a backup caller) — **no Redis/BullMQ**.
 AI = in-house provider abstraction over **OpenAI + Gemini** with structured,
 validated outputs and confirmation gates. Email = abstraction with **Resend**.
 Observability = **Sentry + pino structured logs + health checks**. Deployed on
@@ -169,7 +169,7 @@ legacyvault-ai/
 ├── supabase/                 # config.toml, migrations/*.sql, seed.sql
 ├── scripts/ · tests/{unit,integration,e2e} · docs/ · specs/ · .specify/
 ├── proxy.ts                  # clerkMiddleware + CSP nonce (Next 16 convention)
-├── vercel.json               # cron schedules
+├── vercel.json               # project config (no crons on Hobby; schedules live in migration 0010)
 └── next.config.ts · package.json · .env.example
 ```
 
@@ -186,15 +186,15 @@ Full tree and phase plan: `specs/001-baseline-product-spec/plan.md`.
 | Authentication        | Clerk (sessions, MFA TOTP + backup codes, lockout, reverification, webhooks) | 003 | ✅ Decided |
 | Authorization         | Service-layer checks (primary) + PostgreSQL RLS keyed on Clerk subject (secondary) | 004 | ✅ Decided |
 | Write protection      | Privilege baseline (`REVOKE ALL` from anon/authenticated) + Class A column allow-lists + Class B guarded `SECURITY DEFINER` functions + Class C service-only tables | 004 r2 | ✅ Decided |
-| External access       | All recipients are Beneficiary records; one `access_tokens` entity (DIRECT_SHARE / DMS_RELEASE / EMERGENCY_ACCESS); token exchanged once for an encrypted httpOnly access cookie — never in URL paths | 014 | ✅ Decided |
+| External access       | All recipients are Beneficiary records; one `access_tokens` entity (DIRECT_SHARE / DMS_RELEASE / EMERGENCY_ACCESS); the link (`/access#t=`, fragment only) is exchanged on each visit for a 30-minute httpOnly access cookie and stays reusable until it expires or is revoked — never in URL paths or query strings | 014 | ✅ Decided |
 | Malware scanning      | ClamAV (`clamd` INSTREAM) behind `MalwareScanner`; production refuses `noop`; scan gates promotion | 015 | ✅ Decided (hosting: owner) |
 | AI drafts             | `ai_drafts` + immutable `ai_draft_versions` (encrypted content); `ai_interactions` stays sanitized | 016 | ✅ Decided |
 | Database              | PostgreSQL on Supabase; SQL migrations via Supabase CLI; no ORM       | 002 | ✅ Decided |
 | Object storage        | Supabase Storage private buckets; two-step direct upload; signed URLs | 005 | ✅ Decided |
-| Background processing | PostgreSQL `jobs` table + Vercel Cron; `pg_cron` redundancy           | 006 | ✅ Decided |
+| Background processing | PostgreSQL `jobs` table + `pg_cron`/`pg_net` triggers (0010); GitHub Actions backup | 006 | ✅ Decided |
 | Rate limiting         | Clerk attack protection + Vercel WAF + Postgres-backed app limiter    | 007 | ✅ Decided |
 | AI                    | OpenAI + Gemini behind in-house `AIProvider`; structured outputs      | 008 | ✅ Decided |
-| Email                 | `EmailProvider` abstraction; Resend + React Email                     | 009 | ✅ Decided |
+| Email                 | `EmailProvider` abstraction; Brevo sends all mail (Resend fallback); React Email | 009 | ✅ Decided |
 | Monitoring            | Sentry, pino JSON logs + correlation IDs, `/api/v1/health`, metrics   | 010 | ✅ Decided |
 | Deployment            | Vercel + Supabase + Clerk; GitHub Actions CI; gated migrations        | 011 | ✅ Decided |
 | Field encryption      | AES-256-GCM (Node crypto), key in server env                          | —   | ✅ Decided |
@@ -267,7 +267,7 @@ table). Every table has a write class (A/B/C) — see `data-model.md`
 | Re-authentication         | Step-up for sensitive ops                                            | Clerk reverification (`strict` / `multi_factor`)      | III |
 | Authorization             | Server-side on every protected resource                              | `requireUser`/`requireRole` + service ownership checks; RLS + column grants + guarded functions as second barrier (ADR-004 r2) | I, III |
 | Invariant protection      | No self-role escalation, no direct allocation/status/scan tampering | Class B tables have no direct write grants; `SECURITY DEFINER` functions with auth prologue, `FOR UPDATE` ownership, in-transaction audit | I, VII |
-| External access tokens    | Bearer secrets never in URLs or logs                                 | One-time exchange → encrypted httpOnly cookie (`Path=/api/v1/access`, 30-min sliding); per-request revocation check (ADR-014) | I, XI |
+| External access tokens    | Bearer secrets never in URLs or logs                                 | Secret in the URL fragment (`/access#t=`, never sent to a server) → POST exchange → encrypted httpOnly cookie (`Path=/api/v1/access`, 30-min sliding); per-request revocation check; one live share link per beneficiary (ADR-014 r6, migration 0011) | I, XI |
 | RBAC                      | Super Admin, User (Org Admin / Team Manager deferred)                | `users.role` in PostgreSQL (source of truth)          | III |
 | Encryption at Rest        | AES-256 or equivalent                                                | App AES-256-GCM fields; provider AES-256 objects/disks | IV |
 | Encryption in Transit     | TLS 1.2+                                                             | Vercel / Supabase / Clerk TLS                          | IV |
@@ -494,7 +494,7 @@ Architecture changes additionally require an ADR in
 | AI draft persistence          | `ai_drafts` + versions (encrypted); sanitized `ai_interactions` | ADR-016 |
 | Database                       | PostgreSQL on Supabase; SQL migrations; no ORM               | ADR-002 |
 | Object storage                 | Supabase Storage; two-step direct upload; signed URLs        | ADR-005 |
-| Background processing          | Postgres job table + Vercel Cron (+ pg_cron); no Redis/BullMQ | ADR-006 |
+| Background processing          | Postgres job table + pg_cron/pg_net (0010); no Redis/BullMQ | ADR-006 |
 | Rate limiting                  | Clerk + Vercel WAF + Postgres limiter                         | ADR-007 |
 | AI                             | OpenAI + Gemini behind in-house abstraction; structured outputs | ADR-008, Constitution VI |
 | Email                          | Abstraction; Resend baseline                                  | ADR-009 |
@@ -527,7 +527,7 @@ Architecture changes additionally require an ADR in
 | Legal validity concerns            | High     | Disclaim AI output as informational; require confirmation; recommend professional review |
 | Sensitive data exposure            | Critical | Service-layer authz + RLS, app field encryption, private buckets, audit, env isolation |
 | AI hallucination in legal context  | High     | Structured outputs, validation heuristics, confidence indicators, mandatory confirmation |
-| Unauthorized beneficiary access    | Critical | Hash-only tokens exchanged once for an httpOnly cookie (never in URLs/logs), scope enforcement, expiry + per-request revocation check, rate limits, audit |
+| Unauthorized beneficiary access    | Critical | Hash-only tokens carried in the URL fragment and exchanged for an httpOnly cookie (never in request lines/logs/telemetry), one live share link per beneficiary (0011), scope enforcement, expiry + per-request revocation check, rate limits, audit |
 | Privilege escalation via direct DB writes | Critical | Column allow-lists, guarded functions, `protect_identity_columns` trigger, write-protection test suite (T215) |
 | Unauthorized document access       | Critical | Server authorization, storage RLS, 15-min signed URLs, quarantine gating |
 | Dead Man Switch false trigger      | High     | Multi-step escalation, reverified recovery, idempotent jobs |

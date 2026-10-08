@@ -101,7 +101,7 @@ export async function listRequests(
     .from("emergency_access_requests")
     // `otp_hash` is deliberately absent: there is no grant for it.
     .select(
-      "id, config_id, requester_email, status, request_expires_at, decided_at, expires_at, revoked_at, created_at",
+      "id, config_id, requester_email, status, request_expires_at, decided_at, expires_at, revoked_at, created_at, auto_grant_held_at",
     )
     .in("config_id", [...byConfig.keys()])
     .order("created_at", { ascending: false })
@@ -119,6 +119,7 @@ export async function listRequests(
     expiresAt: row.expires_at,
     revokedAt: row.revoked_at,
     createdAt: row.created_at,
+    autoGrantHeldAt: row.auto_grant_held_at,
   }));
 }
 

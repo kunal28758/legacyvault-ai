@@ -48,17 +48,33 @@ export function accessTokenMatches(plaintext: string, storedHash: string): boole
   return timingSafeEqual(candidate, stored);
 }
 
-/** The URL a beneficiary receives. The secret is a query parameter by design. */
+/**
+ * The URL a beneficiary receives.
+ *
+ * The secret travels in the fragment, which a browser never sends to a server:
+ * it reaches no request line, so no platform or application request log, no
+ * Referer, and no server-rendered page. The portal moves it into a POST body
+ * and clears the address bar. (Older links used `?t=`; the proxy converts those.)
+ */
 export function accessLinkFor(plaintext: string): string {
   const { APP_URL } = getEnvGroup("core");
-  return `${APP_URL.replace(/\/$/, "")}/access?t=${plaintext}`;
+  return `${APP_URL.replace(/\/$/, "")}/access#t=${plaintext}`;
 }
 
 /** The longest a DIRECT_SHARE link may live (FR-D011). */
 export const MAX_TOKEN_TTL_DAYS = 30;
 
+/**
+ * The database refuses an expiry beyond `now() + 30 days` by its own clock. A
+ * request for exactly the maximum, timed by a server clock a little ahead of the
+ * database's, landed just past it and was refused (INVALID_EXPIRY) — a share
+ * link then went unsent. Requesting a few minutes less keeps every ttlDays
+ * request inside the limit whatever the skew.
+ */
+export const EXPIRY_CLOCK_MARGIN_MS = 5 * 60 * 1000;
+
 export function expiryFromDays(days: number): string {
-  return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+  return new Date(Date.now() + days * 24 * 60 * 60 * 1000 - EXPIRY_CLOCK_MARGIN_MS).toISOString();
 }
 
 export function expiryFromHours(hours: number): string {

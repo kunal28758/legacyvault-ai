@@ -27,6 +27,9 @@ import type { Database } from "@/lib/types/database";
  *     • Super Admin operations (after an explicit role check)
  *     • token-based beneficiary / emergency access (no Clerk session)
  *     • upload promotion
+ *     • system-owned (Class C) columns of the caller's own rows that carry no
+ *       `authenticated` grant — `invited_at`, `deletion_requested_at`, AI
+ *       interaction records — always keyed by the session user's id
  *   Every one of those paths must perform its own ownership/role check in code
  *   first. RLS is the second barrier, never the only one — if a query fails
  *   because authorization is working, fix the service, do not reach for this

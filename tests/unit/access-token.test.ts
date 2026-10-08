@@ -5,6 +5,7 @@ import {
   MAX_TOKEN_TTL_DAYS,
   accessLinkFor,
   accessTokenMatches,
+  EXPIRY_CLOCK_MARGIN_MS,
   expiryFromDays,
   expiryFromHours,
   hashAccessToken,
@@ -63,20 +64,31 @@ describe("token comparison", () => {
 });
 
 describe("links and expiry", () => {
-  it("builds the access link from the configured origin", () => {
-    expect(accessLinkFor("secret-value")).toBe("https://vault.example.test/access?t=secret-value");
+  it("builds the access link from the configured origin, with the secret in the fragment", () => {
+    const link = accessLinkFor("secret-value");
+    expect(link).toBe("https://vault.example.test/access#t=secret-value");
+    // A fragment is never part of an HTTP request: the request line, and so any
+    // server or platform log of it, carries the bare path only.
+    const url = new URL(link);
+    expect(`${url.pathname}${url.search}`).toBe("/access");
+    expect(url.search).toBe("");
   });
 
   it("does not double a trailing slash", () => {
     process.env.APP_URL = "https://vault.example.test/";
     resetEnvGroupCache();
-    expect(accessLinkFor("x")).toBe("https://vault.example.test/access?t=x");
+    expect(accessLinkFor("x")).toBe("https://vault.example.test/access#t=x");
   });
 
   it("computes expiries in the future", () => {
     const days = Date.parse(expiryFromDays(MAX_TOKEN_TTL_DAYS));
     expect(days).toBeGreaterThan(Date.now());
     expect(days).toBeLessThanOrEqual(Date.now() + MAX_TOKEN_TTL_DAYS * 86_400_000 + 1000);
+    // Never exactly the maximum: a database clock a little behind ours would
+    // refuse it (INVALID_EXPIRY) and the link would go unsent.
+    expect(days).toBeLessThanOrEqual(
+      Date.now() + MAX_TOKEN_TTL_DAYS * 86_400_000 - EXPIRY_CLOCK_MARGIN_MS + 1000,
+    );
 
     const hours = Date.parse(expiryFromHours(1));
     expect(hours).toBeGreaterThan(Date.now());

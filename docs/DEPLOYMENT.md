@@ -33,9 +33,9 @@ capability exists) · 🔧 configured locally in this repository · ⬜ not star
 | Database | Supabase CLI local stack (`pnpm db:start`, Docker) | Supabase staging project | Supabase production project (PITR) |
 | Object storage | local stack buckets `documents` / `videos` | staging project buckets | production project buckets |
 | Identity | Clerk **development** instance | Clerk development instance | Clerk **production** instance |
-| Background jobs | `curl` the cron routes with `CRON_SECRET` | Vercel Cron (`vercel.json`) | Vercel Cron + `pg_cron`/`pg_net` redundancy (T211) |
+| Background jobs | `curl` the cron routes with `CRON_SECRET` | `curl` / manual | `pg_cron` + `pg_net` in the database (migration 0010, § 7c), GitHub Actions as a second caller |
 | Malware scanning | none (ADR-017) | none | none — uploads are checked for size and type only |
-| Email | Resend test key or console provider | Resend | Resend |
+| Email | none (or the E2E mail-capture stand-in) | Brevo (Resend fallback) | Brevo — the verified sender for every email (Resend only if Brevo is unset) |
 | Monitoring | optional Sentry DSN | Sentry | Sentry (required by the env schema) |
 
 Isolation rule (constitution XXI): each column uses its own Supabase project,
@@ -59,7 +59,7 @@ lists every variable with placeholders. Validate a local file with
 | `OPENAI_API_KEY`, `GEMINI_API_KEY`, `AI_DEFAULT_PROVIDER`, `OPENAI_MODEL`, `GEMINI_MODEL`; optional fallbacks `OPENROUTER_API_KEY`/`OPENROUTER_MODEL`/`OPENROUTER_ALLOW_PAID_MODELS`, `GROQ_API_KEY`/`GROQ_MODEL`, `CEREBRAS_API_KEY`/`CEREBRAS_MODEL`, `HF_TOKEN`/`HF_MODEL`; policy `AI_PROVIDER_ORDER`, `AI_DOCUMENT_PROVIDERS` | server | provider consoles → Vercel env | never `NEXT_PUBLIC_` (FR-L009, FR-R002); fallbacks are used **only** when named in `AI_PROVIDER_ORDER` — see § 7a |
 | `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_WEBHOOK_SECRET` | server | Resend dashboard | ADR-009 |
 | `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN` | server / public | Sentry project | server DSN required in production |
-| `CRON_SECRET` (≥ 32 chars) | server | Vercel env (Vercel Cron sends it automatically) | ADR-006 |
+| `CRON_SECRET` (≥ 32 chars) | server | Vercel env; the same value in Supabase Vault `legacyvault_cron_secret` (§ 7c) and the GitHub `CRON_SECRET` repository secret | ADR-006 |
 | `ADMIN_EMAIL` | server | Vercel env | first Super Admin (T033) |
 
 Secrets are managed only through Vercel environment variables (and `.env.local`
@@ -193,7 +193,7 @@ Code that depends on this checklist: `proxy.ts` (T192), `app/layout.tsx`
 
 | # | Prerequisite (why) | Status | How to verify / record |
 |---|---|---|---|
-| 1 | Vercel plan supports **minute-level cron** (`*/5` in `vercel.json`, ADR-006) | ⏳ Pending manual verification | Vercel dashboard → Project → Cron Jobs after first deploy; Hobby plans allow only daily crons — the job runner needs 5-minute cadence |
+| 1 | ~~Vercel plan supports minute-level cron~~ — **no longer needed**: schedules run in the database (`pg_cron`, § 7c); `vercel.json` declares no crons | ⏳ Pending manual verification | Vercel dashboard → Project → Cron Jobs after first deploy; Hobby plans allow only daily crons — the job runner needs 5-minute cadence |
 | 2 | Vercel function `maxDuration` sufficient for job and AI handlers | ⏳ Pending manual verification | confirm plan limit; handlers declare `export const maxDuration` (T197/T128/T145/T141) |
 | 3 | Supabase file-size limit ≥ 500 MB (videos) | ⏳ Pending manual verification | Project settings → Storage; requires Pro plan |
 | 4 | Supabase PITR for production | ⏳ Pending manual verification | Project settings → Database → Backups |
@@ -214,7 +214,11 @@ limit configured).
 Gemini stays the primary. Any other provider is called **only** when it is named
 in `AI_PROVIDER_ORDER` (a key alone authorises nothing), and vault document
 content — attachments, document analysis — goes **only** to providers named in
-`AI_DOCUMENT_PROVIDERS` (default: Gemini and OpenAI). The chain moves on only
+`AI_DOCUMENT_PROVIDERS` (unset: Gemini and OpenAI in development, **none in
+production** — vault documents reach no AI until it names providers whose
+account terms allow them, e.g. a billing-enabled Gemini project; document AI
+answers "no configured AI provider is approved to read vault documents"
+until then, and chat without attachments is unaffected). The chain moves on only
 for an outage, a timeout or a spent quota; a refusal, an invalid request,
 rejected credentials or an answer that fails validation is reported as it is.
 A model that cannot read a request's file (an image to a text-only model, a
@@ -293,10 +297,10 @@ test rows into a hosted project.
 
 **Vercel — blockers found by inspection.**
 
-- **Cron schedules:** `vercel.json` runs `run-jobs` every 5 minutes and
-  `dms-scan` hourly. The Hobby plan allows only daily cron jobs and rejects the
-  deployment otherwise — use Pro, or move those two schedules to an external
-  scheduler that calls the same `/api/internal/cron/*` routes with `CRON_SECRET`.
+- **Cron schedules:** the Hobby plan allows only daily Vercel crons, so
+  `vercel.json` declares none. The schedules live in the database instead
+  (§ 7c); the GitHub Actions workflow `production-jobs.yml` still calls the same
+  routes, but GitHub throttles it to every few hours, so it is only a backup.
 - **Required production variables still unset:** `CLERK_WEBHOOK_SIGNING_SECRET`,
   `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_WEBHOOK_SECRET`, `ADMIN_EMAIL`,
   `SENTRY_DSN` (`NODE_ENV=production pnpm env:check --all`).
@@ -308,6 +312,154 @@ Then: `pnpm dlx vercel login` → `pnpm dlx vercel link` → add the variables i
 the dashboard (server scope for secrets) → `pnpm dlx vercel deploy` (preview) →
 verify `/api/v1/health`, sign-in, a document upload and `/ai` → promote to
 production only after that.
+
+## 7c. Scheduler (pg_cron + pg_net, migration 0010)
+
+Every time-based behaviour — the job runner, the hourly Dead Man's Switch scan,
+the daily housekeeping — is driven by calls to the protected
+`/api/internal/cron/*` routes. Migration 0010 schedules those calls from the
+database:
+
+| pg_cron job | Schedule (UTC) | Route |
+|---|---|---|
+| `legacyvault-run-jobs` | `*/10 * * * *` | `/api/internal/cron/run-jobs` |
+| `legacyvault-dms-scan` | `7,37 * * * *` | `/api/internal/cron/dms-scan` (one scan per hour: the key is the hour) |
+| `legacyvault-housekeeping` | `17 3 * * *` | `/api/internal/cron/housekeeping` |
+
+Each job runs `public.lv_trigger_scheduler(path)`, which accepts only those
+three paths, reads the base URL and the bearer from **Supabase Vault**
+(`legacyvault_app_url`, `legacyvault_cron_secret`) at call time, and does
+nothing when either is missing. Neither value is in the repository. The
+function is executable only by its owner (no API role, not even
+`service_role`). The routes are unchanged: constant-time `CRON_SECRET` check,
+`claim_jobs()` with `SKIP LOCKED`, idempotent jobs — so a second caller (the
+GitHub workflow, a manual `curl`) can never double-process anything.
+
+**One-time setup per environment** (SQL editor, or
+`supabase db query --linked` — paste the values; do not echo them in a shell
+that logs):
+
+```sql
+select vault.create_secret('https://<production host>', 'legacyvault_app_url');
+select vault.create_secret('<the CRON_SECRET set in Vercel>', 'legacyvault_cron_secret');
+```
+
+**Rotating `CRON_SECRET`:** set the new value in Vercel and redeploy, then
+`select vault.update_secret(id, '<new value>') from vault.secrets where name = 'legacyvault_cron_secret';`
+and update the GitHub repository secret.
+
+**Verifying:** `select jobname, schedule, active from cron.job;` — then, after
+a tick, `select status, start_time from cron.job_run_details order by start_time desc limit 10;`
+and `select status_code, error_msg, created from net._http_response order by created desc limit 10;`
+(responses are kept about six hours; the request headers, and so the bearer,
+are not stored there). The operator health view (`/api/v1/health` with the
+bearer) reports `jobs.lastRunAgeSeconds` and `dmsScan.lastSuccessAgeSeconds`;
+both should stay under an hour.
+
+## 7d. Releasing migration 0011 (one live share link)
+
+Order matters, and the middle step changes production data, so it needs its
+own approval:
+
+1. **Release the application first.** It handles the database's
+   `SHARE_LINK_ALREADY_LIVE` answer (reuse) and sends links as `/access#t=…`.
+   (Against the old function it behaves as before; nothing breaks.)
+2. **Resolve existing duplicates** — read-only `scripts/share-links/diagnose.sql`,
+   review, then the audited `scripts/share-links/cleanup.sql` with the
+   reviewed ids (see `scripts/share-links/README.md`). Migration 0011 refuses to
+   run while any beneficiary holds more than one unrevoked share link.
+3. **Apply 0011** (`supabase db push --linked --dry-run` first).
+
+If 0011 were applied before the release, the old code's repeat shares would
+fail closed (no new link, "email could not be sent") — safe, but noisy.
+
+## 7e. Production rollout runbook — 0010 + 0011 (prepared 2026-10-08; 0010 applied 2026-10-09)
+
+Every step that changes production needs its own explicit approval. Never
+print a secret; never paste one into a shell that logs. Production is the
+Supabase project linked in `supabase/.temp/project-ref` (Tokyo); assert it
+before every `--linked` command.
+
+**Gates before starting.** All tests green on the release commit; the
+duplicate diagnostic current; this runbook reviewed.
+
+1. **Backup — REQUIRED (read-only on production).** On 2026-10-08
+   `supabase backups list --project-ref <ref>` reported **no restorable backups
+   and PITR disabled**, so before any production write take a private logical
+   copy: `supabase db dump --linked -f <private dir outside git>/pre-0010-schema.sql`
+   and `supabase db dump --linked --data-only --use-copy -f <same dir>/pre-0010-data.sql`;
+   record their sha256; keep them encrypted and off git; delete them once the
+   rollout is verified. (A paid plan's daily backups / PITR would replace this.)
+   The schema dump was verified read-only on 2026-10-08 (28 tables, 73
+   functions); take the data dump only at release time — it holds personal data.
+2. **Migration state (read-only).** `supabase migration list --linked` must
+   show 0001–0009 applied, 0010 and 0011 pending. `supabase db push --linked
+   --dry-run` must list exactly those two.
+3. **Apply 0010 alone** (writes — approval required). It must precede the
+   release: the application reads `emergency_access_requests.auto_grant_held_at`,
+   which 0010 adds. It is safe under the old application — the column is
+   nullable, the cron jobs do nothing until the Vault secrets exist, and the
+   emergency gate only touches open requests (check first:
+   `select status, count(*) from public.emergency_access_requests group by 1;`).
+   Hold 0011 back by moving its file out of `supabase/migrations` for this
+   `supabase db push --linked`, then put it back.
+4. **Release the application** (push the reviewed commit; Vercel deploys).
+   Verify the new build is live (the public chunk fingerprint changes;
+   `/access` answers `Referrer-Policy: no-referrer`; `/access?t=x` answers 303).
+5. **Share-link cleanup, then 0011** (writes — approval required): § 7d and
+   `scripts/share-links/README.md`. Re-run `diagnose.sql` immediately before;
+   abort and re-approve if anything differs from the approved ids. Afterwards
+   `diagnose.sql` must report 0 beneficiaries affected. Then
+   `supabase db push --linked` (only 0011 pending); it stops with
+   `DUPLICATE_LIVE_SHARE_LINKS`, changing nothing, if the cleanup was incomplete.
+6. **Verify the schema (read-only).** Run
+   `scripts/region-migration/sql/catalog-fingerprint.sql` on production and on
+   a local replay of 0001–0011: identical apart from the hosted
+   `service_role:EXECUTE` default. Spot checks:
+   `select jobname, schedule, active from cron.job order by 1;` → the three
+   `legacyvault-*` jobs (UTC); `select has_function_privilege(r,
+   'public.lv_trigger_scheduler(text)', 'execute') from unnest(array['anon',
+   'authenticated','service_role']) r;` → all false;
+   `select indexname from pg_indexes where indexname =
+   'access_tokens_live_share_link_uidx';` → one row.
+7. **Vault secrets** (writes — approval required). Until they exist the
+   scheduler does nothing. Create in the SQL editor (values pasted, never
+   echoed): `legacyvault_app_url` = the production origin
+   (`https://legacyvault-ai-uh7s.vercel.app`), `legacyvault_cron_secret` = the
+   `CRON_SECRET` already set in Vercel (§ 7c).
+8. **Scheduler smoke test** (one controlled call, then the real ticks):
+   - `select public.lv_trigger_scheduler('/api/internal/cron/run-jobs');` →
+     a request id; ~10 s later
+     `select status_code, timed_out, error_msg from net._http_response where id = <id>;` → `200`.
+   - After the next `:00/:10/…` tick: `select j.jobname, d.status, d.start_time
+     from cron.job_run_details d join cron.job j using (jobid) order by
+     d.start_time desc limit 6;` → `succeeded`.
+   - No duplicate work while GitHub Actions also calls the routes:
+     `select idempotency_key, count(*) from public.jobs where type = 'dms.scan'
+     group by 1 having count(*) > 1;` → no rows (one scan per hour by key).
+   - Health (operator view, bearer from the environment, not echoed):
+     `jobs.lastRunAgeSeconds` and `dmsScan.lastSuccessAgeSeconds` stay under
+     3600.
+   - Failure visibility: a non-2xx answer stays in `net._http_response`
+     (~6 h) and `cron.job_run_details`; a failing job retries 1/2/4/8 min and
+     then shows as DEAD in the admin console; a refused cron call is audited.
+9. **Keep the GitHub Actions schedule** as a backup until the database
+   scheduler has run cleanly for at least a week; then retire
+   `production-jobs.yml` (its calls are harmless meanwhile: every job is
+   idempotent).
+
+**Rollback.**
+- Scheduler: delete the two Vault secrets (`delete from vault.secrets where
+  name in ('legacyvault_app_url','legacyvault_cron_secret');`) — the trigger
+  becomes a no-op at once; GitHub Actions keeps the routes called. Unschedule
+  with `cron.unschedule('<jobname>')` only if needed.
+- 0010's emergency gate and 0011's share-link rule are forward-only by
+  design; an emergency revert means re-creating the 0003 `ea_transition` /
+  0007 `issue_document_share_token` and `resend_access_token` bodies and
+  dropping `access_tokens_live_share_link_uidx` — which re-opens the defects
+  they fix. Prefer a forward fix.
+- Revoked duplicate links are not restored (the audit trail stays true); a
+  beneficiary who needs a link gets a fresh one from the owner's resend.
 
 ## 8. Deployment pipeline
 
@@ -335,7 +487,7 @@ signal to alert on, and it is already served.
 2. Add Clerk as a third-party auth provider in Supabase, and set the Clerk
    session-token claims per § 3a.
 3. Set every variable in § 2. `pnpm env:check` fails loudly on a missing one.
-4. Deploy. Confirm Vercel registered the three crons from `vercel.json`.
+4. Deploy. Create the two Vault secrets (§ 7c) so the database scheduler starts calling the cron routes.
 5. Sign up the operator account, then run `pnpm seed:admin` with `ADMIN_EMAIL`
    set — `users.role` is reachable only through the service role, by design.
 6. Check `/api/v1/health` with the `CRON_SECRET` bearer token: `database` and
@@ -351,7 +503,7 @@ every gap in one run, names only.
 |---|---|
 | **A. Code complete** (verified by the test gate) | Every product domain, the upload pipeline, Create Will, AI (assistant + document intelligence), system status, migrations `0001`–`0006`, crons, webhooks with signature verification, CI with Supabase |
 | **B. External configuration required** | Clerk: enable Multi-factor (_Authenticator application_ + _Backup codes_) on each instance (§ 5 row 4 — currently off on development, so 2FA cannot be enrolled yet); production instance with "Membership required" off (§ 5 row 12; done on development); `CLERK_WEBHOOK_SIGNING_SECRET` + webhook endpoint; a **billing-enabled** `GEMINI_API_KEY` (the free tier allows 20 requests/day for `gemini-3.8-flash` and must not receive private documents under Google's terms) and, optionally, fallback keys per § 7a (`AI_PROVIDER_ORDER`, `AI_DOCUMENT_PROVIDERS`); `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_WEBHOOK_SECRET`; `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN`; `ADMIN_EMAIL`; hosted Supabase project with the six migrations applied; Vercel project (plan with 5-minute crons) and WAF rules (§ 7) |
-| **C. Manually verified only** | Clerk session/MFA/lockout settings (§ 5), Supabase plan limits and PITR (§ 6), Vercel cron cadence and `maxDuration` limits (§ 7) |
+| **C. Manually verified only** | Clerk session/MFA/lockout settings (§ 5), Supabase plan limits and PITR (§ 6), database-scheduler health after rollout (§ 7e) and `maxDuration` limits (§ 7) |
 | **D. Genuinely missing in code** | None known |
 
 ## 9. Change log

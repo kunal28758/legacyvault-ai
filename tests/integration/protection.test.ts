@@ -6,6 +6,7 @@ import type { TypedSupabaseClient } from "@/lib/db/server";
 import { accessDeliverHandler } from "@/lib/jobs/handlers/access-deliver";
 import { dmsContactNoticeHandler } from "@/lib/jobs/handlers/dms-contact-notice";
 import { runDmsScan } from "@/lib/jobs/handlers/dms-scan";
+import { runHousekeeping } from "@/lib/jobs/handlers/housekeeping";
 import { notificationConfirmHandler } from "@/lib/jobs/handlers/notification-confirm";
 import { notificationDeliverHandler } from "@/lib/jobs/handlers/notification-deliver";
 import type { JobHandler } from "@/lib/jobs/types";
@@ -164,6 +165,13 @@ async function runQueued(type: string): Promise<number> {
     }
   }
   return ran;
+}
+
+/** An emailed link's secret: it travels in the fragment, never in the request line. */
+function secretIn(link: string): string {
+  const secret = new URLSearchParams(new URL(link).hash.slice(1)).get("t");
+  if (!secret) throw new Error("no secret in the link's fragment");
+  return secret;
 }
 
 function appUser(id: string, subject: string, name: string): AppUser {
@@ -513,7 +521,7 @@ describe.skipIf(!available)("dead man switch", () => {
 
       // The contact confirms a code sent to their own address, then receives
       // exactly the uploaded bytes, through a signed link.
-      const plaintext = new URL(mail.links[0]).searchParams.get("t")!;
+      const plaintext = secretIn(mail.links[0]);
       const challenge = await portal.exchange(plaintext, "test");
       expect(challenge).toMatchObject({ verificationRequired: true });
       await portal.exchange(plaintext, "test", mail.codes[0]);
@@ -627,7 +635,7 @@ describe.skipIf(!available)("legacy execution engine", () => {
     const switchId = await configureSwitch([contact], assetId, scope.documentIds ?? []);
     await advance(switchId, "RELEASED");
     await runQueued("access.deliver");
-    const plaintext = new URL(mail.links.at(-1)!).searchParams.get("t")!;
+    const plaintext = secretIn(mail.links.at(-1)!);
     const { data: token } = await service
       .from("access_tokens")
       .select("id")
@@ -1711,6 +1719,255 @@ describe.skipIf(!available)("emergency access", () => {
     ]);
   });
 
+  describe("timeout auto-grant", () => {
+    const HOUR = 3_600_000;
+    /** The daily sweep, run once the owner's 24-hour window has passed (or later). */
+    const sweep = (hours = 25) => runHousekeeping(service, new Date(Date.now() + hours * HOUR));
+
+    /** A verified request under an AUTO_GRANT rule; its owner alert is queued. */
+    async function verifiedRequest(email: string): Promise<{ requestId: string; contact: string }> {
+      const contact = await beneficiary(email);
+      const { data: configId, error } = await alice.rpc("ea_configure_contact", {
+        p_beneficiary_id: contact,
+        p_access_scope: scopeOf(await asset(alice, "Emergency savings")) as never,
+        p_on_timeout: "AUTO_GRANT",
+        p_timeout_hours: 24,
+      });
+      if (error) throw error;
+      const { data: requestId } = await service.rpc("ea_request_access", {
+        p_config_id: configId as string,
+        p_requester_email: email,
+        p_otp_hash: hashAccessToken("123456"),
+      });
+      expect(await emergencyPublic.verify(requestId as string, "123456", "test")).toEqual({
+        status: "VERIFIED",
+      });
+      return { requestId: requestId as string, contact };
+    }
+
+    /** Sends the owner alert and asks the provider about it, as the runner would. */
+    async function deliverAlert(): Promise<void> {
+      await runQueued("notification.deliver");
+      await runQueued("notification.confirm");
+    }
+
+    async function state(requestId: string) {
+      const { data: request } = await service
+        .from("emergency_access_requests")
+        .select("status, auto_grant_held_at")
+        .eq("id", requestId)
+        .single();
+      const { data: deliveries } = await service
+        .from("jobs")
+        .select("id")
+        .eq("type", "access.deliver")
+        .eq("payload->>requestId", requestId);
+      const { data: told } = await service
+        .from("notifications")
+        .select("id")
+        .eq("type", "ea.access_granted")
+        .eq("metadata->>requestId", requestId);
+      const { data: alerts } = await service
+        .from("notifications")
+        .select("delivery_status")
+        .eq("type", "ea.request_pending")
+        .eq("metadata->>requestId", requestId)
+        .order("created_at");
+      const { count: holds } = await service
+        .from("audit_log")
+        .select("id", { count: "exact", head: true })
+        .eq("action", "ea.auto_grant_held")
+        .eq("resource_id", requestId);
+      return {
+        status: request!.status,
+        heldAt: request!.auto_grant_held_at,
+        deliveries: deliveries!.length,
+        ownerToldOfGrant: told!.length,
+        alerts: alerts!.map((alert) => alert.delivery_status),
+        holds: holds ?? 0,
+      };
+    }
+
+    it("grants on timeout once the owner's alert is confirmed delivered", async () => {
+      const { requestId } = await verifiedRequest("ea-auto-delivered@example.com");
+      await deliverAlert();
+
+      expect((await sweep()).emergencyTimeouts).toBe(1);
+      expect(await state(requestId)).toMatchObject({
+        status: "AUTO_GRANTED",
+        heldAt: null,
+        deliveries: 1,
+        ownerToldOfGrant: 1,
+        alerts: ["DELIVERED"],
+        holds: 0,
+      });
+    });
+
+    it.each([
+      ["sent but unconfirmed", "pending", "SENT"],
+      ["bounced", "bounced", "BOUNCED"],
+      ["failed", "failed", "FAILED"],
+    ] as const)("holds the grant when the alert was %s", async (_label, outcome, status) => {
+      const { requestId } = await verifiedRequest(`ea-auto-${outcome}@example.com`);
+      mail.outcome = outcome;
+      await deliverAlert();
+
+      expect((await sweep()).emergencyTimeouts).toBe(0);
+      const held = await state(requestId);
+      expect(held).toMatchObject({
+        status: "VERIFIED",
+        deliveries: 0,
+        ownerToldOfGrant: 0,
+        holds: 1,
+      });
+      expect(held.heldAt).not.toBeNull();
+      expect(held.alerts[0]).toBe(status);
+
+      // The owner can still decide a held request themselves.
+      expect(
+        (await alice.rpc("ea_decide_request", { p_request_id: requestId, p_decision: "DENY" }))
+          .error,
+      ).toBeNull();
+    });
+
+    it("holds the grant when the email provider is unavailable", async () => {
+      const { requestId } = await verifiedRequest("ea-auto-down@example.com");
+      mail.notificationsFail = true;
+      await deliverAlert();
+
+      expect((await sweep()).emergencyTimeouts).toBe(0);
+      expect(await state(requestId)).toMatchObject({
+        status: "VERIFIED",
+        deliveries: 0,
+        ownerToldOfGrant: 0,
+        // The failed send is followed by a fresh alert (sent by its own job).
+        alerts: ["FAILED", "PENDING"],
+        holds: 1,
+      });
+    });
+
+    it("keeps re-checking and re-alerting while held, then grants on a delivered alert", async () => {
+      const { requestId } = await verifiedRequest("ea-auto-retry@example.com");
+      mail.outcome = "bounced";
+      await deliverAlert();
+
+      // Held, and nothing is on its way: a fresh alert is sent.
+      await sweep();
+      expect((await state(requestId)).alerts).toEqual(["BOUNCED", "PENDING"]);
+
+      // The hold restarted the owner's window. Once it has passed with the new
+      // alert still unconfirmed, the provider is asked again — nothing re-sent.
+      mail.outcome = "pending";
+      await deliverAlert();
+      await sweep(50);
+      expect(await state(requestId)).toMatchObject({
+        status: "VERIFIED",
+        alerts: ["BOUNCED", "SENT"],
+        holds: 1,
+      });
+      const { data: confirms } = await service
+        .from("jobs")
+        .select("idempotency_key")
+        .eq("type", "notification.confirm")
+        .eq("status", "QUEUED");
+      expect(
+        confirms!.some((job) => /:\d{4}-\d{2}-\d{2}T\d{2}$/.test(job.idempotency_key ?? "")),
+      ).toBe(true);
+
+      // Confirmed delivered: the rule applies — exactly once.
+      mail.outcome = "delivered";
+      await runQueued("notification.confirm");
+      expect((await sweep(50)).emergencyTimeouts).toBe(1);
+      expect(await state(requestId)).toMatchObject({
+        status: "AUTO_GRANTED",
+        alerts: ["BOUNCED", "DELIVERED"],
+        deliveries: 1,
+        ownerToldOfGrant: 1,
+        holds: 1,
+      });
+    });
+
+    it("grants exactly once when sweeps overlap", async () => {
+      const { requestId } = await verifiedRequest("ea-auto-race@example.com");
+      await deliverAlert();
+
+      const runs = await Promise.all([sweep(), sweep(), sweep()]);
+      expect(runs.reduce((sum, run) => sum + run.emergencyTimeouts, 0)).toBe(1);
+      expect((await sweep(26)).emergencyTimeouts).toBe(0);
+      expect(await state(requestId)).toMatchObject({
+        status: "AUTO_GRANTED",
+        deliveries: 1,
+        ownerToldOfGrant: 1,
+      });
+      const { count } = await service
+        .from("audit_log")
+        .select("id", { count: "exact", head: true })
+        .eq("action", "ea.transition")
+        .eq("resource_id", requestId)
+        .eq("metadata->>to", "AUTO_GRANTED");
+      expect(count).toBe(1);
+    });
+
+    it("never grants an expired request, even when the timeout is checked first", async () => {
+      const { requestId } = await verifiedRequest("ea-auto-expired@example.com");
+      await deliverAlert();
+      // The request window closed while no sweep ran (a scheduler outage).
+      await service
+        .from("emergency_access_requests")
+        .update({ request_expires_at: new Date(Date.now() - HOUR).toISOString() })
+        .eq("id", requestId);
+
+      expect((await sweep()).emergencyTimeouts).toBe(0);
+      expect(await state(requestId)).toMatchObject({ status: "EXPIRED", deliveries: 0 });
+    });
+
+    it("never grants to a contact who is no longer active", async () => {
+      const deactivated = await verifiedRequest("ea-auto-inactive@example.com");
+      const removed = await verifiedRequest("ea-auto-removed@example.com");
+      await deliverAlert();
+
+      expect(
+        (
+          await alice.rpc("set_beneficiary_status", {
+            p_beneficiary_id: deactivated.contact,
+            p_status: "INACTIVE",
+          })
+        ).error,
+      ).toBeNull();
+      const { data: config } = await service
+        .from("emergency_access_configs")
+        .select("id")
+        .eq("beneficiary_id", removed.contact)
+        .single();
+      expect((await alice.rpc("ea_remove_contact", { p_config_id: config!.id })).error).toBeNull();
+
+      expect((await sweep()).emergencyTimeouts).toBe(0);
+      expect(await state(deactivated.requestId)).toMatchObject({
+        status: "VERIFIED",
+        deliveries: 0,
+      });
+      expect(await state(removed.requestId)).toMatchObject({ status: "EXPIRED", deliveries: 0 });
+    });
+
+    it("shows the owner, and only the owner, that a grant is held", async () => {
+      const { requestId } = await verifiedRequest("ea-auto-visible@example.com");
+      mail.outcome = "bounced";
+      await deliverAlert();
+      await sweep();
+
+      const { data: mine } = await alice
+        .from("emergency_access_requests")
+        .select("auto_grant_held_at")
+        .eq("id", requestId);
+      expect(mine?.[0]?.auto_grant_held_at).toBeTruthy();
+      const { data: theirs } = await bob
+        .from("emergency_access_requests")
+        .select("auto_grant_held_at")
+        .eq("id", requestId);
+      expect(theirs).toEqual([]);
+    });
+  });
+
   it("never exposes the OTP hash to the owner", async () => {
     const { error } = await alice.from("emergency_access_requests").select("otp_hash");
     expect(error).not.toBeNull();
@@ -1718,6 +1975,15 @@ describe.skipIf(!available)("emergency access", () => {
 });
 
 describe.skipIf(!available)("job queue", () => {
+  it("cannot trigger the production scheduler from any API role", async () => {
+    for (const client of [alice, service]) {
+      const { error } = await client.rpc("lv_trigger_scheduler", {
+        p_path: "/api/internal/cron/run-jobs",
+      });
+      expect(error?.code).toBe("42501");
+    }
+  });
+
   it("deduplicates on the idempotency key and claims exclusively", async () => {
     const key = `dms.scan:test-${Date.now()}`;
     const first = await jobRepository.enqueue(service, "dms.scan", { hour: "test" }, key);

@@ -77,7 +77,9 @@ function attachmentIdsOf(request: Request): string[] {
   return (request.postDataJSON() as { attachmentIds?: string[] }).attachmentIds ?? [];
 }
 
-test.describe("AI assistant — real provider", () => {
+// Spends the AI provider's quota (the free Gemini tier allows ~20 calls a day),
+// so it runs on its own: `pnpm test:e2e:ai`. Everything else: `pnpm test:e2e:app`.
+test.describe("AI assistant — real provider", { tag: "@ai-provider" }, () => {
   test.describe.configure({ mode: "serial" });
   test.skip(!configured, "Clerk development keys are not configured — see docs/DEPLOYMENT.md.");
 

@@ -940,6 +940,7 @@ export type Database = {
       emergency_access_requests: {
         Row: {
           access_token_id: string | null
+          auto_grant_held_at: string | null
           config_id: string
           created_at: string
           decided_at: string | null
@@ -959,6 +960,7 @@ export type Database = {
         }
         Insert: {
           access_token_id?: string | null
+          auto_grant_held_at?: string | null
           config_id: string
           created_at?: string
           decided_at?: string | null
@@ -978,6 +980,7 @@ export type Database = {
         }
         Update: {
           access_token_id?: string | null
+          auto_grant_held_at?: string | null
           config_id?: string
           created_at?: string
           decided_at?: string | null
@@ -1949,6 +1952,7 @@ export type Database = {
         Args: { p_allowed: Json; p_scope: Json }
         Returns: boolean
       }
+      lv_trigger_scheduler: { Args: { p_path: string }; Returns: number }
       lv_validate_scope: {
         Args: {
           p_beneficiary: string

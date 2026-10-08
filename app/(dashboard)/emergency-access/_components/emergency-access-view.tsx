@@ -214,6 +214,13 @@ export function EmergencyAccessView() {
                               {contact.accessDurationHours} h access
                             </p>
                           )}
+                          {request.autoGrantHeldAt && (
+                            <p className="text-xs text-warning" data-testid="ea-auto-grant-held">
+                              Automatic grant on hold: we have not confirmed that the alert about
+                              this request reached your inbox. Your timeout rule applies only once
+                              it has; until then nothing is granted unless you approve.
+                            </p>
+                          )}
                         </div>
                       </div>
                       <div className="flex shrink-0 gap-2">

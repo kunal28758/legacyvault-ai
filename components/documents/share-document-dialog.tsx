@@ -85,9 +85,14 @@ function ShareForm({
     try {
       const result = await share.mutateAsync({ id: documentId, beneficiaryId: selected });
       toast.success("Document shared", {
-        description: result.accessEmailSent
-          ? "We emailed them a secure link to everything you have shared with them."
-          : "The email could not be sent. Any link they already have shows it; otherwise send one from their Access links.",
+        description:
+          result.accessLink === "existing"
+            ? result.accessEmailSent
+              ? "Their existing secure link now includes it, and we let them know — no new link was needed."
+              : "Their existing secure link now includes it. If they no longer have it, resend it from their Access links."
+            : result.accessEmailSent
+              ? "We emailed them a secure link to everything you have shared with them."
+              : "The email could not be sent. Any link they already have shows it; otherwise send one from their Access links.",
       });
       onOpenChange(false);
     } catch (caught) {

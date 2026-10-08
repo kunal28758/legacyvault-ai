@@ -50,7 +50,7 @@ VIII).
 | Private object storage, signed URLs | Supabase Storage (`documents`, `videos`) | 005 |
 | Background work | PostgreSQL `jobs` table drained by Vercel Cron (+ `pg_cron` redundancy in production); no Redis/BullMQ | 006 |
 | AI | OpenAI and Google Gemini behind the in-house `AIProvider` interface | 008, 016 |
-| Email | `EmailProvider` abstraction; Resend baseline | 009 |
+| Email | `EmailProvider` abstraction; Brevo sends all mail, Resend fallback (ADR-009 r2) | 009 |
 | Monitoring | Sentry, structured JSON logs (pino), health endpoint | 010 |
 | Malware scanning | None — removed; uploads are checked for size and type only | 017 (supersedes 015) |
 

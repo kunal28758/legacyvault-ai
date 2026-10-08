@@ -8,6 +8,7 @@ import {
   hasLocalStackConfig,
 } from "../helpers/db";
 import { loadLocalEnv } from "../helpers/load-env";
+import { captureUrl, linkIn, startMailCapture, type MailCapture } from "./mail-capture";
 import { signInAndSettle } from "./session";
 import { E2E_USERS } from "./users";
 
@@ -39,6 +40,9 @@ const unique = Date.now().toString(36);
 const deedName = `E2E Deed ${unique}.pdf`;
 const willName = `E2E Will ${unique}.pdf`;
 const heirName = `E2E Heir ${unique}`;
+const heirEmail = `e2e-access+${unique}@example.com`;
+const mailUrl = captureUrl();
+let mail: MailCapture | null = null;
 
 /** A real, minimal PDF: the pipeline sniffs magic bytes, so `%PDF-` must be there. */
 const PDF = Buffer.from(
@@ -83,15 +87,29 @@ async function share(page: Page, name: string): Promise<void> {
   await page.getByRole("option", { name: new RegExp(heirName) }).click();
   await page.getByRole("button", { name: "Share document" }).click();
   await expect(page.getByRole("dialog")).toBeHidden({ timeout: 30_000 });
-  // The server reports whether the link email went out; no inbox is configured
-  // locally, so either answer is honest — what matters is that nobody copied it.
+  // The server reports whether the link email went out, or that the one live
+  // link they already hold covers it; any honest answer will do here.
   await expect(
-    page.getByText(/emailed them a secure link|email could not be sent/).first(),
+    page
+      .getByText(
+        /emailed them a secure link|email could not be sent|existing secure link now includes it/,
+      )
+      .first(),
   ).toBeVisible({ timeout: 30_000 });
 }
 
-/** The link the share emails, minted the same way for a test that cannot read mail. */
+/**
+ * The link the share emails. With the mail stand-in running, it is the real
+ * email's link; without one the app sends nothing (no mail, no link), so the
+ * test mints the beneficiary's one share link the same way the app would.
+ * Either way it is rebased onto the server under test, fragment intact.
+ */
 async function emailedLinkFor(baseURL: string): Promise<string> {
+  const base = baseURL.replace(/\/$/, "");
+  if (mail) {
+    const delivered = await mail.waitFor(heirEmail, /shared secure access/);
+    return `${base}/access${new URL(linkIn(delivered, "/access#t=")).hash}`;
+  }
   const service = createServiceScopedClient();
   const { data: owner } = await service
     .from("users")
@@ -113,8 +131,10 @@ async function emailedLinkFor(baseURL: string): Promise<string> {
     p_expires_at: new Date(Date.now() + 86_400_000).toISOString(),
   });
   if (error) throw new Error(`could not mint the share link: ${error.message}`);
-  return `${baseURL.replace(/\/$/, "")}/access?t=${secret}`;
+  return `${base}/access#t=${secret}`;
 }
+
+const secretOf = (link: string) => new URLSearchParams(new URL(link).hash.slice(1)).get("t")!;
 
 test.describe("documents and access links", () => {
   test.skip(
@@ -123,6 +143,12 @@ test.describe("documents and access links", () => {
   );
   test.skip(!local, "Needs the local Supabase stack to stand in for the emailed link.");
   test.describe.configure({ mode: "serial" });
+  test.beforeAll(async () => {
+    if (mailUrl) mail = await startMailCapture(Number(mailUrl.port));
+  });
+  test.afterAll(async () => {
+    await mail?.close();
+  });
 
   test("shares documents into one link, follows later shares, and revokes", async ({
     page,
@@ -141,7 +167,7 @@ test.describe("documents and access links", () => {
     await page.getByLabel("Full name").fill(heirName);
     await page.locator('[data-slot="select-trigger"]').click();
     await page.getByRole("option", { name: "Sibling", exact: true }).click();
-    await page.getByLabel("Email").fill(`e2e-access+${unique}@example.com`);
+    await page.getByLabel("Email").fill(heirEmail);
     await page.getByRole("button", { name: "Add beneficiary", exact: true }).last().click();
     await expect(page.getByRole("table").locator("tr", { hasText: heirName })).toBeVisible({
       timeout: 30_000,
@@ -157,20 +183,46 @@ test.describe("documents and access links", () => {
     await share(page, deedName);
 
     // ── The recipient opens their link: a clean context, no Clerk session ───
+    const link = await emailedLinkFor(baseURL!);
+    const secret = secretOf(link);
     const recipient = await browser.newContext();
     const recipientPage = await recipient.newPage();
-    await recipientPage.goto(await emailedLinkFor(baseURL!));
+    // Every request the browser makes, with its Referer: the secret is in none.
+    const sent: string[] = [];
+    recipientPage.on("request", (request) => {
+      sent.push(`${request.url()} ${request.headers()["referer"] ?? ""}`);
+    });
+    await recipientPage.goto(link);
 
     await expect(recipientPage.getByText(deedName)).toBeVisible({ timeout: 60_000 });
     await expect(recipientPage.getByRole("heading", { level: 1 })).toContainText(
       "shared these with you",
     );
     await expect(recipientPage.getByText(willName)).toHaveCount(0);
-    // The secret must not survive in the address bar.
+    // The secret must not survive in the address bar, and never left the
+    // browser except in the exchange body.
     expect(recipientPage.url()).not.toContain("t=");
+    expect(new URL(recipientPage.url()).hash).toBe("");
+    expect(sent.length).toBeGreaterThan(0);
+    expect(sent.join("\n")).not.toContain(secret);
+
+    // ── An older link (secret in the query) is moved to the fragment first ──
+    const legacy = await browser.newContext();
+    const legacyPage = await legacy.newPage();
+    const opened = await legacyPage.goto(`${new URL(link).origin}/access?t=${secret}`);
+    expect((await opened!.request().redirectedFrom()?.response())?.status()).toBe(303);
+    await expect(legacyPage.getByText(deedName)).toBeVisible({ timeout: 60_000 });
+    expect(new URL(legacyPage.url()).search).toBe("");
+    expect(new URL(legacyPage.url()).hash).toBe("");
+    await legacy.close();
 
     // ── A second share appears in the same session — no new link ────────────
     await share(page, willName);
+    if (mail) {
+      // The beneficiary is told, without a new link or any secret.
+      const notice = await mail.waitFor(heirEmail, /shared another document/);
+      expect(notice.html).not.toMatch(/\/access[?#]t=/);
+    }
     await recipientPage.reload();
     await expect(recipientPage.getByText(willName)).toBeVisible({ timeout: 60_000 });
     await expect(recipientPage.getByText(deedName)).toBeVisible();

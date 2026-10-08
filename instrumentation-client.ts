@@ -1,5 +1,7 @@
 import * as Sentry from "@sentry/nextjs";
 
+import { scrubBreadcrumb, scrubTelemetryEvent } from "@/lib/client/sensitive-url";
+
 /**
  * Browser observability (ADR-010, T188).
  *
@@ -15,16 +17,11 @@ if (dsn) {
     environment: process.env.NODE_ENV,
     tracesSampleRate: process.env.NODE_ENV === "production" ? 0.1 : 0,
     sendDefaultPii: false,
-    beforeSend(event) {
-      // The access link carries its token in the query string until the page
-      // strips it; an event must never be the thing that keeps it.
-      if (event.request?.url) {
-        const [path] = event.request.url.split("?");
-        event.request.url = path;
-      }
-      delete event.request?.query_string;
-      return event;
-    },
+    // An access link carries its secret in the fragment (older ones: the query)
+    // until the portal clears it; no event, span or breadcrumb may keep it.
+    beforeSend: scrubTelemetryEvent,
+    beforeSendTransaction: scrubTelemetryEvent,
+    beforeBreadcrumb: scrubBreadcrumb,
   });
 }
 

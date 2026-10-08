@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import {
   Download,
   FileText,
@@ -71,8 +70,26 @@ const GRANT_LABEL: Record<Summary["grantType"], string> = {
   EMERGENCY_ACCESS: "granted you emergency access to these",
 };
 
+/**
+ * Takes the link's secret out of the address bar, before any request is made.
+ *
+ * Links carry it in the fragment (`/access#t=…`), which a browser never sends
+ * to a server, so it reaches no request log and no Referer. A legacy `?t=` link
+ * is turned into that form by the proxy before this page renders; reading the
+ * query here is only a fallback. Either way the address and the history entry
+ * are reset to the bare path first.
+ */
+function takeLinkSecret(): string | null {
+  const secret =
+    new URLSearchParams(window.location.hash.slice(1)).get("t") ??
+    new URLSearchParams(window.location.search).get("t");
+  if (window.location.hash || window.location.search) {
+    window.history.replaceState(null, "", window.location.pathname);
+  }
+  return secret;
+}
+
 export function AccessPortal() {
-  const searchParams = useSearchParams();
   const [state, setState] = useState<"opening" | "verify" | "ready" | "refused">("opening");
   const [message, setMessage] = useState<string | null>(null);
   const [challenge, setChallenge] = useState<Challenge | null>(null);
@@ -97,11 +114,9 @@ export function AccessPortal() {
     exchanged.current = true;
 
     void (async () => {
-      token.current = searchParams.get("t");
+      token.current = takeLinkSecret();
       try {
         if (token.current) {
-          // The secret must not stay in the address bar or the history entry.
-          window.history.replaceState(null, "", window.location.pathname);
           const { data } = await apiClient.post<Summary | Challenge>("/access/exchange", {
             token: token.current,
           });
@@ -122,7 +137,7 @@ export function AccessPortal() {
         );
       }
     })();
-  }, [searchParams, load]);
+  }, [load]);
 
   const submitCode = async () => {
     if (!token.current) return;

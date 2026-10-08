@@ -150,7 +150,7 @@ export function SecurityCenterView() {
           <CardHeader>
             <CardTitle className="text-base">Always on</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Platform guarantees that do not depend on your settings.
+              Platform controls that do not depend on your settings.
             </p>
           </CardHeader>
           <CardContent>
@@ -166,7 +166,7 @@ export function SecurityCenterView() {
                 },
                 {
                   icon: KeyRound,
-                  text: "Access links are stored hash-only, expire, and are exchanged once for a secure session",
+                  text: "Access links are stored hash-only, expire within 30 days, can be revoked, and are exchanged for a short-lived secure session",
                 },
                 {
                   icon: ActivityIcon,

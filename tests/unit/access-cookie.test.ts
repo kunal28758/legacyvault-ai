@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resetEnvGroupCache } from "@/lib/config/env";
 import {
@@ -86,5 +86,18 @@ describe("access cookie", () => {
     expect(options.path).toBe(ACCESS_COOKIE_PATH);
     expect(ACCESS_COOKIE_PATH.startsWith("/api/v1/access")).toBe(true);
     expect(options.maxAge).toBe(1800);
+  });
+
+  it("is Secure in production, so the session only ever travels over HTTPS", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    try {
+      expect(accessCookieOptions(1800)).toMatchObject({
+        secure: true,
+        httpOnly: true,
+        sameSite: "strict",
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

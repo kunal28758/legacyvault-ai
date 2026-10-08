@@ -30,7 +30,14 @@ const nextConfig: NextConfig = {
       { source: "/:path*", headers: securityHeaders },
       // Defence in depth: the API layer also sets this on every response.
       { source: "/api/:path*", headers: [{ key: "Cache-Control", value: "private, no-store" }] },
+      // The access portal sends no Referer at all, not even its origin.
+      { source: "/access", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
     ];
+  },
+  logging: {
+    // Development only: never print a request whose query could carry a
+    // secret (legacy `?t=` access links, codes). Production is unaffected.
+    incomingRequests: { ignore: [/[?&](t|token|code|access_token)=/i] },
   },
 };
 

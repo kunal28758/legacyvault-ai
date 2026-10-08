@@ -80,7 +80,10 @@ function sharedDb(status = "PENDING", rpcError: unknown = null) {
 
 beforeEach(() => {
   vi.mocked(documentRepository.findById).mockResolvedValue({ id: DOCUMENT_ID } as never);
-  vi.mocked(accessService.issueDocumentShareLink).mockResolvedValue({ emailSent: true });
+  vi.mocked(accessService.issueDocumentShareLink).mockResolvedValue({
+    emailSent: true,
+    link: "new",
+  });
 });
 
 describe("shareDocument", () => {
@@ -107,10 +110,11 @@ describe("shareDocument", () => {
         },
       ],
       accessEmailSent: true,
+      accessLink: "new",
     });
   });
 
-  it("emails again for a second document with no manual step", async () => {
+  it("handles the beneficiary's link on every share, with no manual step", async () => {
     vi.mocked(createUserClient).mockResolvedValueOnce(sharedDb() as never);
     await shareDocument(user, DOCUMENT_ID, BENEFICIARY_ID, "corr-1");
     vi.mocked(createUserClient).mockResolvedValueOnce(sharedDb() as never);
@@ -121,12 +125,27 @@ describe("shareDocument", () => {
 
   it("keeps the share when the email cannot be sent", async () => {
     vi.mocked(createUserClient).mockResolvedValue(sharedDb() as never);
-    vi.mocked(accessService.issueDocumentShareLink).mockResolvedValue({ emailSent: false });
+    vi.mocked(accessService.issueDocumentShareLink).mockResolvedValue({
+      emailSent: false,
+      link: "none",
+    });
 
     const result = await shareDocument(user, DOCUMENT_ID, BENEFICIARY_ID, "corr");
 
     expect(result.accessEmailSent).toBe(false);
     expect(result.shares).toHaveLength(1);
+  });
+
+  it("reports when the beneficiary's one live link already covers the share", async () => {
+    vi.mocked(createUserClient).mockResolvedValue(sharedDb() as never);
+    vi.mocked(accessService.issueDocumentShareLink).mockResolvedValue({
+      emailSent: true,
+      link: "existing",
+    });
+
+    const result = await shareDocument(user, DOCUMENT_ID, BENEFICIARY_ID, "corr");
+
+    expect(result).toMatchObject({ accessLink: "existing", accessEmailSent: true });
   });
 
   it.each([

@@ -54,11 +54,18 @@ async function removeBeneficiary(page: Page, name: string): Promise<void> {
 
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("checkbox").check();
+  const removed = page.waitForResponse(
+    (response) =>
+      response.request().method() === "DELETE" &&
+      /\/api\/v1\/beneficiaries\/[0-9a-f-]{36}$/.test(response.url()),
+  );
   await dialog.getByRole("button", { name: "Remove beneficiary" }).click();
+  expect((await removed).ok()).toBe(true);
 
   await expect(dialog).toBeHidden({ timeout: 30_000 });
-  await expect(page.getByRole("table")).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByRole("table").locator("tr", { hasText: name })).toHaveCount(0, {
+  // Removing the last row shows the empty state, not an empty table, so assert
+  // on the row itself rather than on the table being there.
+  await expect(page.getByRole("row", { name: new RegExp(name) })).toHaveCount(0, {
     timeout: 30_000,
   });
 }

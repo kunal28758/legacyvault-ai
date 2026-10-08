@@ -32,6 +32,8 @@ export interface EmergencyRequest {
   expiresAt: string | null;
   revokedAt: string | null;
   createdAt: string;
+  /** Set while a timeout auto-grant waits for the owner's alert to be confirmed delivered. */
+  autoGrantHeldAt: string | null;
 }
 
 export interface EmergencyAccessOverview {

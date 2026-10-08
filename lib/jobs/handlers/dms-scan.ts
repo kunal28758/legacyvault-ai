@@ -234,12 +234,11 @@ async function keepTryingToWarn(
 async function expireEmergencyRequests(db: TypedSupabaseClient, now: Date): Promise<void> {
   const expirable = await emergencyRepository.listExpirable(db, now);
   for (const request of expirable) {
-    const target = ["PENDING", "VERIFYING", "VERIFIED"].includes(request.status)
-      ? "EXPIRED"
-      : "REVOKED";
+    // ea_transition() expires both: an undecided request, and a grant whose
+    // access time is spent (revoking its token).
     const { error } = await db.rpc("ea_transition", {
       p_request_id: request.id,
-      p_to: target,
+      p_to: "EXPIRED",
       p_metadata: { reason: "scan", scannedAt: now.toISOString() } as never,
     });
     if (error && error.code !== "LV409") {

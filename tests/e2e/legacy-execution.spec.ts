@@ -211,7 +211,7 @@ async function mintReleaseLink(
     p_dms_id: switchId,
   });
   if (error) throw new Error(`could not mint the release link: ${error.message}`);
-  return { link: `${BASE}/access?t=${secret}`, tokenId: tokenId as string };
+  return { link: `${BASE}/access#t=${secret}`, tokenId: tokenId as string };
 }
 
 /** Moves a recovered switch to RELEASED through the system path, warned as the gate requires. */
@@ -421,10 +421,10 @@ test.describe("legacy execution engine", () => {
     // The owner was warned, the contact was told — with no link — then released to.
     await mail!.waitFor(OWNER, /check-in is overdue/);
     const notice = await mail!.waitFor(heirEmail, /emergency release workflow has started/);
-    expect(notice.html).not.toMatch(/\/access\?t=/);
+    expect(notice.html).not.toMatch(/\/access[?#]t=/);
     await cron("run-jobs");
     const delivered = await mail!.waitFor(heirEmail, /shared secure access/);
-    const link = linkIn(delivered, "/access?t=");
+    const link = linkIn(delivered, "/access#t=");
 
     // Owner side: release visible, Action Centre critical, contact not yet verified.
     await gotoSwitch(page);
@@ -437,7 +437,7 @@ test.describe("legacy execution engine", () => {
 
     // Contact side, on a phone: the code step first, nothing of the release before it.
     const recipient = await recipientPage(browser, true);
-    await recipient.goto(new URL(new URL(link).search, `${BASE}/access`).toString());
+    await recipient.goto(`${BASE}/access${new URL(link).hash}`);
     await expect(recipient.getByRole("heading", { name: "Confirm it is you" })).toBeVisible({
       timeout: 60_000,
     });
@@ -615,7 +615,11 @@ test.describe("legacy execution engine", () => {
   });
 
   test("disabling the switch ends release access at once", async ({ browser }) => {
-    // Its own account: disabling spends step-up budget of its own.
+    // Its own account: disabling spends step-up budget of its own. Signing in
+    // first creates the account's row on a fresh database.
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await signInAndSettle(page, OTHER);
     const other = await userRow(OTHER);
     await cleanUp(other.id);
     const asOther = await createUserScopedClient(other.clerk_user_id);
@@ -649,9 +653,6 @@ test.describe("legacy execution engine", () => {
     await releaseNow(other.id);
     const { link } = await mintReleaseLink(contact.id, other.id);
 
-    const context = await browser.newContext();
-    const page = await context.newPage();
-    await signInAndSettle(page, OTHER);
     await gotoSwitch(page);
     await expect(page.getByTestId("dms-state")).toHaveText("Released");
     await page.getByRole("button", { name: "Disable", exact: true }).click();
@@ -783,9 +784,7 @@ test.describe("legacy execution engine", () => {
     expect((await decided).ok()).toBe(true);
 
     const delivered = await jobsUntilMail(contactEmail, /shared secure access/);
-    await recipient.goto(
-      new URL(new URL(linkIn(delivered, "/access?t=")).search, `${BASE}/access`).toString(),
-    );
+    await recipient.goto(`${BASE}/access${new URL(linkIn(delivered, "/access#t=")).hash}`);
     // Emergency access was verified at request time: it opens directly, scoped.
     await expect(recipient.getByText(sharedAsset)).toBeVisible({ timeout: 60_000 });
     await expect(recipient.getByText(privateAsset)).toHaveCount(0);

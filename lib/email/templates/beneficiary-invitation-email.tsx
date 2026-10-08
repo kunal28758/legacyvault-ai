@@ -32,8 +32,8 @@ export function BeneficiaryInvitationEmail({
       </Text>
       <Text style={paragraph}>
         This is a notification only. It does not give you access to anything, and there is nothing
-        you need to do now. If {ownerName} shares something with you, you will receive a separate
-        email with a personal, secure link at that time.
+        you need to do now. If {ownerName} shares something with you, LegacyVault will send a
+        separate email with a personal, secure link at that time.
       </Text>
       <Text style={paragraph}>
         If you have questions, please contact {ownerName} directly — replies to this email do not

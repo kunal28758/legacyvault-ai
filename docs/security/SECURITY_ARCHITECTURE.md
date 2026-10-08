@@ -113,12 +113,25 @@ All applied by `withApi()` (T030) to every Route Handler:
   record; every grant is an `access_tokens` row (`grant_type` DIRECT_SHARE /
   DMS_RELEASE / EMERGENCY_ACCESS), stored as a SHA-256 hash, scoped to
   explicit resources, time-limited (≤ 30 days for direct shares).
-- The emailed link carries the token **once**; the public `/access` page
-  exchanges it (`POST /api/v1/access/exchange`) for an encrypted httpOnly
-  cookie (`SameSite=Strict`, `Path=/api/v1/access`, 30-minute sliding TTL ≤
-  token expiry) and strips it from the URL. Tokens never appear in request
-  paths or logs; every request re-checks revocation, expiry and beneficiary
+- The emailed link carries the token in the **URL fragment**
+  (`/access#t=…`, ADR-014 r6), which a browser never sends to a server: it
+  reaches no request line, platform or application request log, Referer, or
+  server-rendered page. The `/access` page clears it from the address bar and
+  history first, then exchanges it in a POST body
+  (`POST /api/v1/access/exchange`) for an encrypted httpOnly cookie
+  (`Secure` in production, `SameSite=Strict`, `Path=/api/v1/access`,
+  30-minute sliding TTL ≤ token expiry). A legacy `?t=` link is answered by
+  the proxy with `303 → /access#t=` before rendering; `/access` sends
+  `Referrer-Policy: no-referrer`; Sentry strips every URL's query and fragment
+  from events, transactions and breadcrumbs; development request logging
+  skips any URL with a `t`/`token`/`code` parameter. A link is a reusable
+  bearer credential until it expires (≤ 30 days) or is revoked — not
+  one-time; every request re-checks revocation, expiry and beneficiary
   status; every access is audited (T230, T100, T101, T022).
+- **One live share-following link per beneficiary** (migration 0011): sharing
+  again reuses it (no new secret is minted or emailed); the database refuses
+  a second unrevoked one (function check + partial unique index), so the
+  owner's revoke always ends share access.
 - Emergency requesters verify by **email OTP** (6 digits, 15-minute expiry,
   3 attempts) before the owner decides or the configured timeout rule
   (WAIT / AUTO_GRANT / DENY) applies (FR-J003, J006; T135, T136).

@@ -10,6 +10,7 @@ import type { Json } from "@/lib/types/database";
 import * as documentRepository from "@/lib/repositories/document.repository";
 import * as folderRepository from "@/lib/repositories/folder.repository";
 import * as accessService from "@/lib/services/access.service";
+import type { ShareLinkOutcome } from "@/lib/services/access.service";
 import { BUCKETS, createSignedDownloadUrl, type BucketName } from "@/lib/storage/storage";
 import type {
   DocumentDetail,
@@ -245,7 +246,11 @@ export async function shareDocument(
   id: string,
   beneficiaryId: string,
   correlationId: string,
-): Promise<{ shares: DocumentShare[]; accessEmailSent: boolean }> {
+): Promise<{
+  shares: DocumentShare[];
+  accessEmailSent: boolean;
+  accessLink: ShareLinkOutcome;
+}> {
   assertAccountActive(user);
   const db = await createUserClient();
 
@@ -277,14 +282,19 @@ export async function shareDocument(
   });
   if (error) throw error;
 
-  // The share is recorded; the beneficiary's link is emailed after it and its
-  // failure never undoes the share.
-  const { emailSent } = await accessService.issueDocumentShareLink(
+  // The share is recorded; the beneficiary's link (or, when they already hold
+  // one, a link-free notice) is emailed after it, and its failure never undoes
+  // the share.
+  const { emailSent, link } = await accessService.issueDocumentShareLink(
     user,
     beneficiaryId,
     correlationId,
   );
-  return { shares: await listShares(db, user.id, id), accessEmailSent: emailSent };
+  return {
+    shares: await listShares(db, user.id, id),
+    accessEmailSent: emailSent,
+    accessLink: link,
+  };
 }
 
 export async function unshareDocument(

@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
 
 import { AccessPortal } from "./_components/access-portal";
 
@@ -12,13 +11,10 @@ export const metadata: Metadata = {
 /**
  * The page an access link opens (ADR-014 § 3).
  *
- * The token arrives as `?t=…`, is exchanged for a cookie immediately, and is
- * stripped from the address bar so it does not linger in history.
+ * The token arrives in the fragment (`#t=…`), so it never reaches a server;
+ * the page strips it from the address bar and history, then exchanges it in a
+ * POST body for a short-lived HttpOnly cookie.
  */
 export default function AccessPage() {
-  return (
-    <Suspense fallback={null}>
-      <AccessPortal />
-    </Suspense>
-  );
+  return <AccessPortal />;
 }

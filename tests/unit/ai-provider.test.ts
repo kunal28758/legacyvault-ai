@@ -445,6 +445,63 @@ describe("what each provider may receive", () => {
     expect(toAIApiError(error).message).toMatch(/approved to read vault documents/);
   });
 
+  it("in production, sends vault documents to no provider until one is approved explicitly", async () => {
+    configure({ GEMINI_API_KEY: "k-gemini", AI_PROVIDER_ORDER: "gemini" });
+    vi.stubEnv("NODE_ENV", "production");
+
+    const error = await getAIProvider()
+      .generateText({ ...text, containsDocuments: true })
+      .catch((e: unknown) => e);
+    // Fail closed: nothing was called, and the user is told why.
+    expect(calls).toEqual([]);
+    expect(error).toMatchObject({ kind: "UNSUPPORTED" });
+    expect(toAIApiError(error).message).toMatch(/approved to read vault documents/);
+
+    // Chat without documents still works with the same key.
+    await expect(getAIProvider().generateText(text)).resolves.toMatchObject({
+      text: "from gemini",
+    });
+  });
+
+  it("in production, uses exactly the providers an operator approved for documents", async () => {
+    configure({
+      GEMINI_API_KEY: "k-gemini",
+      AI_PROVIDER_ORDER: "gemini",
+      AI_DOCUMENT_PROVIDERS: "gemini",
+    });
+    vi.stubEnv("NODE_ENV", "production");
+
+    await expect(
+      getAIProvider().generateText({ ...text, containsDocuments: true }),
+    ).resolves.toMatchObject({ text: "from gemini" });
+    expect(calls).toEqual(["gemini"]);
+  });
+
+  it.each(["quota", "outage"] as const)(
+    "in production, a %s at the approved provider never moves vault documents to an unapproved fallback",
+    async (mode) => {
+      configure({
+        GEMINI_API_KEY: "k-gemini",
+        GROQ_API_KEY: "k-groq",
+        HF_TOKEN: "k-hf",
+        AI_PROVIDER_ORDER: "gemini,groq,huggingface",
+        AI_DOCUMENT_PROVIDERS: "gemini",
+      });
+      vi.stubEnv("NODE_ENV", "production");
+      behaviour.gemini = mode;
+
+      const error = await getAIProvider()
+        .stream({ ...text, containsDocuments: true })
+        .catch((e: unknown) => e);
+      expect(calls).toEqual(["gemini"]);
+      expect(error).toMatchObject({ kind: mode === "quota" ? "RATE_LIMITED" : "UNAVAILABLE" });
+
+      // The same outage still lets plain chat fall back.
+      calls.length = 0;
+      await expect(getAIProvider().stream(text)).resolves.toMatchObject({ provider: "groq" });
+    },
+  );
+
   it("skips models without structured output for document analyses", async () => {
     configure({
       HF_TOKEN: "k",

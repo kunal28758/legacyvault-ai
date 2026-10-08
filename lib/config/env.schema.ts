@@ -123,8 +123,9 @@ export const serverEnvGroups = {
   // (AI_DEFAULT_PROVIDER). OpenRouter, Groq, Cerebras and Hugging Face are
   // never called unless named in AI_PROVIDER_ORDER — a key alone does not
   // authorise a provider. AI_DOCUMENT_PROVIDERS lists who may receive the
-  // content of vault documents (attachments, document analysis); by default
-  // only OpenAI and Gemini.
+  // content of vault documents (attachments, document analysis); unset, that
+  // is OpenAI and Gemini in development and NO provider in production, where
+  // it must name only providers whose account terms allow vault documents.
   ai: {
     OPENAI_API_KEY: optionalSecret,
     GEMINI_API_KEY: optionalSecret,

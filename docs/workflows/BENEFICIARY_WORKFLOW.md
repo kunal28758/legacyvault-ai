@@ -106,7 +106,7 @@ expressed by relations, not flags: trusted contact = linked through
    beneficiary** (FR-D011; otherwise 422 `SCOPE_NOT_ASSIGNED` — plan sections
    are not assignable and are released only through Dead Man Switch or
    emergency grants), that videos in scope are `IMMEDIATE` (§ 4), and stores
-   only the SHA-256 hash; the plaintext link (`/access?t=…`) is emailed and shown once.
+   only the SHA-256 hash; the plaintext link (`/access#t=…`, the secret in the URL fragment so no server ever receives it) is emailed and shown once. A document share emails a link that follows the beneficiary's shares; a beneficiary holds at most one live such link (migration 0011), so later shares reuse it and send a link-free notice instead.
 2. The recipient opens the link. The public `/access` page immediately calls
    `POST /api/v1/access/exchange` with the token, removes it from the URL,
    and receives an encrypted httpOnly cookie scoped to `/api/v1/access`
@@ -157,7 +157,15 @@ failed send never leaves two live tokens); the owner can `resend-access`
 (revoke + re-mint once, audited) (ADR-014 § 6). If the owner does
 not act, the configured rule applies through housekeeping jobs:
 AUTO_GRANT → granted, DENY → denied, WAIT → remains pending until the request
-expires. The contact can check a generic status page.
+expires. An automatic grant also needs proof the owner was told: the owner's
+`ea.request_pending` alert must be confirmed DELIVERED by the email provider
+(SENT, BOUNCED and FAILED never count). Until then the request stays VERIFIED
+(the owner can still decide), `auto_grant_held_at` records the hold (audited
+once as `ea.auto_grant_held`), the provider is asked again and a fresh alert is
+sent at most daily; the hold restarts the owner's window. A timeout never
+grants a request past its expiry, or to a contact who was removed or whose
+beneficiary was deactivated (migration 0010). The contact can check a generic
+status page.
 
 **Access and end.** The contact uses the shared `/access` flow (§ 5); access
 ends automatically at expiry (token revoked) or when the owner revokes it;

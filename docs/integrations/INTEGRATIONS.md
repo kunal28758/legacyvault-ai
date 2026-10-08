@@ -130,7 +130,7 @@ Redis/BullMQ, Nodemailer SMTP (may implement `EmailProvider` later).
 
 - **Owns**: error capture (client, server, edge), release tagging, source
   maps, performance data, alert rules.
-- **Application keeps**: PII scrubbing (`beforeSend`; `t` query parameters
+- **Application keeps**: PII scrubbing (`beforeSend`, `beforeSendTransaction`, `beforeBreadcrumb`: URL queries and fragments, where `t` access secrets travel
   and cookies stripped), correlation id as a tag, capture points in
   `withApi()` and the job runner, alert routing (error-rate spikes,
   `dms.job_health_failure`, DEAD job count — T239).

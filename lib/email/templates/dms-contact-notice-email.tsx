@@ -36,8 +36,8 @@ export function DmsContactNoticeEmail({
         and checking in stops the workflow.
       </Text>
       <Text style={paragraph}>
-        If the workflow completes, you will receive a separate email with a personal, secure link.
-        You will be asked for a code sent to this address before anything opens.
+        If the workflow completes, LegacyVault will send a separate email with a personal, secure
+        link. You will be asked for a code sent to this address before anything opens.
       </Text>
       <Text style={{ ...paragraph, fontSize: "13px", color: "#64748b" }}>
         Replies to this email do not reach {ownerName}.

@@ -475,7 +475,7 @@ requirement for customer-managed keys (activate ADR-013).
 ## ADR-006 — Background processing without Redis/BullMQ
 
 **Status**: ✅ Accepted (r3) — 2026-09-18
-**Revision notes**: r3 — § 3 and § 4: the hourly `dms-scan` endpoint only enqueues one idempotent `dms.scan` job (`dms.scan:{YYYY-MM-DDTHH}`, UTC) and that job's SUCCEEDED `finished_at` is the sole scheduler heartbeat (targeted remediation M3). r4 — job type `access.deliver` added by ADR-014 § 6 (no change to this record's decisions).
+**Revision notes**: r3 — § 3 and § 4: the hourly `dms-scan` endpoint only enqueues one idempotent `dms.scan` job (`dms.scan:{YYYY-MM-DDTHH}`, UTC) and that job's SUCCEEDED `finished_at` is the sole scheduler heartbeat (targeted remediation M3). r4 — job type `access.deliver` added by ADR-014 § 6 (no change to this record's decisions). r5 (2026-10-08, migration 0010) — § 3 triggers: on Vercel Hobby `vercel.json` declares no crons; production triggers are `pg_cron` + `pg_net` in the database calling the same `CRON_SECRET`-protected routes (URL and bearer from Supabase Vault), with the GitHub Actions workflow as a backup caller (DEPLOYMENT.md § 7c). Everything below about the routes, idempotency keys and the heartbeat is unchanged.
 
 ### Context
 The plan introduced Redis + BullMQ for Dead Man Switch timers, notification
@@ -614,6 +614,7 @@ adopted for the baseline to keep the thin in-house interface. It MAY be used
 ## ADR-009 — Email abstraction with Resend as baseline provider
 
 **Status**: ✅ Accepted — 2026-09-18
+**Revision notes**: r2 (2026-10-07, b4f76a1) — Brevo is the verified sender and carries every email (`lib/email/send.ts`); Resend is used only when Brevo is not configured. Delivery confirmation (`notification.confirm`) asks whichever provider sent the message.
 
 ### Decision
 `lib/email/` defines `EmailProvider` (`send(message)`), templates built with
@@ -757,7 +758,7 @@ or regulatory demand.
 ## ADR-014 — Unified access-token model and cookie exchange
 
 **Status**: ✅ Accepted (r5) — 2026-09-18 (analysis findings I1, I3, S2, I7)
-**Revision notes**: r4 — § 6 access-link delivery policy (final-gate finding C1): deterministic per-contact idempotency, reissue-on-retry, audited resend paths. r5 (2026-10-05, migration 0007) — § 7 automatic document-share links that follow the beneficiary's current shares.
+**Revision notes**: r4 — § 6 access-link delivery policy (final-gate finding C1): deterministic per-contact idempotency, reissue-on-retry, audited resend paths. r5 (2026-10-05, migration 0007) — § 7 automatic document-share links that follow the beneficiary's current shares. r6 (2026-10-08, migration 0011) — § 3 the secret travels in the URL fragment; § 7 at most one live share-following link per beneficiary (a later share reuses it).
 
 ### Context
 The r1 model had `BeneficiaryAccessToken` with a mandatory beneficiary FK
@@ -782,9 +783,11 @@ history.
    through `issue_access_token()`; release and emergency tokens by the
    service role through `system_issue_access_token()`.
 3. **Cookie exchange instead of tokens in paths.** The emailed link is
-   `/access?t=<token>`. The public page immediately calls
-   `POST /api/v1/access/exchange` with the token in the body, strips it from
-   the URL, and receives a stateless access cookie — `{ tokenId, exp }`
+   `/access#t=<token>` (r6): a fragment is never sent to a server, so the
+   secret reaches no request line, request log, Referer or server-rendered
+   page. The public page clears the fragment from the address bar and history
+   before any request, then calls
+   `POST /api/v1/access/exchange` with the token in the body, and receives a stateless access cookie — `{ tokenId, exp }`
    encrypted with a dedicated server key (`ACCESS_COOKIE_KEY`), `httpOnly;
    Secure; SameSite=Strict; Path=/api/v1/access`, 30-minute sliding TTL never
    exceeding the token's expiry. All `/api/v1/access/*` resource endpoints
@@ -865,16 +868,26 @@ history.
      current shares: it can lose a document when it is unshared, never gain
      one. DMS_RELEASE and EMERGENCY_ACCESS tokens keep their released scope
      unchanged.
-   - Each share emails a fresh link; earlier links stay valid until they
-     expire or are revoked, and all of them show the same current documents.
-     The owner's resend of a following token (`resend_access_token()`) keeps
-     it following and re-validates it against the current shares.
+   - **One live link per beneficiary (r6, migration 0011).** r5 emailed a
+     fresh link on every share and left the earlier ones valid, so revoking
+     "the" link could leave others working. Now a beneficiary holds at most
+     one unrevoked share-following link: `issue_document_share_token()` locks
+     the beneficiary, retires an expired link (revoked `EXPIRED`, audited) and
+     refuses a second with 409 `SHARE_LINK_ALREADY_LIVE`; a partial unique
+     index makes a second impossible on any path. A later share therefore
+     reuses the live link — nothing is minted — and the beneficiary gets a
+     link-free notice email (`access.share_link_reused` audited). The owner's
+     resend (`resend_access_token()`) replaces the live link: it keeps it
+     following, re-validates it against the current shares and revokes any
+     other unrevoked share link of that beneficiary.
      Deactivating or removing the beneficiary revokes every token as before.
    - The email draws on the owner's `sensitive` rate-limit budget (5 per
      15 minutes, shared with invitations and manual links). Nothing is minted
      when email is not configured or the budget is spent. A failed send or
      audit write never undoes the share, and the response's
-     `accessEmailSent` reports only what the provider actually accepted.
+     `accessEmailSent` reports only what the provider actually accepted;
+     `accessLink` (r6) says whether a link was minted (`new`), already covered
+     the share (`existing`), or neither (`none`).
    - The Access Links panel remains for assets, videos, revocation and a
      fresh or manual fallback link.
 
@@ -904,6 +917,19 @@ FR-J007–J010, FR-K005–K008; constitution I, III, VII, XII.
   `tests/integration/document-share-links.test.ts`,
   `tests/unit/access-portal-scope.test.ts` and the documents-and-access E2E
   journey.
+- r6: links are `/access#t=<token>`; the proxy answers a legacy
+  `/access?t=` with `303 → /access#t=` (no-store) before anything renders
+  (remove once those links have expired, ≤ 30 days after release);
+  `/access` sends `Referrer-Policy: no-referrer`; Sentry events,
+  transactions and breadcrumbs lose every URL's query and fragment. Migration
+  0011 adds `access_tokens_live_share_link_uidx` and replaces
+  `issue_document_share_token()` / `resend_access_token()`; it refuses to run
+  while any beneficiary holds duplicate unrevoked share links (resolve them
+  with the audited `scripts/share-links/` cleanup first). The share response
+  adds `accessLink`. Verified by `tests/integration/document-share-links.test.ts`
+  ("one live share link per beneficiary"),
+  `tests/integration/access-token-exposure.test.ts`,
+  `tests/unit/sensitive-url.test.ts` and the documents-and-access E2E journey.
 
 ### Alternatives considered
 - Separate contact entities per feature: rejected (three ways to describe the

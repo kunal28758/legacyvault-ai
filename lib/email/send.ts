@@ -6,6 +6,7 @@ import { AccessLinkEmail } from "@/lib/email/templates/access-link-email";
 import { BeneficiaryInvitationEmail } from "@/lib/email/templates/beneficiary-invitation-email";
 import { DmsContactNoticeEmail } from "@/lib/email/templates/dms-contact-notice-email";
 import { DmsReminderEmail } from "@/lib/email/templates/dms-reminder-email";
+import { DocumentSharedNoticeEmail } from "@/lib/email/templates/document-shared-notice-email";
 import { EmergencyCodeEmail } from "@/lib/email/templates/emergency-code-email";
 import { EmergencyDesignationEmail } from "@/lib/email/templates/emergency-designation-email";
 import { NotificationEmail } from "@/lib/email/templates/notification-email";
@@ -109,6 +110,25 @@ export async function sendDmsContactNoticeEmail(input: {
     idempotencyKey: input.idempotencyKey,
     ...VERIFIED,
     react: DmsContactNoticeEmail({
+      beneficiaryName: input.beneficiaryName,
+      ownerName: input.ownerName,
+    }),
+  });
+}
+
+/** A later share: the beneficiary's existing link already shows it. No link, no secret. */
+export async function sendDocumentSharedNoticeEmail(input: {
+  to: string;
+  beneficiaryName: string;
+  ownerName: string;
+  idempotencyKey: string;
+}): Promise<SendEmailResult> {
+  return sendEmail({
+    to: input.to,
+    subject: `${input.ownerName} shared another document with you`,
+    idempotencyKey: input.idempotencyKey,
+    ...VERIFIED,
+    react: DocumentSharedNoticeEmail({
       beneficiaryName: input.beneficiaryName,
       ownerName: input.ownerName,
     }),

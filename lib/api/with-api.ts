@@ -154,6 +154,7 @@ export function withApi<
   handler: (ctx: ApiContext<TBody, TQuery, TParams>) => Promise<TResult | NextResponse>,
 ) {
   return async function route(request: Request, routeArgs?: RouteArgs): Promise<NextResponse> {
+    const started = Date.now();
     const internal = options.auth === "cron" || options.auth === "webhook";
     const correlationId = resolveCorrelationId(request.headers, internal);
     const url = new URL(request.url);
@@ -230,6 +231,7 @@ export function withApi<
         ip,
       });
 
+      logIfSlow(log, started);
       if (result instanceof NextResponse) {
         applyBaseHeaders(result, correlationId);
         return result;
@@ -273,6 +275,14 @@ export function withApi<
       return response;
     }
   };
+}
+
+/** A request slower than this is logged, so latency regressions show up in the logs. */
+const SLOW_REQUEST_MS = 1_500;
+
+function logIfSlow(log: ReturnType<typeof requestLogger>, started: number): void {
+  const durationMs = Date.now() - started;
+  if (durationMs >= SLOW_REQUEST_MS) log.warn({ durationMs }, "slow request");
 }
 
 async function resolveParams(routeArgs?: RouteArgs): Promise<Record<string, string | string[]>> {

@@ -28,7 +28,7 @@ const SUBJECT_A = "user_share_links_alice";
 const SUBJECT_B = "user_share_links_bob";
 
 const clients = vi.hoisted(() => ({ current: null as unknown }));
-const outbox = vi.hoisted(() => ({ links: [] as string[], fail: false }));
+const outbox = vi.hoisted(() => ({ links: [] as string[], notices: [] as string[], fail: false }));
 
 vi.mock("@/lib/db/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/db/server")>();
@@ -46,6 +46,10 @@ vi.mock("@/lib/email/send", async (importOriginal) => {
       if (outbox.fail) throw new Error("email send failed: unauthorized");
       outbox.links.push(link);
       return { providerMessageId: `msg_${outbox.links.length}` };
+    },
+    sendDocumentSharedNoticeEmail: async (input: Record<string, string>) => {
+      outbox.notices.push(JSON.stringify(input));
+      return { providerMessageId: `notice_${outbox.notices.length}` };
     },
   };
 });
@@ -105,6 +109,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   if (!available) return;
   outbox.links.length = 0;
+  outbox.notices.length = 0;
   outbox.fail = false;
   await service.from("access_tokens").delete().in("owner_user_id", [aliceId, bobId]);
   await service.from("beneficiaries").delete().in("user_id", [aliceId, bobId]);
@@ -144,8 +149,22 @@ async function newDocument(userId = aliceId, name = "Will.pdf"): Promise<string>
   return data.id;
 }
 
+/** Links carry the secret in the fragment (never sent to a server). */
 function secretOf(link: string): string {
-  return new URL(link).searchParams.get("t") ?? "";
+  return new URLSearchParams(new URL(link).hash.slice(1)).get("t") ?? "";
+}
+
+/** Unrevoked share-following links of a beneficiary (migration 0011 allows one). */
+async function unrevokedShareLinks(beneficiaryId: string) {
+  const { data, error } = await service
+    .from("access_tokens")
+    .select("id, expires_at, revoked_reason")
+    .eq("beneficiary_id", beneficiaryId)
+    .eq("grant_type", "DIRECT_SHARE")
+    .eq("follows_document_shares", true)
+    .is("revoked_at", null);
+  if (error) throw error;
+  return data;
 }
 
 async function tokenIdOf(plaintext: string): Promise<string> {
@@ -203,9 +222,13 @@ describe.skipIf(!available)("document share links", () => {
       .single();
     expect(beneficiary?.status).toBe("ACTIVE");
 
-    // A second share: no new link needed — the open session already shows it.
+    // A second share: no new link — the one live link (and the open session)
+    // already shows it; the beneficiary gets a link-free notice instead.
     const second = await documentService.shareDocument(owner, deed, beneficiaryId, "corr-2");
-    expect(second.accessEmailSent).toBe(true);
+    expect(second).toMatchObject({ accessLink: "existing", accessEmailSent: true });
+    expect(outbox.links).toHaveLength(1);
+    expect(outbox.notices).toHaveLength(1);
+    expect(await unrevokedShareLinks(beneficiaryId)).toHaveLength(1);
     expect(await documentIds(tokenId)).toEqual([will, deed].sort());
     const grant = await portal.requireGrant(tokenId);
     await expect(portal.documentDetail(grant, deed, "test")).resolves.toMatchObject({ id: deed });
@@ -217,7 +240,6 @@ describe.skipIf(!available)("document share links", () => {
       status: 404,
     });
     expect(await documentIds(tokenId)).toEqual([deed]);
-    expect(await documentIds(await tokenIdOf(secretOf(outbox.links[1])))).toEqual([deed]);
   });
 
   it("keeps the share when the email cannot be sent", async () => {
@@ -452,5 +474,231 @@ describe.skipIf(!available)("document share links", () => {
     expect((await shareFollowingLink(beneficiaryId)).error?.message).toContain(
       "BENEFICIARY_INACTIVE",
     );
+  });
+});
+
+describe.skipIf(!available)("one live share link per beneficiary (0011)", () => {
+  /** A share recorded directly, so a link can be minted (or refused) by hand. */
+  async function shareRow(beneficiaryId: string, documentId: string) {
+    const { error } = await alice.rpc("assign_beneficiary", {
+      p_beneficiary_id: beneficiaryId,
+      p_resource_type: "DOCUMENT",
+      p_resource_id: documentId,
+    });
+    if (error) throw error;
+  }
+
+  it("mints one link on the first share and reuses it on every later one", async () => {
+    const beneficiaryId = await newBeneficiary();
+    const outcomes = [];
+    for (const name of ["Will.pdf", "Deed.pdf", "Policy.pdf"]) {
+      const result = await documentService.shareDocument(
+        owner,
+        await newDocument(aliceId, name),
+        beneficiaryId,
+        `corr-${name}`,
+      );
+      outcomes.push(result.accessLink);
+    }
+
+    expect(outcomes).toEqual(["new", "existing", "existing"]);
+    expect(outbox.links).toHaveLength(1);
+    // The later shares told the beneficiary without sending any secret.
+    expect(outbox.notices).toHaveLength(2);
+    expect(outbox.notices.join(" ")).not.toMatch(/access[#?]t=|[0-9a-f]{64}/);
+    const live = await unrevokedShareLinks(beneficiaryId);
+    expect(live).toHaveLength(1);
+    expect(live[0].id).toBe(await tokenIdOf(secretOf(outbox.links[0])));
+    expect(await documentIds(live[0].id)).toHaveLength(3);
+
+    const { count: issued } = await service
+      .from("audit_log")
+      .select("id", { count: "exact", head: true })
+      .eq("action", "access.token_issued")
+      .eq("metadata->>beneficiaryId", beneficiaryId)
+      .eq("metadata->>followsShares", "true");
+    // One mint (the database's own record of it), however many shares.
+    expect(issued).toBe(1);
+    const { count: reused } = await service
+      .from("audit_log")
+      .select("id", { count: "exact", head: true })
+      .eq("action", "access.share_link_reused")
+      .eq("resource_id", beneficiaryId);
+    expect(reused).toBe(2);
+  });
+
+  it("lets concurrent shares create exactly one live link", async () => {
+    const beneficiaryId = await newBeneficiary();
+    const documents = await Promise.all(
+      ["A.pdf", "B.pdf", "C.pdf", "D.pdf", "E.pdf"].map((name) => newDocument(aliceId, name)),
+    );
+
+    const results = await Promise.all(
+      documents.map((id, i) =>
+        documentService.shareDocument(owner, id, beneficiaryId, `race-${i}`),
+      ),
+    );
+
+    expect(results.filter((r) => r.accessLink === "new")).toHaveLength(1);
+    expect(results.filter((r) => r.accessLink === "existing")).toHaveLength(4);
+    expect(await unrevokedShareLinks(beneficiaryId)).toHaveLength(1);
+    expect(outbox.links).toHaveLength(1);
+  });
+
+  it("refuses a second link from concurrent raw mints, and in the database itself", async () => {
+    const beneficiaryId = await newBeneficiary();
+    await shareRow(beneficiaryId, await newDocument());
+
+    const mints = await Promise.all([1, 2, 3, 4, 5].map(() => shareFollowingLink(beneficiaryId)));
+    expect(mints.filter((m) => !m.error)).toHaveLength(1);
+    for (const refused of mints.filter((m) => m.error)) {
+      expect(refused.error?.code).toBe("LV409");
+      expect(refused.error?.message).toContain("SHARE_LINK_ALREADY_LIVE");
+    }
+
+    // Even a direct insert that skips the function cannot add a second one.
+    const { error } = await service.from("access_tokens").insert({
+      owner_user_id: aliceId,
+      beneficiary_id: beneficiaryId,
+      grant_type: "DIRECT_SHARE",
+      token_hash: mintAccessToken().hash,
+      scope: { documents: [], assets: [], videos: [] },
+      expires_at: new Date(Date.now() + 86_400_000).toISOString(),
+      follows_document_shares: true,
+    });
+    expect(error?.code).toBe("23505");
+    expect(await unrevokedShareLinks(beneficiaryId)).toHaveLength(1);
+  });
+
+  it("mints a fresh link after the owner revokes it, and the revoked one stays refused", async () => {
+    const beneficiaryId = await newBeneficiary();
+    await documentService.shareDocument(owner, await newDocument(), beneficiaryId, "corr-1");
+    const firstSecret = secretOf(outbox.links[0]);
+    const firstId = await tokenIdOf(firstSecret);
+
+    await alice.rpc("revoke_access_token", { p_token_id: firstId });
+    const again = await documentService.shareDocument(
+      owner,
+      await newDocument(aliceId, "Second.pdf"),
+      beneficiaryId,
+      "corr-2",
+    );
+
+    expect(again.accessLink).toBe("new");
+    expect(outbox.links).toHaveLength(2);
+    await expect(portal.exchange(firstSecret, "test")).rejects.toMatchObject({ status: 401 });
+    const live = await unrevokedShareLinks(beneficiaryId);
+    expect(live.map((l) => l.id)).toEqual([await tokenIdOf(secretOf(outbox.links[1]))]);
+  });
+
+  it("retires an expired link (audited) before minting its replacement", async () => {
+    const beneficiaryId = await newBeneficiary();
+    await documentService.shareDocument(owner, await newDocument(), beneficiaryId, "corr-1");
+    const expiredSecret = secretOf(outbox.links[0]);
+    const expiredId = await tokenIdOf(expiredSecret);
+    await service
+      .from("access_tokens")
+      .update({ expires_at: new Date(Date.now() - 1000).toISOString() })
+      .eq("id", expiredId);
+
+    const next = await documentService.shareDocument(
+      owner,
+      await newDocument(aliceId, "Next.pdf"),
+      beneficiaryId,
+      "corr-2",
+    );
+
+    expect(next.accessLink).toBe("new");
+    const { data: old } = await service
+      .from("access_tokens")
+      .select("revoked_reason")
+      .eq("id", expiredId)
+      .single();
+    expect(old?.revoked_reason).toBe("EXPIRED");
+    await expect(portal.exchange(expiredSecret, "test")).rejects.toMatchObject({ status: 401 });
+    expect(await unrevokedShareLinks(beneficiaryId)).toHaveLength(1);
+    const { count } = await service
+      .from("audit_log")
+      .select("id", { count: "exact", head: true })
+      .eq("action", "access.token_revoked")
+      .eq("resource_id", expiredId)
+      .eq("metadata->>reason", "EXPIRED");
+    expect(count).toBe(1);
+  });
+
+  it("keeps each beneficiary's one link to that beneficiary's documents", async () => {
+    const asha = await newBeneficiary();
+    const ravi = await newBeneficiary();
+    const ashaDoc = await newDocument(aliceId, "Asha.pdf");
+    const raviDoc = await newDocument(aliceId, "Ravi.pdf");
+    await documentService.shareDocument(owner, ashaDoc, asha, "corr-1");
+    await documentService.shareDocument(owner, raviDoc, ravi, "corr-2");
+
+    const ashaLink = await tokenIdOf(secretOf(outbox.links[0]));
+    const raviLink = await tokenIdOf(secretOf(outbox.links[1]));
+    expect(await documentIds(ashaLink)).toEqual([ashaDoc]);
+    expect(await documentIds(raviLink)).toEqual([raviDoc]);
+
+    // Revoking one beneficiary's link leaves the other's untouched.
+    await alice.rpc("revoke_access_token", { p_token_id: ashaLink });
+    await expect(portal.requireGrant(ashaLink)).rejects.toMatchObject({ status: 401 });
+    expect(await documentIds(raviLink)).toEqual([raviDoc]);
+  });
+
+  it("never lets another owner mint, revoke or resend through someone else's link", async () => {
+    const beneficiaryId = await newBeneficiary();
+    await documentService.shareDocument(owner, await newDocument(), beneficiaryId, "corr-1");
+    const linkId = await tokenIdOf(secretOf(outbox.links[0]));
+    const bob = (await createUserScopedClient(SUBJECT_B)) as unknown as TypedSupabaseClient;
+
+    expect((await bob.rpc("revoke_access_token", { p_token_id: linkId })).error?.code).toBe(
+      "42501",
+    );
+    const minted = mintAccessToken();
+    const resend = await bob.rpc("resend_access_token", {
+      p_token_id: linkId,
+      p_token_hash: minted.hash,
+      p_expires_at: new Date(Date.now() + 86_400_000).toISOString(),
+    });
+    expect(resend.error?.code).toBe("42501");
+    const mint = await bob.rpc("issue_document_share_token", {
+      p_beneficiary_id: beneficiaryId,
+      p_token_hash: mintAccessToken().hash,
+      p_expires_at: new Date(Date.now() + 86_400_000).toISOString(),
+    });
+    expect(mint.error?.code).toBe("42501");
+    // Bob cannot even see that the link exists.
+    const { data: seen } = await bob.from("access_tokens").select("id").eq("id", linkId);
+    expect(seen).toEqual([]);
+    const live = await unrevokedShareLinks(beneficiaryId);
+    expect(live.map((l) => l.id)).toEqual([linkId]);
+  });
+
+  it("makes a resend replace the live link, never add to it", async () => {
+    const beneficiaryId = await newBeneficiary();
+    await documentService.shareDocument(owner, await newDocument(), beneficiaryId, "corr-1");
+    const firstId = await tokenIdOf(secretOf(outbox.links[0]));
+
+    const resent = await accessService.resendToken(
+      owner,
+      beneficiaryId,
+      firstId,
+      { ttlDays: 7, confirmed: true },
+      "corr-2",
+    );
+    const secondId = await tokenIdOf(secretOf(resent.link));
+    expect((await unrevokedShareLinks(beneficiaryId)).map((l) => l.id)).toEqual([secondId]);
+
+    // Resending the OLD (already revoked) link still leaves exactly one live link.
+    const again = await accessService.resendToken(
+      owner,
+      beneficiaryId,
+      firstId,
+      { ttlDays: 7, confirmed: true },
+      "corr-3",
+    );
+    const thirdId = await tokenIdOf(secretOf(again.link));
+    expect((await unrevokedShareLinks(beneficiaryId)).map((l) => l.id)).toEqual([thirdId]);
+    await expect(portal.requireGrant(secondId)).rejects.toMatchObject({ status: 401 });
   });
 });

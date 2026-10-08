@@ -6,7 +6,7 @@ import type { AppUser } from "@/lib/auth/ensure-app-user";
 import { assertAccountActive } from "@/lib/auth/require-user";
 import { createUserClient } from "@/lib/db/server";
 import { emailConfigured } from "@/lib/email/client";
-import { sendAccessLinkEmail } from "@/lib/email/send";
+import { sendAccessLinkEmail, sendDocumentSharedNoticeEmail } from "@/lib/email/send";
 import { logger } from "@/lib/observability/logger";
 import * as accessTokenRepository from "@/lib/repositories/access-token.repository";
 import {
@@ -152,27 +152,37 @@ export async function resendToken(
 }
 
 /**
- * Mints and emails the link a document share sends by itself (migration 0007).
+ * What a share did about the beneficiary's link: minted and emailed a new one,
+ * found the one live link that already covers it, or neither.
+ */
+export type ShareLinkOutcome = "new" | "existing" | "none";
+
+/**
+ * The link a document share sends by itself (migrations 0007, 0011).
  *
  * The link follows the beneficiary's shares, so it covers every document shared
- * with them now or later, and an unshare ends access through it at once. Mail
- * to a third party draws on the same `sensitive` budget as an invitation or a
- * manual link. Never throws: the share that called this is already recorded and
- * is kept whatever happens here.
+ * with them now or later, and an unshare ends access through it at once. A
+ * beneficiary holds at most ONE live share link: when one exists the database
+ * refuses a second (SHARE_LINK_ALREADY_LIVE) and the existing link is reused —
+ * nothing is minted, and the email that goes out names the new share without
+ * carrying any link. Mail to a third party draws on the same `sensitive` budget
+ * as an invitation or a manual link. Never throws: the share that called this is
+ * already recorded and is kept whatever happens here.
  */
 export async function issueDocumentShareLink(
   user: AppUser,
   beneficiaryId: string,
   correlationId: string,
-): Promise<{ emailSent: boolean }> {
+): Promise<{ emailSent: boolean; link: ShareLinkOutcome }> {
   let emailSent = false;
+  let link: ShareLinkOutcome = "none";
   try {
     // No mail, no link: a secret nobody receives is not worth minting.
-    if (!emailConfigured()) return { emailSent };
+    if (!emailConfigured()) return { emailSent, link };
     const budget = await checkRateLimit({ policy: "sensitive", subject: user.id });
     if (!budget.allowed) {
       logger.warn({ beneficiaryId, correlationId }, "document share link not sent: rate limited");
-      return { emailSent };
+      return { emailSent, link };
     }
 
     const db = await createUserClient();
@@ -186,7 +196,23 @@ export async function issueDocumentShareLink(
       p_expires_at: expiresAt,
       p_corr: correlationId,
     });
+    if (error?.code === "LV409" && error.message.includes("SHARE_LINK_ALREADY_LIVE")) {
+      link = "existing";
+      emailSent = await noticeOfShare(user, beneficiary, correlationId);
+      await audit.log({
+        actorId: user.id,
+        actorRole: user.role,
+        action: "access.share_link_reused",
+        resourceType: "beneficiary",
+        resourceId: beneficiaryId,
+        outcome: "SUCCESS",
+        metadata: { noticeSent: emailSent },
+        correlationId,
+      });
+      return { emailSent, link };
+    }
     if (error) throw error;
+    link = "new";
 
     const delivery: Delivery = {
       tokenId: data as string,
@@ -206,7 +232,28 @@ export async function issueDocumentShareLink(
     // Never the recipient's address, never the link.
     logger.error({ err: cause, beneficiaryId, correlationId }, "document share link failed");
   }
-  return { emailSent };
+  return { emailSent, link };
+}
+
+/** The link-free email for a later share. True only when the provider accepted it. */
+async function noticeOfShare(
+  user: AppUser,
+  beneficiary: { id: string; name: string; email: string | null },
+  correlationId: string,
+): Promise<boolean> {
+  if (!beneficiary.email) return false;
+  try {
+    await sendDocumentSharedNoticeEmail({
+      to: beneficiary.email,
+      beneficiaryName: beneficiary.name,
+      ownerName: user.name,
+      idempotencyKey: `share-notice:${beneficiary.id}:${correlationId}`,
+    });
+    return true;
+  } catch (cause) {
+    logger.error({ err: cause, beneficiaryId: beneficiary.id }, "share notice email failed");
+    return false;
+  }
 }
 
 export async function revokeToken(

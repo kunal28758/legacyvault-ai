@@ -3,8 +3,10 @@ import "server-only";
 import type { TypedSupabaseClient } from "@/lib/db/server";
 import type { JobHandler } from "@/lib/jobs/types";
 import { logger } from "@/lib/observability/logger";
+import { enqueue } from "@/lib/repositories/job.repository";
 import * as notificationRepository from "@/lib/repositories/notification.repository";
 import type { UploadStatus } from "@/lib/repositories/upload.repository";
+import { notifyOwnerOfRequest } from "@/lib/services/emergency-public.service";
 import {
   BUCKETS,
   removeObject,
@@ -23,6 +25,7 @@ import {
  * sweep twice in a day changes nothing the first run did not already do.
  */
 const UPLOAD_GRACE_MS = 6 * 60 * 60 * 1000;
+const DAY_MS = 86_400_000;
 const DELETION_GRACE_DAYS = 30;
 
 export interface HousekeepingSummary {
@@ -50,6 +53,10 @@ export async function runHousekeeping(
  * It runs from the moment the contact verified their code — `decided_at` is
  * still null then, and the row's `updated_at` is the verification — so a
  * request only auto-resolves after the owner has had the full window.
+ *
+ * An AUTO_GRANT also needs proof the owner was told: ea_transition() (0010)
+ * holds the request at VERIFIED until the owner's alert is DELIVERED. A hold
+ * restarts the window (it updates the row), and the owner can still decide.
  */
 async function applyEmergencyTimeoutRules(db: TypedSupabaseClient, now: Date): Promise<number> {
   const { data, error } = await db
@@ -74,14 +81,19 @@ async function applyEmergencyTimeoutRules(db: TypedSupabaseClient, now: Date): P
     const dueAt = Date.parse(row.updated_at) + config.timeout_hours * 3_600_000;
     if (dueAt > now.getTime()) continue;
 
-    const { error: transitionError } = await db.rpc("ea_transition", {
+    const target = config.on_timeout === "AUTO_GRANT" ? "AUTO_GRANTED" : "DENIED";
+    const { data: outcome, error: transitionError } = await db.rpc("ea_transition", {
       p_request_id: row.id,
-      p_to: config.on_timeout === "AUTO_GRANT" ? "AUTO_GRANTED" : "DENIED",
+      p_to: target,
       p_metadata: { reason: "timeout", timeoutHours: config.timeout_hours } as never,
     });
     if (transitionError) {
       // The owner decided in the same minute; their decision wins.
       if (transitionError.code !== "LV409") throw transitionError;
+      continue;
+    }
+    if (outcome !== target) {
+      await keepTryingToAlert(db, config.user_id, row.id, now);
       continue;
     }
     applied += 1;
@@ -97,6 +109,35 @@ async function applyEmergencyTimeoutRules(db: TypedSupabaseClient, now: Date): P
     }
   }
   return applied;
+}
+
+/**
+ * While an automatic grant is held, keep establishing whether the owner was
+ * told: ask the provider again about every alert still at SENT, and — when
+ * none is on its way (each failed or bounced) — send a fresh one, at most once
+ * a day. Nothing here grants anything; only a DELIVERED alert lets
+ * ea_transition() do that.
+ */
+async function keepTryingToAlert(
+  db: TypedSupabaseClient,
+  userId: string,
+  requestId: string,
+  now: Date,
+): Promise<void> {
+  const alerts = await notificationRepository.listRequestAlerts(db, userId, requestId);
+  const hour = now.toISOString().slice(0, 13);
+  for (const alert of alerts.filter((item) => item.delivery_status === "SENT")) {
+    await enqueue(
+      db,
+      "notification.confirm",
+      { notificationId: alert.id },
+      `notification.confirm:${alert.id}:${hour}`,
+    );
+  }
+  const inFlight = alerts.some((item) => ["PENDING", "SENT"].includes(item.delivery_status));
+  const sentToday = alerts.some((item) => now.getTime() - Date.parse(item.created_at) < DAY_MS);
+  if (!inFlight && !sentToday) await notifyOwnerOfRequest(db, requestId);
+  logger.warn({ requestId, alerts: alerts.length, inFlight }, "emergency auto-grant held");
 }
 
 /** Requests whose window has passed, and grants whose access duration is spent. */

@@ -14,7 +14,7 @@
 
 LegacyVault AI is a working product: one Next.js application with Clerk for
 identity, Supabase PostgreSQL + private Storage for data and files, a Postgres
-job table driven by Vercel Cron for everything time-based, and Resend for mail.
+job table driven by protected cron routes for everything time-based (called by `pg_cron` + `pg_net` from the database once migration 0010 is live; GitHub Actions today), and Brevo for mail (Resend fallback).
 Legacy plans, beneficiaries, assets, documents, videos, the Dead Man's Switch,
 emergency access, notifications and the beneficiary access portal are all
 persisted through the versioned API, the service layer, guarded SQL functions
@@ -46,8 +46,8 @@ surface reports "not configured" while the rest of the product works. See § 2.
 | Platform services | ✅ Two Supabase clients with documented call sites (T028), AES-256-GCM field encryption (T020), Postgres rate limiter (T025), append-only audit service (T027), pino logging with redaction (T022), security headers (T024), health probes | `lib/db/`, `lib/security/`, `lib/audit/`, `lib/observability/` |
 | Jobs / cron / webhooks | ✅ `jobs` table + `claim_jobs()` runner with back-off and dead-lettering; handlers `access.deliver`, `notification.deliver`, `storage.remove-object`, `dms.scan`, `housekeeping`; Vercel Cron at `/api/internal/cron/{run-jobs,dms-scan,housekeeping}` behind `CRON_SECRET`; Clerk webhook (Svix) | `lib/jobs/**`, `app/api/internal/cron/**`, `vercel.json` |
 | Storage buckets / policies | ✅ **Private** buckets `documents` and `videos` (migration `0004`; the retired `quarantine` bucket is kept, unused); no storage policy for `authenticated` — every read and write is a short-lived signed URL minted server-side; upload straight to the destination bucket → size/magic-byte check → `promote_upload()` (no malware scan, ADR-017, migration `0006`) | `supabase/migrations/0004_storage_buckets.sql`, `lib/storage/`, `lib/services/upload.service.ts` |
-| Email | ✅ Resend + React Email templates (access link, DMS reminder, notification, emergency code, emergency designation) with provider-level idempotency keys; mail never contains vault contents and never blocks a state change | `lib/email/**` |
-| Beneficiary access portal | ✅ `/access?t=…` exchanges the token for an encrypted `httpOnly; SameSite=Strict` cookie scoped to `/api/v1/access`; read-only resource, document-download, asset, video and plan-section endpoints re-check revocation, expiry, beneficiary status and delivery condition on every request; public emergency request/verify flow with hashed one-time codes | `app/(public)/**`, `app/api/v1/access/**`, `lib/services/access-portal.service.ts` |
+| Email | ✅ Brevo (verified sender for every email; Resend fallback) + React Email templates (access link, DMS reminder, notification, emergency code, emergency designation) with provider-level idempotency keys; mail never contains vault contents and never blocks a state change | `lib/email/**` |
+| Beneficiary access portal | ✅ `/access#t=…` (secret in the fragment, never sent to a server; legacy `?t=` redirected) exchanges the token for an encrypted `httpOnly; SameSite=Strict` cookie scoped to `/api/v1/access`; read-only resource, document-download, asset, video and plan-section endpoints re-check revocation, expiry, beneficiary status and delivery condition on every request; public emergency request/verify flow with hashed one-time codes | `app/(public)/**`, `app/api/v1/access/**`, `lib/services/access-portal.service.ts` |
 | AI | ✅ **Connected (development) to Gemini `gemini-3.8-flash`** and verified through the real assistant UI → API → provider path for text. Provider interface with a configurable fallback chain (ADR-008): Gemini primary; OpenRouter (`:free` models only unless explicitly allowed), Groq, Cerebras and Hugging Face through one OpenAI-compatible adapter, used **only** when named in `AI_PROVIDER_ORDER`; each request skips providers that cannot read its files or are not approved for vault documents (`AI_DOCUMENT_PROVIDERS`), and fails over only on outage, timeout or spent quota (per-minute vs daily read from each vendor's 429). Transient Gemini 503s are retried with bounded backoff; failures are logged as provider/model/duration/outcome + `upstream` status/reason/quota, never vendor text. Assistant **file attachments** (PDF, Word, Excel, PowerPoint, text, CSV, images) go through the vault's upload pipeline (quarantine → type check → ClamAV → private storage) and are re-checked through RLS before any model sees them. Document intelligence unchanged. **Live-verified (synthetic prompts, real route):** Gemini → Groq failover on Gemini's spent daily quota, and Hugging Face `openai/gpt-oss-120b:fastest` answering. **Not yet verified live:** attachment analysis through Gemini (free-tier quota of 20 requests/day spent; documents go only to approved providers) and OpenRouter/Cerebras (no keys). **The development Gemini key is free tier — Google's terms say not to send it sensitive or personal information.** Production needs a billing-enabled key (DEPLOYMENT.md § 7a). | `lib/ai/`, `lib/services/ai/`, `app/api/v1/ai/**`, `components/ai/` |
 | Operator console | ✅ **Built** (FR-P001–P012): `/admin` behind a server-side role check that answers 404 to everyone else; account search and detail (counts, protection state and audit shape — never vault contents), role assignment with self-change and last-operator refusals, Clerk unlock and MFA reset, platform analytics, the filtered platform audit trail, dead-lettered jobs and undelivered-link resend. Every action is audited with the operator as the actor, and other people's audit metadata is redacted to its structural keys before it is shown. | `app/(dashboard)/admin/`, `app/api/v1/admin/**`, `lib/services/admin.service.ts`, `lib/admin/audit-redaction.ts` |
 | Sentry / logging | ✅ pino JSON logs with redaction and correlation ids; `instrumentation.ts` / `instrumentation-client.ts` initialise Sentry when a DSN is set and stay inert otherwise, with URLs, query strings and cookies stripped from every event; root `global-error` and `not-found` boundaries. **No Sentry project has been connected or verified from here.** | `lib/observability/`, `instrumentation*.ts`, `app/global-error.tsx` |
@@ -102,12 +102,12 @@ surface reports "not configured" while the rest of the product works. See § 2.
 | Jobs | Postgres `jobs` table + Vercel Cron (+ `pg_cron` redundancy); no Redis/BullMQ | 006 |
 | Rate limiting | Clerk + Vercel WAF + Postgres limiter | 007 |
 | AI | OpenAI + Gemini behind `AIProvider`; structured outputs; confirmation gates | 008 |
-| Email | Abstraction; Resend + React Email | 009 |
+| Email | Abstraction; Brevo (Resend fallback) + React Email | 009 |
 | Monitoring | Sentry, pino JSON logs + correlation ids, health checks | 010 |
 | Deployment | Vercel + Supabase + Clerk; GitHub Actions; gated migrations; backups + PITR | 011 |
 | Deferred | App-layer envelope encryption of file bodies | 013 |
 | Write protection | Privilege baseline + column allow-lists + guarded `SECURITY DEFINER` functions | 004 r2 |
-| External access | Beneficiary = every recipient; one `access_tokens` entity; token exchanged once for an httpOnly cookie | 014 |
+| External access | Beneficiary = every recipient; one `access_tokens` entity; token exchanged per visit for a 30-minute httpOnly cookie; reusable until expiry or revocation | 014 |
 | Malware scanning | None — removed by owner decision (supersedes ADR-015) | 017 |
 | AI drafts | `ai_drafts` + encrypted versions; sanitized `ai_interactions` | 016 |
 
@@ -118,10 +118,10 @@ surface reports "not configured" while the rest of the product works. See § 2.
 | # | Item | Why it matters | Where tracked |
 |---|------|----------------|---------------|
 | 1 | Default branch (`master` vs `main`) and creating the feature branch | CI/deploy configuration; plan references | this file |
-| 2 | Vercel plan tier | Minute-level cron and `maxDuration` are required for the job runner / DMS scan (ADR-006) | T210 (Phase 1 since r4), T202 |
+| 2 | Vercel plan tier | Production runs on Hobby, which Vercel limits to non-commercial personal use — Pro is needed before a commercial launch. (Cron no longer depends on it: schedules run in the database, migration 0010.) | DEPLOYMENT.md § 7c, § 7e |
 | 3 | Supabase plan tier | ≥ 500 MB file-size limit (videos) and PITR (production) | T196, T210 (Phase 1 since r4) |
 | 4 | Clerk event coverage for FR-A014 (failed sign-in attempts) | Determines whether a custom sign-in capture endpoint is needed | T203 |
-| 5 | Clerk/Supabase/Resend/Sentry accounts and dev instances | Blocks Phase 0 completion | T195, T196, T202 |
+| 5 | Clerk **production** instance (production currently uses the development instance, `pk_test_`), Sentry project and region (no DSN in the production client bundle as of 2026-10-08) | Launch blockers | T195, T202 |
 | 6 | `ADMIN_EMAIL` for the first Super Admin | Seed script | T033 |
 | 7 | ~~ClamAV hosting~~ — closed 2026-10-04: malware scanning removed; FR-H016 / FR-Q011 not met by owner decision | — | ADR-017 |
 | 8 | **Audit-log retention schedule** (legal/compliance) | Baseline keeps audit rows indefinitely; a formal schedule needs a legal decision | data-model § Retention, T245 |
@@ -131,10 +131,13 @@ surface reports "not configured" while the rest of the product works. See § 2.
 
 ## 6. Next steps (in order)
 
-1. **Hosted accounts (T195/T196/T210).** Clerk production instance, Supabase
-   project with the four migrations applied and the three private buckets
-   created, Resend domain, Sentry DSN, and a Vercel plan whose cron schedule
-   supports the five-minute job runner.
+1. **Production rollout (2026-10-08 state).** Production is at migration 0009;
+   0010 (database scheduler, emergency gate) and 0011 (one live share link)
+   wait on the approvals in DEPLOYMENT.md § 7e, after the reviewed duplicate
+   share-link cleanup (`scripts/share-links/`). Then: a Clerk production
+   instance, a Vercel plan allowing commercial use, `AI_DOCUMENT_PROVIDERS`
+   set only to providers whose terms allow vault documents (production sends
+   documents to none until then), and a Sentry project.
 2. *(Removed 2026-10-04 — no scanner host is needed; ADR-017.)*
 3. **AI (ADR-008, ADR-016).** The assistant, will generator and document
    analysis, behind the provider abstraction and the confirmation gates.

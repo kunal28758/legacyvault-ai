@@ -19,6 +19,55 @@ Format: newest first. Categories: *Governance*, *Specification*,
 
 ## [Unreleased]
 
+### Share-link and access-token hardening — 2026-10-08
+
+- **One live share link per beneficiary** (migration 0011): sharing again
+  reuses the beneficiary's live link — no new secret is minted or emailed; a
+  link-free notice tells them instead. The database refuses a second
+  unrevoked share link (function check + partial unique index), so the
+  owner's revoke always ends share access. Previously each share added a live
+  link and revoking one left the others working. Existing duplicates must be
+  resolved with the audited `scripts/share-links/` cleanup before 0011.
+- **Access secrets out of URLs**: links carry the secret in the fragment
+  (`/access#t=…`), which never reaches a server, request log, Referer or
+  server-rendered page; legacy `?t=` links are redirected to that form before
+  rendering; `/access` sends no Referer; Sentry strips query and fragment from
+  events, transactions and breadcrumbs.
+- **Fixed**: a link requested for exactly the 30-day maximum could be
+  refused (`INVALID_EXPIRY`) when the server clock ran slightly ahead of the
+  database's, so a share's link went unsent; expiries now keep a 5-minute
+  margin.
+- **Vault documents reach no AI in production by default**: with
+  `AI_DOCUMENT_PROVIDERS` unset, production sends attachments and document
+  analyses to no provider (fail closed, "no configured AI provider is
+  approved to read vault documents"); the operator must name only providers
+  whose account terms allow vault documents. Chat without attachments is
+  unaffected. (Production's Gemini key had analysed one document on
+  2026-10-04.) A regression test proves a quota or outage at the approved
+  provider never moves vault documents to an unapproved fallback.
+- **Copy accuracy**: the Security Centre no longer says access links are
+  "exchanged once" (they are reusable until expiry or revocation; each visit
+  gets a 30-minute session) or calls its controls "guarantees"; the
+  invitation and contact-notice emails say LegacyVault *will send* a link
+  rather than promising the recipient *will receive* one.
+- **Internal cron routes**: regression tests prove every route refuses a
+  missing, wrong, truncated or mis-schemed bearer and does no work.
+- **Docs**: scheduler (pg_cron + pg_net, ADR-006 r5), email provider (Brevo,
+  ADR-009 r2) and the production rollout runbook (DEPLOYMENT.md § 7e) now
+  match the code.
+
+### Production hardening — 2026-10-07
+
+- **Scheduler**: pg_cron + pg_net call the protected cron routes from the
+  database (run-jobs every 10 min, DMS scan twice an hour, housekeeping
+  daily); URL and bearer live in Supabase Vault (migration 0010). The GitHub
+  Actions schedule, throttled to every 3–7 h, remains a backup caller.
+- **Emergency access**: a timeout AUTO_GRANT requires the owner's alert to be
+  confirmed delivered; otherwise it is held (visible to the owner, audited
+  once) and re-alerted at most daily. A timeout never grants an expired
+  request or an inactive contact. The hourly scan now expires spent emergency
+  grants (it asked for an impossible transition before).
+
 ### Legacy Execution Engine — 2026-10-07
 
 - **Production gate (closing)**: release is authorized only on a warning the

@@ -18,6 +18,7 @@ vi.mock("@/lib/email/client", () => ({
 }));
 vi.mock("@/lib/email/send", () => ({
   sendAccessLinkEmail: vi.fn(),
+  sendDocumentSharedNoticeEmail: vi.fn(),
 }));
 vi.mock("@/lib/audit/audit.service", () => ({
   audit: { log: vi.fn() },
@@ -33,7 +34,7 @@ import { audit } from "@/lib/audit/audit.service";
 import type { AppUser } from "@/lib/auth/ensure-app-user";
 import { createUserClient } from "@/lib/db/server";
 import { emailConfigured } from "@/lib/email/client";
-import { sendAccessLinkEmail } from "@/lib/email/send";
+import { sendAccessLinkEmail, sendDocumentSharedNoticeEmail } from "@/lib/email/send";
 import { logger } from "@/lib/observability/logger";
 import * as accessTokenRepository from "@/lib/repositories/access-token.repository";
 import { hashAccessToken } from "@/lib/security/access-token";
@@ -98,6 +99,7 @@ describe("issueDocumentShareLink", () => {
   it("mints a share-following link from the hash alone and emails it", async () => {
     await expect(issueDocumentShareLink(user, BENEFICIARY_ID, "corr")).resolves.toEqual({
       emailSent: true,
+      link: "new",
     });
 
     expect(checkRateLimit).toHaveBeenCalledWith({ policy: "sensitive", subject: user.id });
@@ -115,7 +117,7 @@ describe("issueDocumentShareLink", () => {
       idempotencyKey: `access-link:${TOKEN_ID}`,
     });
     // The emailed secret is the one whose hash was stored — and only its hash was.
-    const secret = new URL(email.link).searchParams.get("t") ?? "";
+    const secret = new URLSearchParams(new URL(email.link).hash.slice(1)).get("t") ?? "";
     const rpcArgs = (db.rpc.mock.calls[0] as unknown[])[1] as { p_token_hash: string };
     expect(hashAccessToken(secret)).toBe(rpcArgs.p_token_hash);
 
@@ -130,6 +132,7 @@ describe("issueDocumentShareLink", () => {
 
     await expect(issueDocumentShareLink(user, BENEFICIARY_ID, "corr")).resolves.toEqual({
       emailSent: true,
+      link: "new",
     });
     expect(sendAccessLinkEmail).toHaveBeenCalledTimes(1);
     expect(logger.error).toHaveBeenCalledTimes(1);
@@ -159,11 +162,13 @@ describe("issueDocumentShareLink", () => {
     ]);
     const secrets = vi
       .mocked(sendAccessLinkEmail)
-      .mock.calls.map((call) => new URL(call[0].link).searchParams.get("t") ?? "");
+      .mock.calls.map(
+        (call) => new URLSearchParams(new URL(call[0].link).hash.slice(1)).get("t") ?? "",
+      );
     const hashes = db.rpc.mock.calls.map(
       (call) => ((call as unknown[])[1] as { p_token_hash: string }).p_token_hash,
     );
-    for (const leaked of [ADDRESS, "/access?t=", ...secrets, ...hashes]) {
+    for (const leaked of [ADDRESS, "/access?t=", "/access#t=", ...secrets, ...hashes]) {
       expect(logged).not.toContain(leaked);
     }
   });
@@ -173,10 +178,12 @@ describe("issueDocumentShareLink", () => {
 
     await expect(issueDocumentShareLink(user, BENEFICIARY_ID, "corr")).resolves.toEqual({
       emailSent: false,
+      link: "new",
     });
     const logged = JSON.stringify(vi.mocked(logger.error).mock.calls);
     expect(logged).not.toContain(ADDRESS);
     expect(logged).not.toContain("/access?t=");
+    expect(logged).not.toContain("/access#t=");
   });
 
   it("sends nothing when the mint is refused", async () => {
@@ -185,6 +192,7 @@ describe("issueDocumentShareLink", () => {
 
     await expect(issueDocumentShareLink(user, BENEFICIARY_ID, "corr")).resolves.toEqual({
       emailSent: false,
+      link: "none",
     });
     expect(sendAccessLinkEmail).not.toHaveBeenCalled();
   });
@@ -194,6 +202,7 @@ describe("issueDocumentShareLink", () => {
 
     await expect(issueDocumentShareLink(user, BENEFICIARY_ID, "corr")).resolves.toEqual({
       emailSent: false,
+      link: "none",
     });
     expect(db.rpc).not.toHaveBeenCalled();
     expect(checkRateLimit).not.toHaveBeenCalled();
@@ -209,8 +218,67 @@ describe("issueDocumentShareLink", () => {
 
     await expect(issueDocumentShareLink(user, BENEFICIARY_ID, "corr")).resolves.toEqual({
       emailSent: false,
+      link: "none",
     });
     expect(db.rpc).not.toHaveBeenCalled();
     expect(sendAccessLinkEmail).not.toHaveBeenCalled();
+  });
+
+  it("reuses the one live link: mints and emails no new secret, only a link-free notice", async () => {
+    db = fakeDb({
+      data: null,
+      error: { code: "LV409", message: "SHARE_LINK_ALREADY_LIVE", details: "{}" },
+    });
+    vi.mocked(createUserClient).mockResolvedValue(db as never);
+    vi.mocked(sendDocumentSharedNoticeEmail).mockResolvedValue({
+      providerMessageId: "msg_notice",
+      provider: "brevo",
+    });
+
+    await expect(issueDocumentShareLink(user, BENEFICIARY_ID, "corr")).resolves.toEqual({
+      emailSent: true,
+      link: "existing",
+    });
+
+    expect(sendAccessLinkEmail).not.toHaveBeenCalled();
+    const notice = vi.mocked(sendDocumentSharedNoticeEmail).mock.calls[0][0];
+    expect(notice).toEqual({
+      to: ADDRESS,
+      beneficiaryName: expect.any(String),
+      ownerName: user.name,
+      idempotencyKey: `share-notice:${BENEFICIARY_ID}:corr`,
+    });
+    // Nothing secret travels: no link, no token, no hash in the notice.
+    expect(JSON.stringify(notice)).not.toMatch(/access[#?]t=|[0-9a-f]{64}/);
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "access.share_link_reused",
+        resourceId: BENEFICIARY_ID,
+        metadata: { noticeSent: true },
+      }),
+    );
+  });
+
+  it("still reports the reuse when the notice cannot be sent", async () => {
+    db = fakeDb({ data: null, error: { code: "LV409", message: "SHARE_LINK_ALREADY_LIVE" } });
+    vi.mocked(createUserClient).mockResolvedValue(db as never);
+    vi.mocked(sendDocumentSharedNoticeEmail).mockRejectedValue(new Error("provider down"));
+
+    await expect(issueDocumentShareLink(user, BENEFICIARY_ID, "corr")).resolves.toEqual({
+      emailSent: false,
+      link: "existing",
+    });
+    expect(JSON.stringify(vi.mocked(logger.error).mock.calls)).not.toContain(ADDRESS);
+  });
+
+  it("treats any other refusal as no link, not as a reuse", async () => {
+    db = fakeDb({ data: null, error: { code: "LV409", message: "SOMETHING_ELSE" } });
+    vi.mocked(createUserClient).mockResolvedValue(db as never);
+
+    await expect(issueDocumentShareLink(user, BENEFICIARY_ID, "corr")).resolves.toEqual({
+      emailSent: false,
+      link: "none",
+    });
+    expect(sendDocumentSharedNoticeEmail).not.toHaveBeenCalled();
   });
 });

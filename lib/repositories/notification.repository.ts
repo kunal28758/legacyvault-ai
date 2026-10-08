@@ -189,6 +189,27 @@ export async function listReleaseWarnings(
   return data ?? [];
 }
 
+/**
+ * The owner's alerts about one emergency request: the evidence ea_transition()
+ * (0010) needs, DELIVERED, before a timeout rule may grant access on its own.
+ */
+export async function listRequestAlerts(
+  db: TypedSupabaseClient,
+  userId: string,
+  requestId: string,
+): Promise<NotificationRow[]> {
+  const { data, error } = await db
+    .from("notifications")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("type", "ea.request_pending")
+    .eq("metadata->>requestId", requestId)
+    .order("created_at", { ascending: false })
+    .limit(20);
+  if (error) throw error;
+  return data ?? [];
+}
+
 /** The owner warnings that can satisfy the release gate in dms_transition() (0009). */
 export const RELEASE_WARNING_TYPES = [
   "dms.grace_period",

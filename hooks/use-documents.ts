@@ -195,10 +195,12 @@ export function useShareDocument() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, beneficiaryId }: { id: string; beneficiaryId: string }) => {
-      const { data } = await apiClient.post<{ shares: DocumentShare[]; accessEmailSent: boolean }>(
-        `/documents/${id}/share`,
-        { beneficiaryId, confirmed: true },
-      );
+      const { data } = await apiClient.post<{
+        shares: DocumentShare[];
+        accessEmailSent: boolean;
+        /** `existing`: they already hold the one live link, which now shows it. */
+        accessLink?: "new" | "existing" | "none";
+      }>(`/documents/${id}/share`, { beneficiaryId, confirmed: true });
       return data;
     },
     onSuccess: async () => {
