@@ -68,6 +68,8 @@ jobs:
       - name: Integration tests
         run: pnpm test:integration
         env:
+          # Share and release links are built from it; CI has no .env.local.
+          APP_URL: http://localhost:3000
           ENCRYPTION_KEY: k1:${{ secrets.CI_ENCRYPTION_KEY || 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' }}
           ACCESS_COOKIE_KEY: ${{ secrets.CI_ACCESS_COOKIE_KEY || 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' }}
 
