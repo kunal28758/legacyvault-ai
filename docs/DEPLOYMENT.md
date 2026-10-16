@@ -388,7 +388,13 @@ own approval:
 If 0011 were applied before the release, the old code's repeat shares would
 fail closed (no new link, "email could not be sent") — safe, but noisy.
 
-## 7d-2. Releasing migrations 0012–0014 with the account-deletion release — not yet applied anywhere but local
+## 7d-2. Releasing migrations 0012–0014 with the account-deletion release — applied to production 2026-10-16
+
+> **Done 2026-10-16** (`docs/release-readiness-final.md` § 0): backup PASS
+> 20:13:42 UTC; 0012, 0013, 0014 applied one at a time at 21:02, 21:03 and
+> 21:04 UTC with verification after each; release `3a02fcd` deployed READY at
+> 21:07:46 UTC. The sequence below stays as the reference for re-running it
+> elsewhere.
 
 Gates, approvals and evidence: `docs/release-readiness-final.md`. Per-feature
 evidence: `docs/release/ACCOUNT_DELETION_READINESS.md`. This section is the
@@ -594,6 +600,8 @@ database's: 16 categories, 1,623 items, 0 differences.
 
 | Run (UTC) | Deletion counts (first 7) | `function_present` | `targets_0013` | `dependencies_0014` | `scheduler_status_present` |
 |---|---|---|---|---|---|
+| 2026-10-16T21:04Z (after 0012–0014) | all 0 | 1 | 3 | 2 | 1 |
+| 2026-10-16T20:50:44Z (immediately before step 4) | all 0 | 0 | 3 | 2 | 0 |
 | 2026-10-15T09:38:15Z (current file) | all 0 | 0 | 3 | 2 | 0 |
 | 2026-10-15T06:57:52Z (earlier 8-column version) | all 0 | 0 | — | — | — |
 
@@ -973,6 +981,7 @@ every gap in one run, names only.
 | Date | Change |
 |---|---|
 | 2026-10-15 | Consistency pass (read-only re-check): § 1 matrix marked as target design with the actual state; § 7b preview procedure marked superseded; § 7f and § 7g brought to the observed Vercel and Vault state. No production setting changed. |
+| 2026-10-16 | **Release.** Migrations 0012–0014 applied to production (one file per push, each verified); `3a02fcd` deployed (`dpl_2MdiqH72UVYTwjWJPWftjM9Jgw1v`); live journey on production with a disposable test account; CI `APP_URL` fix (`d22f6b8`). Evidence: `docs/release-readiness-final.md` § 0. |
 | 2026-10-16 | Read-only re-check: the second Vercel project `legacyvault-ai` is deleted; Vault `legacyvault_cron_secret` exists and pg_net shows 13 × 200; `9fad7df` was redeployed by the owner; preflight unchanged (all deletion counts 0). § 7f and § 7g updated. No production setting or data changed here. |
 | 2026-10-15 | Production-safety pass (read-only): Vercel targets re-checked (production project's server secrets now Production-only; second project still Production + Preview), Vault `legacyvault_cron_secret` confirmed missing, Clerk webhook never delivered; § 7d-2 commands made exact (`pnpm exec`), preflight gains `files_on_first_sweep`. No production setting or data changed. |
 | 2026-10-15 | Release audit (`docs/release-readiness-final.md`): § 5 row 4 (MFA now enabled on the development instance) and new row 16 (Clerk self-deletion is on); 0012's `begin_account_deletion()` gains `p_purge` for the Clerk `user.deleted` webhook (§ 7d-2); § 7g notes the no-new-project constraint. No production setting changed. |

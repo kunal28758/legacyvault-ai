@@ -19,7 +19,15 @@ Format: newest first. Categories: *Governance*, *Specification*,
 
 ## [Unreleased]
 
-### Excel and CSV export — 2026-10-16 (not deployed)
+### Released 2026-10-16
+
+Production `3a02fcd` (deployment `dpl_2MdiqH72UVYTwjWJPWftjM9Jgw1v`) with
+migrations 0012–0014 carries everything below: account deletion (scheduled
+and immediate), the Excel/CSV export, the landing redesign and the release
+hardening. Evidence: `docs/release-readiness-final.md` § 0. Also: CI sets
+`APP_URL` for integration tests (`d22f6b8`); CI is green again.
+
+### Excel and CSV export — 2026-10-16
 
 - Added: Settings → Account → Your data offers an **Excel workbook** (primary),
   **CSV files** (ZIP, one UTF-8 CSV per category plus a README) and the
@@ -55,7 +63,7 @@ Format: newest first. Categories: *Governance*, *Specification*,
 - Added: a solid-surface fallback for glass panels in browsers without
   `backdrop-filter`.
 
-### Account deletion and landing redesign — 2026-10-14 (not deployed)
+### Account deletion and landing redesign — 2026-10-14
 
 - Fixed (2026-10-15): a job claimed by a run-jobs invocation that then died
   (its 300 s limit, a crash) stayed `RUNNING` for ever. A purge would never

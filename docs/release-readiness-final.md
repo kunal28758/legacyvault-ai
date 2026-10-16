@@ -1,6 +1,6 @@
 # LegacyVault AI — release readiness (authoritative report)
 
-**Current as of 2026-10-16, ~20:30 UTC.** This is the only readiness report;
+**Current as of 2026-10-16, ~21:30 UTC.** This is the only readiness report;
 earlier passes are superseded. The only rollout procedure is
 `docs/DEPLOYMENT.md` § 7d-2; the checklist is § 8 below.
 
@@ -11,7 +11,40 @@ Labels:
 - **not verified**;
 - **owner action**.
 
-## 1. Current state
+## 0. Release outcome (2026-10-16): **COMPLETE**
+
+Immediate permanent account deletion, scheduled deletion and the Excel/CSV
+export are live in production, verified on the deployed commit.
+
+| What | Result (UTC) |
+|---|---|
+| Release commits on `origin/master` | `adf5bce` (release), `7f32c03`, `046a052`, `bee2ce6` (backup-script fix), `3a02fcd` (report), `d22f6b8` (CI `APP_URL`), and this report. Fast-forward pushes only (`9fad7df..3a02fcd` at 21:05:53, `3a02fcd..d22f6b8` at 21:18) |
+| Backup before any write | PASS 20:13:42 (28 of 28, 899 rows), re-verified 20:2x and 20:50 (manifest, checksums, AES-256 headers). **Same physical disk only; no off-disk copy** (owner accepted this to proceed) |
+| Preflight before writes | 20:50:44: migrations 0001–0011, all 11 counts as expected, no pending/failed jobs, 0 scheduled/deleted users, Clerk `delete_self` off (0 of 19 users); dry run exactly 0012–0014 |
+| Migration 0012 | applied 21:02:18 (one file, via a scratch copy of the project holding only 0001–0012; dry run listed only 0012; `--skip-vault`). Verified: history 0001–0012; `begin_account_deletion` service_role only, not definer, definition md5 = local; preflight `function_present` 1; 13 users untouched |
+| Migration 0013 | applied 21:03:25 (same method). Verified: all three replaced functions' definitions = local reference, privileges unchanged, `targets_0013` still 3; data intact (13 users, 6 assets, 577 audit rows) |
+| Migration 0014 | applied 21:04:12 (from the repository, documented command, dry run listed only 0014). Verified: history 0001–**0014**; `scheduler_status` definer, service_role only, `search_path=""`, md5 = local; returns `configured: true`, 0 failed |
+| Catalog fingerprint | production vs local 0001→0014: 16 categories, 0 items missing; the only extras are 42 hosted `service_role` EXECUTE defaults (documented) |
+| Release deployment | `dpl_2MdiqH72UVYTwjWJPWftjM9Jgw1v`, production, source git, commit `3a02fcd74ce4…`, READY 21:07:46, aliased to `legacyvault-ai-uh7s.vercel.app` |
+| CI-fix deployment | `dpl_82sssmdsREgQpN5Cyk1okep2j2Sm`, commit `d22f6b8`, READY 21:19:17 (same application code) |
+| Public checks | `/`, `/account-deleted` (new route), `/api/v1/health` 200; health `ok`; 6 security headers; anonymous delete-now, `DELETE /users/me`, cancel, export (3 formats), cron, `/users/me` all 401 |
+| Live journey (Playwright, production, one disposable `+clerk_test` account created for it) | account tab shows schedule + delete-now + 3 formats; Excel 26 sheets; CSV ZIP README + 26 CSVs; delete-now button stays disabled until the exact phrase; schedule 200 → sign-in again → cancel 200, date cleared; delete-now 200 `DELETED` → `/account-deleted?status=complete`; old session then 401 |
+| Backend after the live deletion | Clerk user 404; production row gone (13 users); 0 storage objects; audit kept: created, onboarding, 2 exports, deletion requested, cancelled, `user.deleted`, `user.purged`; backstop `user.hard-delete` job SUCCEEDED 21:20 (idempotent no-op); `:late-uploads` job queued for 22:16 |
+| Scheduler after release | `net._http_response` 200s only; `scheduler_status` last success 21:20; 0 failed/dead jobs |
+| Runtime logs (release deployment, 21:07–21:16) | 118 records: 116 info, 2 error, both `POST /settings` "Not Found" at 21:11:36–37 from the disposable account's own open page right after its deletion (Clerk no longer has the user). No other errors |
+| CI | `d22f6b8`: **all four jobs green** (first since 2026-10-06; every earlier run failed on the missing `APP_URL`). Unit 673/673, integration 239 + 1 skipped. The E2E job runs nothing in CI (no Clerk keys) |
+| Local checks at `3a02fcd` | typecheck, lint, format, build pass; unit + security 673/673; integration 239 + 1 skipped, scale test pass; E2E 4/4 (incl. signed-in export) |
+
+**Follow-ups (none blocking):**
+- an off-disk copy of the 2026-10-16 backup (second physical device);
+- `requireUser`: treat Clerk "Not Found" (a just-deleted user's open page)
+  as signed out instead of logging an error;
+- confirm the `:late-uploads` purge job succeeds after 22:20 UTC;
+- hygiene action 2 (Preview/Development variable scopes); decisions R1,
+  R3, R4; the optional Clerk webhook (action 8);
+- CI E2E needs Clerk development keys as repository secrets to run.
+
+## 1. Current state (pre-release record, 2026-10-16 before 21:00 UTC)
 
 **Repository** (verified now):
 - `master` at `9fad7df` = `origin/master` (re-fetched 20:2x UTC; unmoved).
@@ -329,7 +362,11 @@ so they cannot be read; the owner may delete both folders.
    - `select type, status, count(*) from jobs where type = 'user.hard-delete' group by 1, 2;`
    - **Any purge is irreversible.**
 
-## 9. Verdict: **ALL RELEASE GATES PASSED — migrations not yet applied**
+## 9. Verdict: **COMPLETE — released 2026-10-16 (§ 0)**
+
+The text below is the pre-release verdict, kept as the record of the gates.
+
+### Pre-release verdict: ALL RELEASE GATES PASSED — migrations not yet applied
 
 Engineering is complete and verified at `bee2ce6` (§ 3). Every gate in § 6
 is met: the production backup passed and was re-verified, Clerk self-deletion
