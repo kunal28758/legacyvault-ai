@@ -15,7 +15,9 @@ Labels:
 
 **Repository** (verified now):
 - `master` at `9fad7df` = `origin/master`. The release is committed on a
-  local branch only (`release/account-deletion-export`); nothing is pushed.
+  local branch only, `release/account-deletion-export`: `adf5bce` (the
+  release), `7f32c03` (image type declarations for CI) and this report's
+  update. Nothing is pushed.
 - Every file that existed at the start of the work is preserved, checked
   against an archive taken first. `stash@{0}` is untouched and not part of
   the release.
@@ -86,6 +88,8 @@ One commit on `release/account-deletion-export`, reviewed file by file:
 | `pnpm audit --prod` / `pnpm audit` | 0 / 1 | 0 / 1 high (§ 4) |
 | local server `:3100` + `playwright test data-export.spec.ts smoke.spec.ts --workers=1` | 0 | **4 passed**: signed-in export (existing `+clerk_test` user, local Supabase) downloads a valid `.xlsx` and CSV ZIP; public smoke 3/3 |
 | desktop 1280 px and phone 390 px screenshots of Settings → Your data | — | no horizontal overflow; layout checked by eye |
+| clean detached worktree of `adf5bce`: `pnpm install --frozen-lockfile`, `tsc --noEmit` | 0 / 2 | **found a CI break**: the hero's `.webp` import has no type without the git-ignored `next-env.d.ts`. Fixed in `7f32c03` (`images.d.ts`) |
+| same worktree with the fix: typecheck, lint, `prettier --check --end-of-line auto`, `pnpm build` (no `.env.local`), `pnpm test` | 0 each | pass; **653/653**. Plain `format:check` flags every file there only because a Windows worktree checks out CRLF |
 | production read-only queries and preflight | — | § 1 |
 
 ## 4. Test totals, build and audit
