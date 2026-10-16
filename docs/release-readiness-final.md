@@ -1,6 +1,6 @@
 # LegacyVault AI — release readiness (authoritative report)
 
-**Current as of 2026-10-16, ~20:00 UTC.** This is the only readiness report;
+**Current as of 2026-10-16, ~20:30 UTC.** This is the only readiness report;
 earlier passes are superseded. The only rollout procedure is
 `docs/DEPLOYMENT.md` § 7d-2; the checklist is § 8 below.
 
@@ -14,10 +14,11 @@ Labels:
 ## 1. Current state
 
 **Repository** (verified now):
-- `master` at `9fad7df` = `origin/master`. The release is committed on a
-  local branch only, `release/account-deletion-export`: `adf5bce` (the
-  release), `7f32c03` (image type declarations for CI) and this report's
-  update. Nothing is pushed.
+- `master` at `9fad7df` = `origin/master` (re-fetched 20:2x UTC; unmoved).
+  The release is on `release/account-deletion-export`, a fast-forward of
+  `master`: `adf5bce` (the release), `7f32c03` (image type declarations for
+  CI), `046a052` (report), `bee2ce6` (backup-script JSON fix and tests) and
+  this report's update.
 - Every file that existed at the start of the work is preserved, checked
   against an archive taken first. `stash@{0}` is untouched and not part of
   the release.
@@ -35,11 +36,18 @@ Labels:
 | 17:4x | Migrations: remote 0001–**0011**; local 0012–0014 not applied |
 | 17:4x | Vault names: `legacyvault_app_url`, **`legacyvault_cron_secret` (added by the owner)**. `net._http_response`: **13 × 200**, no other status. Cron jobs `run-jobs` `*/10`, `dms-scan` `7,37`, `housekeeping` `17 3`, all active. Last DMS scan 17:07 |
 | 17:4x | Jobs `RUNNING`/`QUEUED`/`FAILED`/`DEAD`: none |
+| 20:13:42 | **Production backup PASS** (owner's terminal, fixed script): `D:/legacyvault-backups/release-2026-10-17-b`, 28 of 28 public tables exact (899 rows restored), migration 0011 at backup time |
+| 20:2x | Backup re-verified independently: `sha256sum -c SHA256SUMS` OK for all 5 listed files; `compare-checksums.mjs` on the stored checksum files PASS 28 of 28; source checksums identical before and after the dump; all three dumps carry the OpenPGP AES-256 header (`8c 0d 04 09`). No passphrase used or seen |
+| 20:2x | Identity: Supabase `zlgmthrdoxyfkldeaxyl` linked, ACTIVE_HEALTHY (ap-northeast-1); Vercel `legacyvault-ai-uh7s` → `kunal28758/legacyvault-ai`, production branch `master`. Every server secret is Production-only (names and scopes read only) |
+| 20:27:58 | **Preflight** again: migrations exactly 0001–0011 (11 rows); all 11 counts as expected (deletion counts 0, `function_present` 0, `scheduler_status_present` 0, `targets_0013` 3, `dependencies_0014` 2); 0 scheduled and 0 soft-deleted of 13 users; no job outside SUCCEEDED; Clerk `delete_self` false, 0 of 19 per-user flags; `net._http_response` 33 × 200 (latest 20:20) |
+| 20:2x | `supabase db push --linked --dry-run`: exactly `0012_account_deletion.sql`, `0013_audit_minimization.sql`, `0014_scheduler_status.sql`; no seeds, no roles |
 | 17:53:04 | **Preflight** (11 counts): every deletion count **0**; `function_present` 0, `scheduler_status_present` 0 (expected before 0012/0014); `targets_0013` 3; `dependencies_0014` 2. **All as expected**; time-bound |
 
 **Not verified:**
-- a production backup: **the first attempt failed** (§ 6) and none has
-  passed;
+- an **off-disk** copy of the backup: this machine has one physical disk
+  (NVMe, 512 GB); C: and D: are partitions of it, and no removable or
+  network drive is attached. The backup folder inherits D:'s permissions
+  (Authenticated Users may modify); its files are AES-256 encrypted;
 - live Clerk deletion (never tested against a real account, by design);
 - opening the export files in Microsoft Excel, Numbers or Google Sheets
   (openpyxl and Chromium downloads only);
@@ -83,8 +91,8 @@ One commit on `release/account-deletion-export`, reviewed file by file:
 | `pnpm typecheck` | 0 | pass |
 | `pnpm lint` | 0 | pass, 0 warnings |
 | `pnpm format:check` | 0 | all matched files pass |
-| `pnpm test --no-file-parallelism` | 0 | **653 passed / 0 failed / 0 skipped**, 66 files |
-| `pnpm test:integration --no-file-parallelism` | 0 | **239 passed / 0 failed / 1 skipped**, 22 files; the skip is the opt-in scale test |
+| `pnpm test --no-file-parallelism` (re-run at `bee2ce6`) | 0 | **673 passed / 0 failed / 0 skipped**, 66 files |
+| `pnpm test:integration --no-file-parallelism` (re-run at `bee2ce6`) | 0 | **239 passed / 0 failed / 1 skipped**, 22 files; the skip is the opt-in scale test, run next |
 | `LV_SCALE_TESTS=1 … account-deletion.test.ts -t scale` | 0 | **1 passed**: 1,050 stored objects purged across storage list pages |
 | `pnpm build` | 0 | Next.js 16.3.8 |
 | client-bundle scan (values from `.env.local`, never printed) | 0 | 15 server-only values × 103 client files: none; no export code in client chunks |
@@ -93,12 +101,15 @@ One commit on `release/account-deletion-export`, reviewed file by file:
 | desktop 1280 px and phone 390 px screenshots of Settings → Your data | — | no horizontal overflow; layout checked by eye |
 | clean detached worktree of `adf5bce`: `pnpm install --frozen-lockfile`, `tsc --noEmit` | 0 / 2 | **found a CI break**: the hero's `.webp` import has no type without the git-ignored `next-env.d.ts`. Fixed in `7f32c03` (`images.d.ts`) |
 | same worktree with the fix: typecheck, lint, `prettier --check --end-of-line auto`, `pnpm build` (no `.env.local`), `pnpm test` | 0 each | pass; **653/653**. Plain `format:check` flags every file there only because a Windows worktree checks out CRLF |
-| production read-only queries and preflight | — | § 1 |
+| local server `:3100`, anonymous: delete-now, `DELETE /users/me`, export, cron | — | 401 each; `/api/v1/health` and `/account-deleted` 200 |
+| migration static check (0012–0014) | — | no top-level `update`/`insert`/`delete`/`drop`/`alter table`: they only define or replace functions and set grants, so applying them changes no data |
+| production read-only queries, preflight, backup verification, dry run | — | § 1 |
 
 ## 4. Test totals, build and audit
 
-- **Totals:** unit + security **653/653**; integration **239 + scale 1**, 0
-  failed; E2E **4/4** (1 signed-in, 3 public); build **pass**.
+- **Totals (at `bee2ce6`):** unit + security **673/673**; integration
+  **239 + scale 1**, 0 failed; E2E **4/4** (1 signed-in, 3 public); build
+  **pass**.
 - **Audit:** `pnpm audit --prod` **0**. `pnpm audit` **1 high**: `braces`
   3.0.3, GHSA-vfj7-8cjw-p6xm (stack exhaustion on deeply nested patterns).
   - **No fix exists:** patched is ≥ 3.0.4 and npm's latest is 3.0.3, so an
@@ -187,7 +198,9 @@ No production backup has passed yet (owner action 4).
 | Action 3 — Clerk `delete_self` | **done** (19:29 UTC): instance `false`, and 0 of 19 existing users keep the per-user flag |
 | Decisions R1, R3, R4 | open; their documented defaults ("keep until decided") are safe, so they do not block |
 | Clerk isolation | open. Authenticated testing is done with existing `+clerk_test` users against the local database |
-| **Action 4 — production backup** | **open; the blocking gate.** The first attempt **failed** on a script bug, now fixed (below). Migrations may not run without a verified backup, and the app may not be released before the migrations |
+| **Action 4 — production backup** | **done**: PASS at 20:13:42 UTC (28 of 28, 899 rows), independently re-verified (§ 1). The first attempt had failed on a script bug, fixed in `bee2ce6` (below) |
+| Backup off-disk copy | **not available**: one physical disk (§ 1). The backup protects against a faulty migration or release, not against losing this disk |
+| Action 7 — Vault scheduler secret | **done** (33 × 200 at 20:27) |
 
 **The failed backup (2026-10-16, cause confirmed).** The script read
 `supabase db query` output as agent-style JSON (`{ rows: [...] }`). The CLI
@@ -198,7 +211,7 @@ real CLI detected the agent and printed agent-style JSON, and the unit tests
 used a stand-in CLI that only printed that same shape. Both queries (source
 checksums and migration version) were affected.
 
-**Fix (uncommitted, in the working tree):** both queries request
+**Fix (`bee2ce6`):** both queries request
 `--output-format json` and go through `scripts/backup/query-value.mjs`, which
 accepts either JSON shape and refuses text, malformed, empty or multi-row
 output with a reason that never quotes the output. Verified:
@@ -214,7 +227,6 @@ output with a reason that never quotes the output. Verified:
 - local rehearsal in agent mode (`…-agent-mode`): **PASS, 28 of 28**.
 Rehearsal files are encrypted with a random passphrase that was never kept,
 so they cannot be read; the owner may delete both folders.
-| Action 7 — Vault scheduler secret | **done** (13 × 200) |
 
 ## 7. Owner actions (ordered by risk and dependency)
 
@@ -226,9 +238,10 @@ so they cannot be read; the owner may delete both folders.
    - Re-verify any time:
      `curl -s https://needed-turkey-5633.clerk.accounts.dev/v1/environment | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>console.log(JSON.parse(d).user_settings.actions.delete_self))"`
      must print `false`.
-4. **Backup**, with the fixed script, in your own terminal (it refuses to run
-   without one), into a **new, empty** folder (never the failed
-   `release-2026-10-17` one):
+4. ~~**Backup**~~ **done 2026-10-16 20:13:42 UTC (PASS)**. For a future
+   backup: the fixed script, in your own terminal (it refuses to run without
+   one), into a **new, empty** folder (never the failed `release-2026-10-17`
+   one):
    `bash scripts/backup/backup-verify.sh "D:/legacyvault-backups/release-2026-10-17-b" --production`.
    Type a new passphrase when asked and keep it in a password manager. It
    must end in **PASS**.
@@ -264,8 +277,8 @@ so they cannot be read; the owner may delete both folders.
 
 ## 8. Production release checklist (stop at any failed condition)
 
-1. **Gates:** action 3 verified `false` (done); backup **PASS** (action 4;
-   the first attempt failed).
+1. **Gates:** action 3 verified `false` (done); backup **PASS** (done,
+   20:13:42 UTC; same physical disk only).
 
    **STOP** if the backup prints FAIL, or names a table you need in its
    "changed while the backup ran" note (re-run at a quiet time).
@@ -316,13 +329,13 @@ so they cannot be read; the owner may delete both folders.
    - `select type, status, count(*) from jobs where type = 'user.hard-delete' group by 1, 2;`
    - **Any purge is irreversible.**
 
-## 9. Verdict: **READY FOR OWNER APPROVAL — blocked on the production backup**
+## 9. Verdict: **ALL RELEASE GATES PASSED — migrations not yet applied**
 
-Engineering is complete and verified on the final tree (§ 3): every check,
-the build, a signed-in export journey and the public smoke pass, and the
-release is committed locally for review.
+Engineering is complete and verified at `bee2ce6` (§ 3). Every gate in § 6
+is met: the production backup passed and was re-verified, Clerk self-deletion
+is off for the instance and every user, and the read-only preflight and dry
+run at 20:27 UTC match expectations exactly.
 
-It is **not** released. Action 3 is done. Before migrations: a production
-backup **PASS** (action 4), which only the owner can run: the first attempt
-failed on a script bug that is now fixed and rehearsed locally (§ 6). Then the
-checklist in § 8. Nothing beyond read-only production queries was done here.
+The one limitation: the backup exists only on this machine's single physical
+disk. Nothing beyond read-only production queries has been done; migrations
+0012–0014 and the release (§ 8 steps 3–7) are next.
