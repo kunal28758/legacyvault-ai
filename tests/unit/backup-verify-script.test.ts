@@ -1,12 +1,13 @@
 // @vitest-environment node
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { afterAll, describe, expect, it } from "vitest";
 
 import { compareChecksums } from "@/scripts/backup/compare-checksums.mjs";
+import { queryValue } from "@/scripts/backup/query-value.mjs";
 
 /**
  * scripts/backup/backup-verify.sh must never present a failed, partial or
@@ -68,8 +69,17 @@ describe("backup-verify.sh refuses unsafe invocations", SPAWN_TIMEOUT, () => {
   });
 });
 
+// The two JSON shapes `supabase db query --output-format json` prints: a bare
+// array in a normal terminal, an object with `rows` when it detects an agent.
+const CHECKSUMS = '{\\"users\\":{\\"rows\\":1,\\"md5\\":\\"x\\"}}';
+const ARRAY_SHAPE = `[{"checksums":"${CHECKSUMS}"}]`;
+const AGENT_SHAPE = `{"boundary":"b","rows":[{"checksums":"${CHECKSUMS}"}],"warning":"w"}`;
+// Like the real CLI: a text table unless JSON is asked for explicitly.
+const query = (json: string) =>
+  `case "$*" in *"--output-format json"*) printf '%s' '${json}' ;; *) printf '%s\\n' '| checksums |' '| {} |' ;; esac`;
+
 describe("backup-verify.sh never reports a broken backup as a success", SPAWN_TIMEOUT, () => {
-  const checksumsJson = `printf '%s' '{"rows":[{"checksums":"{}"}]}'`;
+  const checksumsJson = query(ARRAY_SHAPE);
 
   it("fails loudly and leaves no file when a dump dies midway", () => {
     const fake = fakeSupabase(`case "$*" in
@@ -99,6 +109,61 @@ esac`);
     expect(result.out).not.toContain("PASS");
   });
 
+  it.each([
+    ["the bare array a normal terminal gets", ARRAY_SHAPE],
+    ["the object an agent gets", AGENT_SHAPE],
+  ])("asks for JSON and reads the checksums from %s", (_label, shape) => {
+    const fake = fakeSupabase(`case "$*" in
+  *"--data-only"*) exit 1 ;;
+  *"db dump"*) printf -- '-- PostgreSQL database dump complete\\n' ;;
+  *"db query"*) ${query(shape)} ;;
+esac`);
+    const dest = freshDir();
+    const result = run([dest], { LV_BACKUP_SUPABASE_BIN: fake });
+    // It gets past the checksums and stops at the (failing) data dump.
+    expect(result.out).toContain("FAIL: dumping data-public.sql.gpg failed");
+    expect(result.out).not.toContain("reading the source checksums");
+    expect(JSON.parse(readFileSync(path.join(dest, "checksums-before.json"), "utf8"))).toEqual({
+      users: { rows: 1, md5: "x" },
+    });
+  });
+
+  it.each([
+    [
+      "a text table (the CLI's default)",
+      `printf '%s\\n' '| checksums |' '| {} |'`,
+      "not valid JSON",
+    ],
+    ["malformed JSON", `printf '%s' '[{"checksums":'`, "not valid JSON"],
+    ["no output", `true`, "printed nothing"],
+    ["an empty checksum set", `printf '%s' '[{"checksums":"{}"}]'`, "is empty"],
+  ])("refuses %s as the source checksums", (_label, output, reason) => {
+    const fake = fakeSupabase(`case "$*" in
+  *"db dump"*) printf -- '-- PostgreSQL database dump complete\\n' ;;
+  *"db query"*) ${output} ;;
+esac`);
+    const result = run([freshDir()], { LV_BACKUP_SUPABASE_BIN: fake });
+    expect(result.status).toBe(1);
+    expect(result.out).toContain(
+      "FAIL: reading the source checksums (checksums-before.json) failed",
+    );
+    expect(result.out).toContain(reason);
+    expect(result.out).not.toContain("PASS");
+  });
+
+  it("fails clearly when the migration version cannot be read", () => {
+    const fake = fakeSupabase(`case "$*" in
+  *"--data-only"*) printf 'COPY x FROM stdin;\\nRESET ALL;\\n' ;;
+  *"db dump"*) printf -- '-- PostgreSQL database dump complete\\n' ;;
+  *"max(version)"*) printf '%s\\n' '| v |' '| 0014 |' ;;
+  *"db query"*) ${checksumsJson} ;;
+esac`);
+    const result = run([freshDir()], { LV_BACKUP_SUPABASE_BIN: fake });
+    expect(result.status).toBe(1);
+    expect(result.out).toContain("FAIL: reading the database migration version failed");
+    expect(result.out).not.toContain("PASS");
+  });
+
   it("fails when the source checksums cannot be read", () => {
     const fake = fakeSupabase(`case "$*" in
   *"db dump"*) printf -- '-- PostgreSQL database dump complete\\n' ;;
@@ -107,6 +172,56 @@ esac`);
     const result = run([freshDir()], { LV_BACKUP_SUPABASE_BIN: fake });
     expect(result.status).toBe(1);
     expect(result.out).toContain("FAIL: reading the source checksums");
+  });
+});
+
+describe("queryValue", () => {
+  const row = { checksums: '{"users":{"rows":1,"md5":"x"}}' };
+
+  it.each([
+    ["a bare array", JSON.stringify([row])],
+    ["an object with rows", JSON.stringify({ boundary: "b", rows: [row], warning: "w" })],
+    ["output after a CLI notice", `Initialising login role...\n${JSON.stringify([row])}`],
+  ])("reads the value from %s", (_label, text) => {
+    expect(queryValue(text, "checksums", { jsonObject: true })).toBe(row.checksums);
+  });
+
+  it("reads a scalar value", () => {
+    expect(queryValue('[{"v":"0014"}]', "v")).toBe("0014");
+  });
+
+  it.each([
+    ["", "printed nothing"],
+    ["| checksums |\n| {} |", "not valid JSON"],
+    ["no json here", "not JSON"],
+    ['{"error":"boom"}', "has no rows"],
+    ["[]", "exactly one row, got 0"],
+    ['[{"v":"1"},{"v":"2"}]', "exactly one row, got 2"],
+    ['[{"other":"x"}]', 'no value for "v"'],
+  ])("refuses %j", (text, reason) => {
+    expect(() => queryValue(text, "v")).toThrow(reason);
+  });
+
+  it("refuses checksums that are not a non-empty JSON object", () => {
+    for (const value of ["{}", "[1]", "nope"]) {
+      expect(() => queryValue(JSON.stringify([{ c: value }]), "c", { jsonObject: true })).toThrow();
+    }
+  });
+
+  it("never quotes the output in its reason, which can hold query results", () => {
+    const secret = "row-content-that-must-not-leak";
+    for (const text of [`| ${secret} |`, `[{"${secret}":1}]`, `[{"v":"a"},{"v":"${secret}"}]`]) {
+      // Must throw first, or the message check would pass without a message.
+      expect(() => queryValue(text, "v")).toThrow();
+      let message = "";
+      try {
+        queryValue(text, "v");
+      } catch (error) {
+        message = (error as Error).message;
+      }
+      expect(message).not.toBe("");
+      expect(message).not.toContain(secret);
+    }
   });
 });
 

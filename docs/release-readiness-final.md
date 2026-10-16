@@ -1,6 +1,6 @@
 # LegacyVault AI — release readiness (authoritative report)
 
-**Current as of 2026-10-16, ~18:30 UTC.** This is the only readiness report;
+**Current as of 2026-10-16, ~20:00 UTC.** This is the only readiness report;
 earlier passes are superseded. The only rollout procedure is
 `docs/DEPLOYMENT.md` § 7d-2; the checklist is § 8 below.
 
@@ -29,14 +29,17 @@ Labels:
 | 17:4x | Vercel project `legacyvault-ai-uh7s` only. Latest production deployment `dpl_44gx75eJREseHPs3y58qBTJQiSRh`: a dashboard **redeploy of `9fad7df`** at 16:16 UTC by the owner's account; READY |
 | 17:4x | **The duplicate project `legacyvault-ai` no longer exists** (`vercel project ls`; the API returns 404). Its Preview exposure of 25 secrets is gone |
 | 17:4x | `uh7s` variables, counts only: 30 Production, 7 Preview/Development (unchanged; owner action 2) |
-| 17:4x | Clerk `delete_self = true` (owner action 3 not done) |
+| 17:4x | Clerk `delete_self = true` (owner action 3 not done at that time) |
+| 19:29:37 | **Owner action 3 done.** Clerk `delete_self = false` (public environment), and after the owner's "Apply to existing users": 19 users, `delete_self_enabled` **0 true / 19 false** (Backend API read, counts only) |
+| ~19:38 | **Production backup attempt FAILED** (owner's terminal): `FAIL: reading the source checksums (checksums-before.json) failed`. Not a backup: `D:/legacyvault-backups/release-2026-10-17` holds an unverified `schema.sql.gpg` (46,762 bytes) and a 0-byte `checksums-before.json`; kept untouched. Production was only read |
 | 17:4x | Migrations: remote 0001–**0011**; local 0012–0014 not applied |
 | 17:4x | Vault names: `legacyvault_app_url`, **`legacyvault_cron_secret` (added by the owner)**. `net._http_response`: **13 × 200**, no other status. Cron jobs `run-jobs` `*/10`, `dms-scan` `7,37`, `housekeeping` `17 3`, all active. Last DMS scan 17:07 |
 | 17:4x | Jobs `RUNNING`/`QUEUED`/`FAILED`/`DEAD`: none |
 | 17:53:04 | **Preflight** (11 counts): every deletion count **0**; `function_present` 0, `scheduler_status_present` 0 (expected before 0012/0014); `targets_0013` 3; `dependencies_0014` 2. **All as expected**; time-bound |
 
 **Not verified:**
-- a production backup (none has been run; § 6);
+- a production backup: **the first attempt failed** (§ 6) and none has
+  passed;
 - live Clerk deletion (never tested against a real account, by design);
 - opening the export files in Microsoft Excel, Numbers or Google Sheets
   (openpyxl and Chromium downloads only);
@@ -169,7 +172,9 @@ What it does not back up:
 
 Platform schemas restore only into a real Supabase project.
 
-**Status:** safe to run; **not run against production** (owner action 4).
+**Status (2026-10-16):** the first production run **failed** on a CLI
+output-format bug, since fixed and rehearsed in terminal and agent mode (§ 6).
+No production backup has passed yet (owner action 4).
 
 ## 6. Remaining blockers
 
@@ -179,23 +184,52 @@ Platform schemas restore only into a real Supabase project.
 |---|---|
 | Action 1 — duplicate project | **resolved**: the project was deleted |
 | Action 2 — `uh7s` Preview/Development scopes | open. **Not a release gate any more**: those 7 entries are public `NEXT_PUBLIC_*` values (Preview) and Development-only Brevo keys; pushes to `master` build Production only. Hygiene |
-| Action 3 — Clerk `delete_self` | **open; required before release.** While it is on, a person can delete themselves in Clerk's own UI, which skips the purge and leaves their data behind (no Clerk webhook is configured) |
+| Action 3 — Clerk `delete_self` | **done** (19:29 UTC): instance `false`, and 0 of 19 existing users keep the per-user flag |
 | Decisions R1, R3, R4 | open; their documented defaults ("keep until decided") are safe, so they do not block |
 | Clerk isolation | open. Authenticated testing is done with existing `+clerk_test` users against the local database |
-| **Action 4 — production backup** | **open; the blocking gate.** Migrations may not run without a verified backup, and the app may not be released before the migrations |
+| **Action 4 — production backup** | **open; the blocking gate.** The first attempt **failed** on a script bug, now fixed (below). Migrations may not run without a verified backup, and the app may not be released before the migrations |
+
+**The failed backup (2026-10-16, cause confirmed).** The script read
+`supabase db query` output as agent-style JSON (`{ rows: [...] }`). The CLI
+picks its format by detecting an AI agent: in a normal terminal it prints a
+text table, and with `--output-format json` a bare array. Neither was seen
+before: the 2026-10-15 rehearsal ran inside an AI agent session, where the
+real CLI detected the agent and printed agent-style JSON, and the unit tests
+used a stand-in CLI that only printed that same shape. Both queries (source
+checksums and migration version) were affected.
+
+**Fix (uncommitted, in the working tree):** both queries request
+`--output-format json` and go through `scripts/backup/query-value.mjs`, which
+accepts either JSON shape and refuses text, malformed, empty or multi-row
+output with a reason that never quotes the output. Verified:
+- `tests/unit/backup-verify-script.test.ts`: **33 passed** (20 new: both
+  shapes end to end, text table, malformed JSON, no output, an empty checksum
+  set, the migration-version failure, the parser cases, no output quoted);
+- the **old** script against a terminal-like stand-in CLI fails exactly as in
+  production; the fixed one does not;
+- **local rehearsal in terminal mode** (agent variables cleared, so the CLI
+  prints tables as in the owner's terminal), new empty folder
+  `D:/legacyvault-backups/rehearsal-2026-10-17-terminal-mode`: **PASS, 28 of
+  28 public tables exact (31,980 rows)**, migration 0014;
+- local rehearsal in agent mode (`…-agent-mode`): **PASS, 28 of 28**.
+Rehearsal files are encrypted with a random passphrase that was never kept,
+so they cannot be read; the owner may delete both folders.
 | Action 7 — Vault scheduler secret | **done** (13 × 200) |
 
 ## 7. Owner actions (ordered by risk and dependency)
 
 ### Required before migrations
 
-3. **Clerk Dashboard**, application of `needed-turkey-5633`: turn off the
-   users' ability to delete their own account.
-   - Verify:
+3. ~~**Clerk Dashboard**: turn off self-deletion~~ **done 2026-10-16**
+   (User & authentication → User model → User permissions → "Allow users to
+   delete their account" off, then "Apply to existing users").
+   - Re-verify any time:
      `curl -s https://needed-turkey-5633.clerk.accounts.dev/v1/environment | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>console.log(JSON.parse(d).user_settings.actions.delete_self))"`
      must print `false`.
-4. **Backup**, in your own terminal (it refuses to run without one):
-   `bash scripts/backup/backup-verify.sh "<empty, owner-only folder outside the repo, not cloud-synced>" --production`.
+4. **Backup**, with the fixed script, in your own terminal (it refuses to run
+   without one), into a **new, empty** folder (never the failed
+   `release-2026-10-17` one):
+   `bash scripts/backup/backup-verify.sh "D:/legacyvault-backups/release-2026-10-17-b" --production`.
    Type a new passphrase when asked and keep it in a password manager. It
    must end in **PASS**.
    - It backs up the database only: **not** stored files, Clerk identities,
@@ -230,7 +264,8 @@ Platform schemas restore only into a real Supabase project.
 
 ## 8. Production release checklist (stop at any failed condition)
 
-1. **Gates:** action 3 verified `false`; backup **PASS** (action 4).
+1. **Gates:** action 3 verified `false` (done); backup **PASS** (action 4;
+   the first attempt failed).
 
    **STOP** if the backup prints FAIL, or names a table you need in its
    "changed while the backup ran" note (re-run at a quiet time).
@@ -287,6 +322,7 @@ Engineering is complete and verified on the final tree (§ 3): every check,
 the build, a signed-in export journey and the public smoke pass, and the
 release is committed locally for review.
 
-It is **not** released. Before migrations: action 3 and a backup **PASS**
-(action 4), which only the owner can run. Then the checklist in § 8.
-Nothing beyond read-only production queries was done here.
+It is **not** released. Action 3 is done. Before migrations: a production
+backup **PASS** (action 4), which only the owner can run: the first attempt
+failed on a script bug that is now fixed and rehearsed locally (§ 6). Then the
+checklist in § 8. Nothing beyond read-only production queries was done here.

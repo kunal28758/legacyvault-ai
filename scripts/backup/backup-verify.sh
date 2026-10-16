@@ -107,13 +107,19 @@ complete() {
   found="$(decrypt "$dest/$1" | tail -c 4096 | grep -cF -- "$2" || true)"
   if [ "${found:-0}" -lt 1 ]; then echo "FAIL: $1 is incomplete or does not decrypt" >&2; exit 1; fi
 }
+# query_value <column> [--json-object] <db query args...>: the column of a one-row
+# query. JSON is requested explicitly: without it a terminal gets a text table,
+# and its shape differs between a terminal and an AI agent (query-value.mjs).
+# A rejection names the reason only; the CLI's own errors stay withheld.
+query_value() {
+  local column="$1" check=""
+  shift
+  if [ "${1:-}" = "--json-object" ]; then check="$1"; shift; fi
+  supa db query "$source_flag" --output-format json "$@" 2>/dev/null |
+    node scripts/backup/query-value.mjs "$column" ${check:+"$check"}
+}
 checksums() {
-  if ! supa db query "$source_flag" -f scripts/region-migration/sql/table-checksums.sql 2>/dev/null |
-    node -e '
-      let d = ""; process.stdin.on("data", (c) => (d += c)).on("end", () => {
-        const j = JSON.parse(d.slice(d.indexOf("{")));
-        process.stdout.write((j.rows ?? j)[0].checksums);
-      });' >"$dest/$1" 2>/dev/null; then
+  if ! query_value checksums --json-object -f scripts/region-migration/sql/table-checksums.sql >"$dest/$1"; then
     echo "FAIL: reading the source checksums ($1) failed" >&2
     exit 1
   fi
@@ -129,8 +135,8 @@ dump data.sql.gpg --data-only --use-copy
 complete schema.sql.gpg "PostgreSQL database dump complete"
 complete data-public.sql.gpg "RESET ALL;"
 complete data.sql.gpg "RESET ALL;"
-migration="$(supa db query "$source_flag" "select max(version) as v from supabase_migrations.schema_migrations" 2>/dev/null |
-  node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const j=JSON.parse(d.slice(d.indexOf("{")));process.stdout.write(String((j.rows??j)[0].v))})')"
+migration="$(query_value v "select max(version) as v from supabase_migrations.schema_migrations")" ||
+  { echo "FAIL: reading the database migration version failed" >&2; exit 1; }
 (cd "$dest" && sha256sum ./*.gpg checksums-before.json checksums-after.json >SHA256SUMS)
 echo "encrypted (AES-256), complete: $(cd "$dest" && stat -c '%n=%s bytes' ./*.gpg | paste -sd ' ')"
 echo "database migration at backup time: $migration"
