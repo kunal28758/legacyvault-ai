@@ -32,7 +32,7 @@ capability exists) · 🔧 configured locally in this repository · ⬜ not star
 | Application | `pnpm dev` (Next.js 16, Node 20 LTS+) | Vercel preview deployment per PR | Vercel production (manual approval, T238) |
 | Database | Supabase CLI local stack (`pnpm db:start`, Docker) | Supabase staging project | Supabase production project (PITR) |
 | Object storage | local stack buckets `documents` / `videos` | staging project buckets | production project buckets |
-| Identity | Clerk **development** instance | Clerk development instance | Clerk **production** instance |
+| Identity | Clerk **development** instance | its **own** Clerk application (§ 7g) — never the one production uses | Clerk **production** instance (today: the development instance `needed-turkey-5633`, § 7f) |
 | Background jobs | `curl` the cron routes with `CRON_SECRET` | `curl` / manual | `pg_cron` + `pg_net` in the database (migration 0010, § 7c), GitHub Actions as a second caller |
 | Malware scanning | none (ADR-017) | none | none — uploads are checked for size and type only |
 | Email | none (or the E2E mail-capture stand-in) | Brevo (Resend fallback) | Brevo — the verified sender for every email (Resend only if Brevo is unset) |
@@ -41,6 +41,17 @@ capability exists) · 🔧 configured locally in this repository · ⬜ not star
 Isolation rule (constitution XXI): each column uses its own Supabase project,
 Clerk instance and secret values. Production data never reaches lower
 environments (NFR-PRV-003).
+
+**This matrix is the target design. Actual state (verified 2026-10-15):**
+- **No preview/staging environment exists.** The production Vercel project
+  gives Preview only public `NEXT_PUBLIC_*` values, so a preview would fail
+  closed; a preview is not staging (§ 7g).
+- **Production has no PITR** and no restorable platform backups (free tier,
+  § 7f).
+- **No Sentry DSN is configured.** `SENTRY_DSN` is required only by
+  `pnpm env:check` in production mode.
+- **Identity is the shared development instance `needed-turkey-5633`**
+  (§ 7f).
 
 ## 2. Environment variables
 
@@ -160,12 +171,12 @@ Attack protection, Integrations, Webhooks, Customization.
 | 1 | Email + password enabled (FR-A001) | ⏳ | ⏳ |
 | 2 | Password policy: min 12, upper/lower/number/special (FR-A002) | ⏳ | ⏳ |
 | 3 | Email verification required before sign-in (FR-A003/A004) | ⏳ | ⏳ |
-| 4 | MFA: TOTP authenticator + backup codes (FR-A006, A017) — **Configure → User & authentication → Multi-factor: enable _Authenticator application_ and _Backup codes_.** Unlike organization settings, this has no Backend API, so it is a manual Dashboard toggle. The app opens Clerk's account portal for enrolment, but the portal offers no two-step verification until this is on. | ❌ 2026-10-01: both disabled on the development instance (`needed-turkey-5633`: `authenticator_app.enabled=false`, `backup_code.enabled=false`) — enrolment is impossible until enabled here | ⏳ enable on the production instance |
+| 4 | MFA: TOTP authenticator + backup codes (FR-A006, A017) — **Configure → User & authentication → Multi-factor: enable _Authenticator application_ and _Backup codes_.** Unlike organization settings, this has no Backend API, so it is a manual Dashboard toggle. The app opens Clerk's account portal for enrolment, but the portal offers no two-step verification until this is on. | ✅ 2026-10-15: both enabled on the development instance (`needed-turkey-5633` public environment: `authenticator_app.enabled=true`, `backup_code.enabled=true`; was disabled on 2026-10-01) | ⏳ enable on the production instance |
 | 5 | Session lifetime 24 h inactivity (FR-A008) — **verify the plan supports inactivity timeout and session-token customization** | ⏳ | ⏳ |
 | 6 | Attack protection: lockout after 5 failed attempts for 30 min; bot protection on (FR-A012/A013) | ⏳ | ⏳ |
 | 7 | Reverification enabled (`strict`, `multi_factor`) (FR-A018) | ⏳ | ⏳ |
 | 8 | Supabase third-party auth integration enabled (adds `role: authenticated`) (ADR-004) — Clerk Dashboard → [Connect with Supabase](https://dashboard.clerk.com/setup/supabase) | ✅ 2026-10-05: a session token minted for a synthetic test user carries `role: authenticated`, issuer `https://needed-turkey-5633.clerk.accounts.dev`, RS256 with `kid` | ⏳ no production instance yet — the deployed app uses the development instance |
-| 9 | Webhook endpoint `/api/webhooks/clerk` (Svix) with `user.created\|updated\|deleted`, `session.created\|ended\|removed\|revoked`; signing secret stored as `CLERK_WEBHOOK_SIGNING_SECRET` (T198) | ⏳ | ⏳ |
+| 9 | Webhook endpoint `/api/webhooks/clerk` (Svix) with `user.created\|updated\|deleted`, `session.created\|ended\|removed\|revoked`; signing secret stored as `CLERK_WEBHOOK_SIGNING_SECRET` (T198) | ❌ 2026-10-15: the production Vercel project has **no** `CLERK_WEBHOOK_SIGNING_SECRET` (`vercel env ls`, names only, 2026-10-14 and re-checked 2026-10-15), so the route cannot verify a delivery (it answers 500 before doing anything). Users still sync through the session fallback, but the auth audit trail, `last_login_at`, new-device alerts (FR-A014/A016) and `user.deleted` handling do not run in production. Trade-off while the instance is shared: once it works, sign-ups made from local or CI also create production rows. 2026-10-15 (read-only aggregates): 0 `webhook.clerk` audit rows ever (a delivery failing for the missing secret would leave one) and 0 rows from `clerk_webhook` — Clerk has never delivered to production, so no retry backlog exists. Enable only after the 0012 release: steps in `docs/DEPLOYMENT.md` § 7d-2 step 7. | ⏳ |
 | 10 | Branded emails (verification, reset, MFA) | ⏳ | ⏳ |
 | 11 | Event coverage for failed sign-in attempts (FR-A014) — outcome of **T203** recorded here | ⏳ | ⏳ |
 | 12 | **Organizations: off, or "Membership required" off.** LegacyVault has no organizations; with membership required, Clerk sends every new session to a `choose-organization` task (`/sign-in/tasks/choose-organization`) before the app. Observed on the development instance on 2026-09-30 — it blocks every authenticated E2E journey and would block real users. | ✅ 2026-09-30: `force_organization_selection` turned off on the development instance (`needed-turkey-5633`); verified in its public environment and by the E2E sign-in | ⏳ keep it off when the production instance is created |
@@ -173,6 +184,7 @@ Attack protection, Integrations, Webhooks, Customization.
 | 13 | **Phone-number sign-in** — Configure → User & authentication → **Phone**: enable _Phone number_, _Sign-in with phone number_ and _Verify at sign-up_ (SMS code). Clerk's `<SignIn/>`/`<SignUp/>` then show a phone field automatically; no app code change is needed. SMS delivery limits depend on the Clerk plan — check before enabling in production. | ❌ 2026-10-06: `phone_number.enabled=false` in the public environment (`needed-turkey-5633`) | ⏳ |
 | 14 | **Password sign-in + forgot password** — Configure → User & authentication → **Password**: enable _Sign-in with password_. With it on, `<SignIn/>` shows the password field (with Clerk's built-in show/hide toggle) and a _Forgot password?_ link that resets through an email code. Keep the breached-password check on. | ⚠️ 2026-10-06: password is **required at sign-up** (min 15, breached-password check on) but **not a sign-in factor** (`password.used_for_first_factor=false`; email sign-in uses `email_code`), so no _Forgot password_ link appears | ⏳ |
 | 15 | **Application name** — Customization → Branding → _Application name_: `LegacyVault AI`. The sign-in/sign-up titles are overridden in code (`localization` in `app/layout.tsx`), but Clerk's own emails still use this name. | ❌ 2026-10-06: still "My Application" | ⏳ |
+| 16 | **Self-service account deletion off** — Clerk's `<UserProfile/>` (opened from the account menu and Settings) offers its own *Delete account* while the instance allows self-deletion. That path skips the app's typed confirmation and `strict_mfa` step and does not erase the data (the `user.deleted` webhook only closes the account — § 7d-2). Turn it off so *Settings → Account* is the only self-service path. | ⚠️ 2026-10-15: `user_settings.actions.delete_self=true` in the public environment | ⏳ |
 
 Code that depends on this checklist: `proxy.ts` (T192), `app/layout.tsx`
 (T017), Phase 3 sign-in/sign-up pages (T040/T041), webhook handler (T198).
@@ -311,7 +323,10 @@ test rows into a hosted project.
 Then: `pnpm dlx vercel login` → `pnpm dlx vercel link` → add the variables in
 the dashboard (server scope for secrets) → `pnpm dlx vercel deploy` (preview) →
 verify `/api/v1/health`, sign-in, a document upload and `/ai` → promote to
-production only after that.
+production only after that. *(2026-10-02 first-deploy procedure, now
+superseded: this checkout is linked to the production project, whose Preview
+target no longer receives server secrets, so a preview built this way fails
+closed. Do not use previews for verification — § 7g.)*
 
 ## 7c. Scheduler (pg_cron + pg_net, migration 0010)
 
@@ -372,6 +387,222 @@ own approval:
 
 If 0011 were applied before the release, the old code's repeat shares would
 fail closed (no new link, "email could not be sent") — safe, but noisy.
+
+## 7d-2. Releasing migrations 0012–0014 with the account-deletion release — not yet applied anywhere but local
+
+Gates, approvals and evidence: `docs/release-readiness-final.md`. Per-feature
+evidence: `docs/release/ACCOUNT_DELETION_READINESS.md`. This section is the
+**only** authoritative migration and release order.
+
+**What each migration changes and who needs it**
+
+| Migration | Change | Needed by the new application? | Safe under the running (old) application? |
+|---|---|---|---|
+| `0012_account_deletion.sql` | adds `begin_account_deletion(uuid, timestamptz, text, boolean)`, service_role only | **yes**: delete-now, the housekeeping sweep and the Clerk `user.deleted` webhook call it. Without it they fail with "function not found" and change nothing | yes, the old application never calls it |
+| `0013_audit_minimization.sql` | replaces the bodies of `audit_class_a_change()`, `create_asset()` and `delete_asset()`. Signatures and grants are unchanged (`create or replace`) | no. It only changes what **new** audit rows contain | yes |
+| `0014_scheduler_status.sql` | adds `scheduler_status()`, read-only and service_role only | health reads it. Without it the `scheduler` component reports unknown → `degraded` | yes |
+
+**How the runner applies them** (verified 2026-10-15 against a throwaway
+database, using a deliberately failing probe file):
+- `supabase db push` applies pending files in filename order.
+- **Each file runs in its own transaction** and is recorded in
+  `supabase_migrations.schema_migrations` once it commits.
+- It stops at the first failure: earlier files stay applied, the failing file
+  is rolled back completely, and later files are not attempted.
+- So 0012–0014 are atomic one by one, not as a set.
+
+The whole chain 0001→0014 also applied cleanly with `supabase db start` on a
+fresh, isolated stack. Its catalog fingerprint equals the local development
+database's: 16 categories, 1,623 items, 0 differences.
+
+**Sequence**
+
+1. **Preflight (read-only).** Record the result in
+   `ACCOUNT_DELETION_READINESS.md` § 3. Run it again immediately before step 4:
+   the counts change whenever someone schedules a deletion.
+   ```bash
+   cat supabase/.temp/project-ref        # must print zlgmthrdoxyfkldeaxyl
+   pnpm exec supabase db query --linked -f scripts/account-deletion/preflight.sql
+   ```
+   It is one aggregate `SELECT` returning eleven counts and no personal data;
+   `tests/unit/preflight-sql.test.ts` keeps it that way. **Read every count on
+   its own; there is no blanket pass:**
+
+   | Count | Expected before step 4 | If not as expected |
+   |---|---|---|
+   | `purged_on_first_sweep` | 0 | **stop**: written owner approval of exactly these permanent deletions |
+   | `files_on_first_sweep` | 0 | **stop**: as above; these files are not in any dump |
+   | `purged_when_due` | any | informational: each is purged when its own 30 days end |
+   | `soft_deleted_by_old_sweep`, `soft_deleted_other_paths` | any | informational; decision R5 in `docs/release/DATA_RETENTION_DECISIONS.md` |
+   | `unsafe_clerk_ids` | 0 | **stop**: the purge refuses these identifiers; investigate first |
+   | `existing_hard_delete_jobs` | 0 | **stop**: purge jobs already exist; find out why |
+   | `function_present` | **0**: 0012 creates it | 1 means 0012 is already applied: **stop** and reconcile history |
+   | `targets_0013` | **3** | **stop**: a missing or extra overload of `audit_class_a_change` / `create_asset` / `delete_asset` would make 0013 add a function instead of replacing one |
+   | `dependencies_0014` | **2** (`net._http_response`, `vault.secrets`) | **stop**: 0014 cannot work |
+   | `scheduler_status_present` | **0**: 0014 creates it | 1 means 0014 is already applied: **stop** and reconcile |
+
+   After step 4, re-running it must show `function_present` 1,
+   `scheduler_status_present` 1 and `targets_0013` 3.
+2. **Backup and restore test** (no PITR on the free tier). This needs the
+   owner's consent, a passphrase kept in the owner's password manager, and an
+   empty folder outside this repository on a disk only the owner can read. It
+   is one command, run interactively from the repository root:
+   ```bash
+   bash scripts/backup/backup-verify.sh "<owner-approved folder>" --production
+   ```
+   What it does:
+   - **Dumps** the schema, all data and the `public` data. Each streams
+     straight into `gpg` (AES-256), so no plaintext copy of production data is
+     ever written to disk.
+     - A file gets its final name only after its whole pipeline succeeded;
+       `*.partial` leftovers are removed on any failure or interrupt.
+     - Each file is decrypted again and must end with its completion marker.
+   - **Passphrase:** typed without echo, held only in the shell. It never
+     appears in arguments, traces (`set +x`) or gpg-agent's cache. Files are
+     owner-only (`umask 077`).
+   - **Restore test:** decrypts as a stream into a throwaway
+     `public.ecr.aws/supabase/postgres:17.6.1.166` container. The container
+     has **no network and no published port**, so restored data cannot reach
+     production or anything else. It is removed afterwards (`rm -f -v`).
+   - **Comparison** (`scripts/backup/compare-checksums.mjs`): per-table row
+     counts and md5s of the source are taken just before and just after the
+     `public` dump.
+     - Tables stable across that window must match the restore exactly.
+     - Tables written to during the dump are named in a NOTE, never counted as
+       matched; re-run at a quieter time if they matter.
+   - **Refuses:** a destination inside this repository or not empty, less than
+     512 MB free, production without a terminal or without the production
+     link, and the test hook (`LV_BACKUP_SUPABASE_BIN`) in production.
+   - **Prints:** file names, sizes, the migration version and PASS/FAIL only.
+     In production mode `psql` errors are withheld, because they can quote
+     rows.
+
+   **Tested:** `tests/unit/backup-verify-script.test.ts`, 13 tests. A dump
+   that dies midway, a truncated dump, failed checksums and every refusal are
+   covered. Rehearsed on 2026-10-15 against the local database: PASS, 28 of 28
+   tables exact. A rehearsal is not a production backup.
+
+   **Keep** the folder until the release is verified, then delete it, unless
+   the owner keeps it as the recovery point (decision D4). Without the
+   passphrase the files are useless.
+
+   **A dump never contains** stored file contents, Clerk identities or Vault
+   secrets:
+   - a purged account's files and Clerk user are gone for good;
+   - a restored row needs an approved `clerk_user_id` remap;
+   - the Vault entries must be re-created by hand.
+
+   Platform schemas (`auth`, `storage`, `cron`, `net`) restore only into a
+   real Supabase project.
+3. **Approvals** for steps 4–7 (`docs/release-readiness-final.md` § 7).
+4. **Migrations**, all three in one push:
+   ```bash
+   pnpm exec supabase migration list --linked      # remote: 0001–0011 applied
+   pnpm exec supabase db push --linked --dry-run   # must list exactly, in order:
+   #   0012_account_deletion.sql, 0013_audit_minimization.sql, 0014_scheduler_status.sql
+   pnpm exec supabase db push --linked
+   pnpm exec supabase migration list --linked      # remote: 0001–0014 applied
+   ```
+   **Validate** (read-only):
+   - `select p.oid::regprocedure, p.prosecdef, has_function_privilege('anon', p.oid, 'execute'), has_function_privilege('authenticated', p.oid, 'execute'), has_function_privilege('service_role', p.oid, 'execute') from pg_proc p where proname in ('begin_account_deletion', 'scheduler_status');`
+     must show definer only for `scheduler_status`, and execute for
+     service_role only.
+   - `scripts/region-migration/sql/catalog-fingerprint.sql` on production and
+     on a local 0001→0014 replay must be identical, apart from the hosted
+     `service_role` EXECUTE default.
+
+   **If it stops partway:** the failing file was rolled back and the files
+   before it stay applied. All three are safe under the running application,
+   so production keeps working. Fix the cause and run `db push` again; it
+   resumes at the first unapplied file.
+   - Never mark a file applied with `migration repair`.
+   - Never re-run 0012 or 0014 by hand: their `create function` is not
+     re-runnable.
+5. **Release the application:** push the reviewed commit; Vercel deploys.
+   Verify:
+   - the new deployment is READY in `npx --yes vercel ls legacyvault-ai-uh7s`;
+   - `/`, `/account-deleted` and `/api/v1/health` answer 200.
+6. **Scheduler secret** (§ 7f): Vault `legacyvault_cron_secret` = the
+   Production `CRON_SECRET`.
+   - **Where to enter it:** Supabase Dashboard → project `zlgmthrdoxyfkldeaxyl`
+     → Integrations → **Vault** → *Add new secret*, then paste the value from
+     the owner's password manager.
+   - **Where not to enter it:** never through the SQL editor, which keeps query
+     history, nor through a shell command, which can land in history or logs.
+   - **Verify without revealing it:** after the next 10-minute tick, run
+     `select status_code, count(*) from net._http_response group by 1;`.
+     - 200s mean the two values match.
+     - 401s mean they differ: edit the Vault entry.
+   - **The operator health must then show** `scheduler.configured: true`, a
+     `lastSuccessAgeSeconds` under 1,800 and `failedResponses` 0.
+   - **Until it exists**, the public status stays `degraded`.
+7. **Clerk webhook**, only if approved. Prerequisites: steps 4–5 are done
+   and Clerk self-deletion is off. It makes production process **every** real
+   event of the shared instance, including local and CI sign-ups, and it
+   starts new-device emails.
+   1. Clerk Dashboard → application of `needed-turkey-5633` → Configure →
+      Webhooks → Add Endpoint.
+      - URL: `https://legacyvault-ai-uh7s.vercel.app/api/webhooks/clerk`.
+      - Events: `user.created`, `user.updated`, `user.deleted`,
+        `session.created`, `session.ended`, `session.removed`,
+        `session.revoked`.
+   2. Copy the endpoint's signing secret (never into a terminal or chat).
+      Add it in Vercel `legacyvault-ai-uh7s` as `CLERK_WEBHOOK_SIGNING_SECRET`,
+      **Production only**, Sensitive. Redeploy.
+   3. Send an example **`session.ended`** from the endpoint's Testing tab. Never
+      send `user.created` or `user.updated`: they would create a production
+      row. Message Attempts must show 200.
+   4. Verify read-only: `processed_webhook_events` (CLERK) ≥ 1, and
+      `audit_log` `webhook.clerk` FAILURE = 0.
+
+   Rollback: disable the endpoint.
+8. **Watch for 24 h:**
+   - public health `ok`;
+   - the operator breakdown's `failures` all 0, with `housekeeping` and
+     `scheduler` fresh;
+   - `select type, status, count(*) from jobs where type = 'user.hard-delete' group by 1, 2;`
+
+**Rollback**
+- **Application:** Vercel → Deployments → `9fad7df` → Instant Rollback. It is
+  compatible with 0012–0014 applied: the old application never calls the new
+  functions, and 0013 changes only audit content.
+- **Migrations are forward-only.** If ever needed:
+  - 0014: `drop function public.scheduler_status();`
+  - 0013: re-create the 0002/0003 function bodies.
+  - 0012: drop its function, but only after the application has been rolled
+    back.
+- **Irreversible:** a purge that has happened (rows, stored files, Clerk user)
+  cannot be undone.
+
+**What the first housekeeping run does** (preflight columns):
+- `purged_on_first_sweep`: accounts scheduled more than 30 days ago and never
+  marked deleted. They are hard-deleted (storage, Clerk user, rows) by the
+  first run, i.e. within about a day of the release.
+- `files_on_first_sweep`: stored files removed with those accounts; not
+  recoverable from a dump.
+- `purged_when_due`: hard-deleted as each 30-day period ends.
+- `soft_deleted_by_old_sweep` and `soft_deleted_other_paths`: already marked
+  deleted (old sweep, or Clerk's `user.deleted` webhook). They are blocked from
+  the app, their data is kept, and they are never swept (decision:
+  `docs/release/DATA_RETENTION_DECISIONS.md`).
+- `unsafe_clerk_ids` (expected 0): the purge refuses these identifiers.
+- `existing_hard_delete_jobs` (expected 0 before 0012).
+- `function_present`: 0 before 0012, 1 after.
+- `targets_0013`, `dependencies_0014`, `scheduler_status_present`: migration prerequisites (table in step 1).
+
+**Production preflight results (read-only, counts only):**
+
+| Run (UTC) | Deletion counts (first 7) | `function_present` | `targets_0013` | `dependencies_0014` | `scheduler_status_present` |
+|---|---|---|---|---|---|
+| 2026-10-15T09:38:15Z (current file) | all 0 | 0 | 3 | 2 | 0 |
+| 2026-10-15T06:57:52Z (earlier 8-column version) | all 0 | 0 | — | — | — |
+
+Every value is as expected before step 4. These results are dated; the run
+immediately before step 4 is the one that counts.
+
+Production shares the Clerk **development** instance with local development.
+`delete-now` deletes the Clerk user it belongs to, so never exercise it with a
+shared test account against production.
 
 ## 7e. Production rollout runbook — 0010 + 0011 (prepared 2026-10-08; run 2026-10-09 — state in § 7f)
 
@@ -463,7 +694,7 @@ duplicate diagnostic current; this runbook reviewed.
 
 ## 7f. Production state and free-tier limitations (verified 2026-10-09)
 
-**Live.** Release `39f7bfc` on the Vercel project `legacyvault-ai-uh7s`
+**Live.** Release `39f7bfc` (followed by the docs-only `9fad7df`, still the current production deployment on 2026-10-15) on the Vercel project `legacyvault-ai-uh7s`
 (`https://legacyvault-ai-uh7s.vercel.app`); database at migration **0011**
 (catalog identical to a local 0001→0011 replay apart from the hosted
 `service_role` EXECUTE defaults); the 3 duplicate share links revoked
@@ -473,6 +704,20 @@ videos 500 MB); `AI_DOCUMENT_PROVIDERS` unset, so vault documents reach no AI
 provider.
 
 **Scheduler.** `pg_cron` jobs and Vault `legacyvault_app_url` are in place.
+**2026-10-16: the owner added `legacyvault_cron_secret`.** Read-only check at
+~17:45 UTC: `net._http_response` held 13 × 200 and nothing else, so the
+database scheduler now reaches the app with a matching secret. Before that,
+on 2026-10-15 (read-only metadata queries, last at 05:16 UTC):
+- `vault.secrets` holds `legacyvault_app_url` only;
+- pg_net has made 0 HTTP calls (144 run-jobs ticks in 24 h did nothing).
+
+`/api/v1/health` is *not* evidence either way, because it tracks the
+GitHub Actions caller:
+- it was `down` earlier;
+- it was `ok` at 05:16 UTC, after a DMS scan finished at 04:57 UTC with no
+  pg_net call;
+- the last housekeeping finished at 2026-10-14 13:13 UTC, against a 03:17 UTC
+  schedule.
 Vault `legacyvault_cron_secret` must hold the Vercel Production `CRON_SECRET`;
 Vercel stores it as a Secret that cannot be read back, so only the owner can
 copy it (Supabase → Integrations → Vault → Add new secret). Until it exists the
@@ -485,7 +730,11 @@ old. Then run § 7e step 8.
   PITR. Recovery relies on the manual logical dump (schema + data, SHA-256
   recorded) taken before the 2026-10-09 rollout and restore-tested (28/28
   tables, identical row counts); it is kept privately, outside git. Take a new
-  one (§ 7e step 1) before any future production write.
+  one (§ 7e step 1) before any future production write. That dump covers the
+  2026-10-09 rollout only: **no backup exists for the 0012 release**. The
+  local restore rehearsal of 2026-10-15 used local data, so it is neither a
+  production backup nor a production restore test
+  (§ 7d-2 step 2).
 - *Clerk*: production uses the Clerk **development** instance. A production
   instance needs an owned domain (not `*.vercel.app`) and a re-mapping of
   `users.clerk_user_id` first — new instance ids would otherwise lock existing
@@ -494,9 +743,185 @@ old. Then run § 7e step 8.
   DMARC) needs an owned domain.
 - *Sentry*: no DSN is configured, so error reporting is off; the scrubbing
   code is in place for when one is added.
-- A second Vercel project, `legacyvault-ai`, also deploys this repository
-  (`https://legacyvault-ai.vercel.app`) without email settings; it is not the
-  production entry point.
+- **2026-10-16: the second Vercel project, `legacyvault-ai`, was deleted by
+  the owner** (`vercel project ls` lists only `legacyvault-ai-uh7s`; the API
+  returns 404 for it). Until then it also deployed this repository on every
+  push to `master`, and on 2026-10-15 all 25 of its variables (secret keys
+  included) were scoped Production + Preview.
+
+## 7g. Isolated staging — for validating account deletion (not set up yet)
+
+> **Current constraint:** no new Supabase project, so step B is out and
+> staging means option D (the existing local Supabase).
+>
+> A separate free Clerk application (step A) is the owner's decision
+> (`docs/release-readiness-final.md` § 7). Until it exists, Clerk isolation is
+> unavailable and live Clerk deletion stays unverified. A Clerk application's
+> other instance, production, needs an owned domain.
+
+Staging exists to run destructive journeys (account deletion above all)
+where nothing can reach production. **It is not isolated until
+`pnpm staging:check` passes against its configuration** — that script refuses
+the production Supabase project, the production Clerk instance and the
+production host, and proves over the network that the Clerk secret key belongs
+to the staging instance (the secret key is what `delete-now` deletes users
+with). It prints hostnames and PASS/FAIL only.
+
+### Current state (inspected 2026-10-14, read-only)
+
+| Finding | Evidence | Consequence |
+|---|---|---|
+| Production uses Supabase `zlgmthrdoxyfkldeaxyl` and Clerk `needed-turkey-5633` | production CSP header | — |
+| 2026-10-14: in the production Vercel project the server secrets were scoped **Production, Preview**. **2026-10-15 re-check:** every server secret in `legacyvault-ai-uh7s` is now Production-only; Preview keeps only the public `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (own entry), `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and the two sign-in URLs; `BREVO_*` still have Development entries. No preview deployment exists (31 deployments, all production). The second project `legacyvault-ai` still scopes **every** secret (Supabase secret key, Clerk secret key, `ENCRYPTION_KEY`, `CRON_SECRET`, …) Production, Preview and auto-deploys `master` | `vercel env ls` and `vercel env ls --project legacyvault-ai`, `vercel ls` (names, targets and metadata only) | a preview of `legacyvault-ai` would carry that project's secrets; plan in `docs/release-readiness-final.md` § 7 (actions 1–2) |
+| The second Vercel project `legacyvault-ai` used the same Clerk instance (deleted 2026-10-16) | — | gone |
+| Local `.env.local`: Supabase `127.0.0.1` (isolated), Clerk `needed-turkey-5633` (shared with production), no `CLERK_WEBHOOK_SIGNING_SECRET` | `pnpm staging:check` → NOT ISOLATED | users created, signed in or deleted locally exist in production's identity store; a `delete-now` run locally deletes a Clerk user production also uses. (Production has no `CLERK_WEBHOOK_SIGNING_SECRET`, so webhook deliveries are not processed there today — § 5 row 9.) |
+| This checkout is linked to production twice: `supabase/.temp/project-ref` and `.vercel/repo.json` (`legacyvault-ai-uh7s`) | files | `--linked` and `vercel` commands here act on production |
+| CI E2E reads the `CLERK_PUBLISHABLE_KEY` / `CLERK_SECRET_KEY` repository secrets; which instance they hold is unknown (secrets are write-only) | `.github/workflows/ci.yml` | if they are `needed-turkey-5633`, CI sign-ins also reach production |
+
+### What must differ from production
+
+Everything in § 2 that names a system or holds a key. Staging values, never
+copied from production:
+
+```bash
+APP_URL=https://<staging-host>
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_<staging application>
+CLERK_SECRET_KEY=sk_test_<staging application>
+CLERK_WEBHOOK_SIGNING_SECRET=whsec_<staging endpoint>
+NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
+NEXT_PUBLIC_SUPABASE_URL=https://<staging-ref>.supabase.co
+SUPABASE_URL=https://<staging-ref>.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<staging publishable key>
+SUPABASE_SECRET_KEY=<staging secret key>
+ENCRYPTION_KEY=k1:<new random 32 bytes, base64>
+ACCESS_COOKIE_KEY=<new random 32 bytes, base64>
+CRON_SECRET=<new random, 32+ characters>
+ADMIN_EMAIL=<staging operator address>
+# Leave unset in staging (no real email, no AI spend): BREVO_API_KEY,
+# BREVO_EMAIL_FROM, RESEND_API_KEY, EMAIL_FROM, EMAIL_WEBHOOK_SECRET,
+# GEMINI_API_KEY, GROQ_API_KEY, HF_TOKEN, AI_DOCUMENT_PROVIDERS.
+# Not read by the code (do not carry over): SUPABASE_JWT_SECRET,
+# MALWARE_SCANNER_PROVIDER, CLAMAV_HOST, CLAMAV_PORT, CLAMAV_TLS.
+```
+
+Generate the random values yourself and paste them straight into the
+environment UI, e.g. `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`.
+
+### Setup (owner — dashboard steps)
+
+**A. Clerk — a separate application** (free; a new application has its own
+development instance, users, keys and webhooks):
+
+1. [dashboard.clerk.com](https://dashboard.clerk.com) → **Create application**
+   → name `LegacyVault AI — staging`; enable **Email** (and **Password** if you
+   want it as in production). Do not reuse or modify `needed-turkey-5633`.
+2. **Configure → Multi-factor:** enable *Authenticator application* and
+   *Backup codes* (needed to test `strict_mfa` with a second factor).
+3. **Configure → Organizations:** off (§ 5 row 12).
+4. **Sessions → Customize session token:** add `"role": "authenticated"`
+   (§ 3a), or use [Connect with Supabase](https://dashboard.clerk.com/setup/supabase)
+   for this application.
+5. **Configure → Webhooks → Add endpoint:**
+   `https://<staging-host>/api/webhooks/clerk`; events `user.created`,
+   `user.updated`, `user.deleted`, `session.created`, `session.ended`,
+   `session.removed`, `session.revoked`. Copy its **Signing secret** into
+   staging `CLERK_WEBHOOK_SIGNING_SECRET`. This application must list **only**
+   this endpoint.
+6. **API keys:** copy the `pk_test_…` / `sk_test_…` into the staging
+   environment only.
+
+**B. Supabase — a staging project.** The free plan allows two active projects
+per account, and both were in use on 2026-10-07: check the dashboard, then
+pause or delete a project that is **not** `zlgmthrdoxyfkldeaxyl`, or use
+option D. Then:
+
+1. Create `legacyvault-staging`; copy URL, publishable and secret keys into the
+   staging environment.
+2. Apply migrations **without relinking this checkout**:
+   `supabase db push --db-url "postgresql://postgres:<db password>@db.<staging-ref>.supabase.co:5432/postgres" --dry-run`,
+   then again without `--dry-run`. Never `--linked` here.
+3. **Authentication → Third-party auth → Clerk:** the staging Frontend API host
+   (`pnpm staging:check` prints it).
+4. Scheduler (§ 7c): leave the Vault secrets unset and call the cron routes by
+   hand, or set `legacyvault_app_url` = staging URL and
+   `legacyvault_cron_secret` = the staging `CRON_SECRET`. Never production values.
+5. Never restore production data into staging (NFR-PRV-003).
+
+**C. Vercel — a staging project.** Create one (the earlier candidate,
+`legacyvault-ai`, was deleted on 2026-10-16) with staging values only. Set the
+variables above for its **Production** target (that project's production *is*
+staging) and set its build command to `pnpm staging:check && pnpm build`, so
+it cannot build while pointed at production. Do not run the `vercel` CLI from
+this checkout for staging — it is linked to production.
+
+**Production project's Preview and Development targets**
+(`legacyvault-ai-uh7s` → Settings → Environment Variables):
+- **Server secrets: Production-only as observed on 2026-10-15.** Earlier
+  they were scoped *Production, Preview*; who changed them is not recorded
+  here.
+- **Remaining:** the `BREVO_API_KEY` and `BREVO_EMAIL_FROM` Development
+  entries, and Preview on the public `NEXT_PUBLIC_SUPABASE_URL`,
+  `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `NEXT_PUBLIC_CLERK_SIGN_IN_URL` /
+  `_SIGN_UP_URL`, plus a Preview-only `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
+- The reversible checklist is in `docs/release-readiness-final.md` § 7 (actions 1–2).
+  Production assignments are not touched by it.
+
+**D. Zero-cost alternative — local staging.** Local Supabase is already
+isolated (`127.0.0.1`). Point this machine at the staging Clerk application:
+set `[auth.third_party.clerk] domain` in `supabase/config.toml` to the staging
+host and restart the stack (revert afterwards); run the app with the staging
+variables (`node --env-file=<staging file>` wins over `.env.local`); expose it
+through a tunnel for the Clerk webhook endpoint. Run `pnpm staging:check`
+with the same variables first.
+
+### Proving isolation
+
+1. `pnpm staging:check` → `PASS  isolated from production` (in the staging
+   build log on Vercel, or locally with the staging variables).
+2. Clerk staging application → Webhooks → endpoint → *Message attempts*:
+   200s from the staging host after a sign-up.
+3. Staging database: `select count(*) from processed_webhook_events;` grows; the
+   test account appears in `users`.
+4. Production stays untouched — read-only, by an operator:
+   `select count(*) from public.users where email = '<staging test email>';`
+   → 0 before and after; the production Clerk dashboard has no such user.
+5. Jobs and audit in staging:
+   `curl -X POST -H "Authorization: Bearer <staging CRON_SECRET>" https://<staging-host>/api/internal/cron/run-jobs`;
+   `select type, status from jobs where type = 'user.hard-delete';`;
+   `select action from audit_log where resource_id = '<staging user id>' order by created_at;`
+   (expect `user.deleted`, then `user.purged`); the storage folder
+   `documents/<staging user id>/` is empty.
+
+### Browser checks (staging only, synthetic accounts)
+
+Use two accounts, e.g. `<you>+lv-staging-1@<domain>` (no second factor) and
+`<you>+lv-staging-2@<domain>` (TOTP enrolled). Give each a document and a
+beneficiary first.
+
+1. **Settings → Account:** both options visible and distinct; keyboard-only
+   navigation reaches both buttons; focus visible.
+2. **Schedule deletion:** re-verification prompt → acknowledgement → toast
+   with the date → signed out → sign in again: the exact deletion date and
+   *Cancel scheduled deletion* are shown; an edit elsewhere is refused as
+   read-only.
+3. **Cancel:** toast; edits work again; the date is gone.
+4. **Delete now — gating:** button disabled until the checkbox is ticked and
+   `DELETE PERMANENTLY` typed exactly (lower case keeps it disabled);
+   *Cancel* in the dialog changes nothing.
+5. **Re-verification:** wait >10 min after sign-in; account 1 is asked for one
+   factor, account 2 for both; closing Clerk's prompt deletes nothing.
+6. **Delete now — outcome:** lands on `/account-deleted?status=complete`;
+   staging DB row, documents and storage folder gone; Clerk staging user gone;
+   audit `user.deleted` + `user.purged`.
+7. **Old session:** a second browser signed in before the deletion → its next
+   page load ends on `/account-deleted` or sign-in; its API calls answer 401.
+8. **Escalation:** schedule, then *Delete permanently now* — allowed, no
+   30-day wait.
+9. **Sign in again** with a deleted account → Clerk reports no such account;
+   signing up again with the same email creates an empty account.
+10. `/account-deleted?status=pending` copy reads correctly (the pending path
+    itself is covered by the integration tests; it needs a Clerk failure).
 
 ## 8. Deployment pipeline
 
@@ -547,6 +972,12 @@ every gap in one run, names only.
 
 | Date | Change |
 |---|---|
+| 2026-10-15 | Consistency pass (read-only re-check): § 1 matrix marked as target design with the actual state; § 7b preview procedure marked superseded; § 7f and § 7g brought to the observed Vercel and Vault state. No production setting changed. |
+| 2026-10-16 | Read-only re-check: the second Vercel project `legacyvault-ai` is deleted; Vault `legacyvault_cron_secret` exists and pg_net shows 13 × 200; `9fad7df` was redeployed by the owner; preflight unchanged (all deletion counts 0). § 7f and § 7g updated. No production setting or data changed here. |
+| 2026-10-15 | Production-safety pass (read-only): Vercel targets re-checked (production project's server secrets now Production-only; second project still Production + Preview), Vault `legacyvault_cron_secret` confirmed missing, Clerk webhook never delivered; § 7d-2 commands made exact (`pnpm exec`), preflight gains `files_on_first_sweep`. No production setting or data changed. |
+| 2026-10-15 | Release audit (`docs/release-readiness-final.md`): § 5 row 4 (MFA now enabled on the development instance) and new row 16 (Clerk self-deletion is on); 0012's `begin_account_deletion()` gains `p_purge` for the Clerk `user.deleted` webhook (§ 7d-2); § 7g notes the no-new-project constraint. No production setting changed. |
+| 2026-10-14 | Migration 0012 (account deletion), its release order and read-only preflight (§ 7d-2). Not applied to production. |
+| 2026-10-14 | Isolated staging (§ 7g): findings (previews share production secrets), setup steps, `pnpm staging:check`. Staging not created; no production setting changed. |
 | 2026-10-04 | Malware scanning removed (ADR-017): no ClamAV host or scanner variables are needed; uploads go straight to the private `documents` / `videos` buckets and are checked for size and type. Migration `0006` must be applied before deploying this version. |
 | 2026-09-30 | Clerk development instance: forced organization selection turned off; the full E2E suite (10 journeys) passes. Local E2E notes: this machine's clock runs ~7 s ahead of Clerk (Clerk tolerates 5 s — sync the system clock), and under memory pressure run `pnpm test:e2e --workers=1` (as CI does). |
 | 2026-09-30 | Readiness classification (§ 8a); Clerk Organizations requirement recorded as a blocker (§ 5 row 12); ClamAV `StreamMaxLength` and AI keys added to § 7; `env:check --all` now evaluates the production rules. |

@@ -14,6 +14,7 @@ import {
   uploadObjectKey,
   type BucketName,
 } from "@/lib/storage/storage";
+import { ACCOUNT_DELETION_GRACE_DAYS } from "@/lib/validators/user.validators";
 
 /**
  * The daily sweep (api-contracts.md § Internal, ADR-006).
@@ -21,18 +22,18 @@ import {
  * Everything here is a deadline the product has already promised and that no
  * request will arrive to enforce: an emergency request whose owner never
  * answered, an upload that was started and abandoned, an account whose 30-day
- * grace period has run out. Each pass is idempotent and scoped, so running the
+ * grace period has run out (whose hard delete it queues). Each pass is idempotent and scoped, so running the
  * sweep twice in a day changes nothing the first run did not already do.
  */
 const UPLOAD_GRACE_MS = 6 * 60 * 60 * 1000;
 const DAY_MS = 86_400_000;
-const DELETION_GRACE_DAYS = 30;
 
 export interface HousekeepingSummary {
   emergencyTimeouts: number;
   emergencyExpiries: number;
   uploadsExpired: number;
   accountsDeleted: number;
+  purgesRequeued: number;
 }
 
 export async function runHousekeeping(
@@ -44,6 +45,7 @@ export async function runHousekeeping(
     emergencyExpiries: await expireEmergencyRequests(db, now),
     uploadsExpired: await expireAbandonedUploads(db, now),
     accountsDeleted: await applyDeletionGrace(db, now),
+    purgesRequeued: await requeueStalledPurges(db, now),
   };
 }
 
@@ -250,13 +252,13 @@ async function isReferenced(
 /**
  * Accounts past their grace period.
  *
- * This marks the account deleted and stops everything that could still act for
- * it. The rows themselves are kept until an operator purges them, because a
- * cascade started by a scheduled job is not a thing to do unattended — and the
- * audit trail must survive the account either way.
+ * begin_account_deletion() (0012) marks each one deleted, stops everything
+ * that could still act for it and queues its hard delete, in one transaction.
+ * It re-checks the deadline under the row lock, so an account whose owner
+ * cancelled after the select above is left alone.
  */
 async function applyDeletionGrace(db: TypedSupabaseClient, now: Date): Promise<number> {
-  const cutoff = new Date(now.getTime() - DELETION_GRACE_DAYS * 86_400_000).toISOString();
+  const cutoff = new Date(now.getTime() - ACCOUNT_DELETION_GRACE_DAYS * DAY_MS).toISOString();
   const { data, error } = await db
     .from("users")
     .select("id")
@@ -267,37 +269,59 @@ async function applyDeletionGrace(db: TypedSupabaseClient, now: Date): Promise<n
 
   let applied = 0;
   for (const user of data ?? []) {
-    const { error: tokensError } = await db
-      .from("access_tokens")
-      .update({ revoked_at: now.toISOString(), revoked_reason: "OWNER" })
-      .eq("owner_user_id", user.id)
-      .is("revoked_at", null);
-    if (tokensError) throw tokensError;
-
-    const { error: switchError } = await db
-      .from("dead_man_switches")
-      .update({ status: "INACTIVE", next_check_in_at: null })
-      .eq("user_id", user.id);
-    if (switchError) throw switchError;
-
-    const { error: userError } = await db
-      .from("users")
-      .update({ deleted_at: now.toISOString() })
-      .eq("id", user.id);
-    if (userError) throw userError;
-
-    const { error: auditError } = await db.from("audit_log").insert({
-      actor_id: user.id,
-      action: "user.deleted",
-      resource_type: "users",
-      resource_id: user.id,
-      outcome: "SUCCESS",
-      metadata: { gracePeriodDays: DELETION_GRACE_DAYS, appliedBy: "housekeeping" } as never,
+    const { data: started, error: startError } = await db.rpc("begin_account_deletion", {
+      p_user_id: user.id,
+      p_requested_before: cutoff,
     });
-    if (auditError) throw auditError;
-    applied += 1;
+    if (startError) throw startError;
+    if (started) applied += 1;
   }
   return applied;
+}
+
+/**
+ * Hard deletes that ran out of attempts (DEAD) while the account row — and so
+ * its data — is still there get one fresh job a day, so a long provider outage
+ * delays a deletion instead of abandoning it. Only accounts begun by
+ * begin_account_deletion() have such a job; accounts soft-deleted any other way
+ * are not touched here.
+ */
+async function requeueStalledPurges(db: TypedSupabaseClient, now: Date): Promise<number> {
+  const { data: dead, error } = await db
+    .from("jobs")
+    .select("payload")
+    .eq("type", "user.hard-delete")
+    .eq("status", "DEAD")
+    .limit(200);
+  if (error) throw error;
+
+  const payloads = new Map<string, Record<string, unknown>>();
+  for (const job of dead ?? []) {
+    const payload = job.payload as Record<string, unknown> | null;
+    if (typeof payload?.userId === "string") payloads.set(payload.userId, payload);
+  }
+  if (payloads.size === 0) return 0;
+
+  const { data: pending, error: pendingError } = await db
+    .from("users")
+    .select("id")
+    .in("id", [...payloads.keys()].slice(0, 100))
+    .not("deleted_at", "is", null);
+  if (pendingError) throw pendingError;
+
+  const day = now.toISOString().slice(0, 10);
+  let queued = 0;
+  for (const { id } of pending ?? []) {
+    const jobId = await enqueue(
+      db,
+      "user.hard-delete",
+      payloads.get(id) ?? {},
+      `user.hard-delete:${id}:retry:${day}`,
+    );
+    if (jobId) queued += 1;
+  }
+  if (queued > 0) logger.warn({ queued }, "stalled account purges requeued");
+  return queued;
 }
 
 export const housekeepingHandler: JobHandler = async (_job, db) => {

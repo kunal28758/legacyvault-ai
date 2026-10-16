@@ -1674,6 +1674,15 @@ export type Database = {
         }
         Returns: string
       }
+      begin_account_deletion: {
+        Args: {
+          p_corr?: string
+          p_purge?: boolean
+          p_requested_before?: string
+          p_user_id: string
+        }
+        Returns: boolean
+      }
       claim_jobs: {
         Args: { p_limit?: number; p_runner_id?: string }
         Returns: {
@@ -2012,6 +2021,7 @@ export type Database = {
         }
         Returns: Json
       }
+      scheduler_status: { Args: never; Returns: Json }
       set_beneficiary_status: {
         Args: {
           p_beneficiary_id: string

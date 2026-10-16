@@ -119,20 +119,32 @@ export async function updateProfile(
 }
 
 /**
- * Sets or clears the deletion flag.
+ * Sets or clears the deletion flag. Returns false when nothing changed.
  *
  * `deletion_requested_at` is a Class C column — the `authenticated` role is
  * refused by the identity-column trigger — so this takes the service client
  * explicitly rather than accepting whatever the caller happens to hold.
+ *
+ * Compare-and-set: setting only succeeds while unset (a repeated request can
+ * never restart the grace period), clearing only while set, and neither once
+ * the account is deleted — a cancellation that loses the race with
+ * begin_account_deletion() (0012) changes nothing.
  */
 export async function setDeletionRequested(
   serviceDb: TypedSupabaseClient,
   userId: string,
   at: string | null,
-): Promise<void> {
-  const { error } = await serviceDb
+): Promise<boolean> {
+  let query = serviceDb
     .from("users")
     .update({ deletion_requested_at: at })
-    .eq("id", userId);
+    .eq("id", userId)
+    .is("deleted_at", null);
+  query =
+    at === null
+      ? query.not("deletion_requested_at", "is", null)
+      : query.is("deletion_requested_at", null);
+  const { data, error } = await query.select("id");
   if (error) throw error;
+  return (data ?? []).length === 1;
 }

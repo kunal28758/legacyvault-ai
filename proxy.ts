@@ -21,6 +21,7 @@ import { NextResponse, type NextRequest } from "next/server";
  */
 const isPublicRoute = createRouteMatcher([
   "/",
+  "/account-deleted",
   "/sign-in(.*)",
   "/sign-up(.*)",
   "/access(.*)",

@@ -18,7 +18,11 @@ import type { Database } from "@/lib/types/database";
  */
 export type UserRole = Database["public"]["Enums"]["user_role"];
 
-/** Throws 401 when signed out. Also provisions the application row on first use. */
+/**
+ * Throws 401 when signed out, or when the account is deleted (even if the
+ * session token predates the deletion). Also provisions the application row on
+ * first use.
+ */
 export async function requireUser(): Promise<AppUser> {
   const { userId } = await auth();
   if (!userId) throw ApiError.unauthenticated();

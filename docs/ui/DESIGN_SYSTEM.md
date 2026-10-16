@@ -24,11 +24,14 @@ once components exist.
   T184; default dark; respects `prefers-color-scheme` on first visit;
   persisted to `preferences.theme`).
 - **Glassmorphism**, subtle gradients and restrained effects on deep-navy
-  backgrounds. Colour roles are semantic (2026-10-06 refresh):
-  - **Electric blue** `#0EA5FF` — primary action / technology; the dominant accent.
-  - **Emerald** `#14D38F` — safe, active, verified, success.
-  - **Violet** `#9D7CFF` — AI features only (assistant, AI badges, AI gradients).
-  - **Amber** — pending / warning. **Red** — error / destructive.
+  backgrounds. Colour roles are semantic (2026-10-06 refresh; rebalanced
+  2026-10-14 so no single hue dominates — neutrals carry most of every page):
+  - **Electric blue** `#0EA5FF` — trust, navigation, primary actions, security infrastructure.
+  - **Emerald** `#14D38F` — protected, verified, completed, success.
+  - **Violet** `#9D7CFF` — AI features and selected highlights only.
+  - **Amber** — pending / warning. **Red** — destructive, irreversible, error.
+  - Section eyebrows are neutral; colour is reserved for meaning, and never
+    the only signal (pair it with an icon or a label).
   - Cyan is a secondary technology accent (emergency contacts, data viz).
   Glow is a state cue (primary CTA, active nav item, selected card), never a
   resting decoration on every surface.
@@ -76,7 +79,10 @@ once components exist.
 
 - **Framer Motion** for component and page transitions (fade/slide page
   transitions, staggered cards, list animations, dialog scale-in, badge
-  bounce); **GSAP** for complex sequences (landing-page scroll animations).
+  bounce); **GSAP** for complex sequences. The landing hero is a static,
+  original illustration (`public/images/legacy-hero.webp`; editable source
+  `docs/ui/assets/legacy-hero.svg`, rasterised at 1200 px and encoded with
+  sharp) — no 3D scene and no parallax.
 - Motion is purposeful — it explains state change and builds confidence; it
   never blocks input, hides content or delays security-relevant feedback.
 - `prefers-reduced-motion` disables or reduces non-essential animation

@@ -62,7 +62,8 @@ export async function getUser(admin: AppUser, id: string): Promise<AdminUserDeta
   ]);
 
   // Reading a support case is itself a privileged act and is recorded as one.
-  await trail(admin, "admin.user_viewed", "users", id, { subjectEmail: user.email });
+  // The subject is `resource_id`; no personal value is kept in the audit row.
+  await trail(admin, "admin.user_viewed", "users", id, {});
 
   return {
     ...user,
@@ -172,7 +173,7 @@ export async function setRole(
     resourceType: "users",
     resourceId: id,
     outcome: "SUCCESS",
-    metadata: { from: subject.role, to: role, subjectEmail: subject.email },
+    metadata: { from: subject.role, to: role },
     correlationId,
   });
 
@@ -222,7 +223,6 @@ export async function unlockUser(
     resourceType: "users",
     resourceId: id,
     outcome: "SUCCESS",
-    metadata: { subjectEmail: subject.email },
     correlationId,
   });
   return { unlocked: true };
@@ -271,7 +271,6 @@ export async function resetMfa(
     resourceType: "users",
     resourceId: id,
     outcome: "SUCCESS",
-    metadata: { subjectEmail: subject.email },
     correlationId,
   });
 

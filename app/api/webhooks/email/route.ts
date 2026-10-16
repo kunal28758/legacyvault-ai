@@ -4,6 +4,7 @@ import { ApiError } from "@/lib/api/errors";
 import { withApi } from "@/lib/api/with-api";
 import { getEnvGroup } from "@/lib/config/env";
 import { createServiceClient } from "@/lib/db/server";
+import { processWebhookOnce } from "@/lib/repositories/webhook.repository";
 
 /**
  * Email delivery events (ADR-009, api-contracts.md § Internal).
@@ -59,32 +60,32 @@ export const POST = withApi(
     const event = (await request.json()) as ResendEvent;
     const db = createServiceClient();
 
-    const { data: isNew, error } = await db.rpc("record_webhook_event", {
-      p_provider: "EMAIL",
-      p_event_id: svixId,
-      p_event_type: event.type,
-    });
-    if (error) throw error;
-    if (!isNew) return { received: true, duplicate: true };
+    const outcome = await processWebhookOnce(
+      db,
+      { provider: "EMAIL", id: svixId, type: event.type },
+      async () => {
+        const status = STATUS_BY_EVENT[event.type];
+        const providerMessageId = event.data?.email_id;
+        if (!status || !providerMessageId) {
+          log.info({ eventType: event.type }, "email webhook event ignored");
+          return false;
+        }
 
-    const status = STATUS_BY_EVENT[event.type];
-    const providerMessageId = event.data?.email_id;
-    if (!status || !providerMessageId) {
-      log.info({ eventType: event.type }, "email webhook event ignored");
-      return { received: true, applied: false };
-    }
+        // A late `sent` must not overwrite a `delivered` or a `bounced`.
+        const terminal = ["DELIVERED", "BOUNCED", "FAILED"];
+        const { data: rows, error: updateError } = await db
+          .from("notifications")
+          .update({ delivery_status: status })
+          .eq("provider_message_id", providerMessageId)
+          .not("delivery_status", "in", `(${terminal.join(",")})`)
+          .select("id");
+        if (updateError) throw updateError;
 
-    // A late `sent` must not overwrite a `delivered` or a `bounced`.
-    const terminal = ["DELIVERED", "BOUNCED", "FAILED"];
-    const { data: rows, error: updateError } = await db
-      .from("notifications")
-      .update({ delivery_status: status })
-      .eq("provider_message_id", providerMessageId)
-      .not("delivery_status", "in", `(${terminal.join(",")})`)
-      .select("id");
-    if (updateError) throw updateError;
-
-    log.info({ eventType: event.type, applied: (rows ?? []).length }, "email delivery event");
-    return { received: true, applied: (rows ?? []).length > 0 };
+        log.info({ eventType: event.type, applied: (rows ?? []).length }, "email delivery event");
+        return (rows ?? []).length > 0;
+      },
+    );
+    if (outcome.duplicate) return { received: true, duplicate: true };
+    return { received: true, applied: outcome.result };
   },
 );

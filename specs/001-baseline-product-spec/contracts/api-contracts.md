@@ -96,9 +96,10 @@ Application-owned auth-adjacent endpoints: `POST /api/webhooks/clerk`
 | GET | `/users/me/preferences` | ✅ | preferences, notificationPreferences, securityPreferences |
 | PATCH | `/users/me/preferences` | ✅ | Update any of the three preference objects; `securityPreferences.idleTimeoutMinutes ∈ {15,30,60,240,null}` |
 | POST | `/users/me/onboarding/complete` | ✅ | Marks onboarding complete |
-| GET | `/users/me/export` | ✅+re-auth | Export all user data as JSON (profile, beneficiaries, assets with decrypted sensitive fields, document metadata, plans + versions, confirmed AI drafts, own audit rows) |
-| DELETE | `/users/me` | ✅+re-auth | Request account deletion (`confirmed: true`; 30-day grace; sessions revoked; DMS paused) |
-| POST | `/users/me/cancel-deletion` | ✅ | Cancel pending deletion |
+| GET | `/users/me/export?format=json\|xlsx\|csv` | ✅+re-auth | Export all user data (profile, beneficiaries, assets with decrypted sensitive fields, document and video metadata, attachments, plans + versions, AI drafts with decrypted analyses, AI usage, Dead Man's Switch with contacts and check-in history, emergency contacts and requests, access links without hashes, notifications, every own audit row, and deleted rows still retained). `json` (default): the envelope with raw rows. `xlsx`: Excel workbook, one sheet per category (`application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`). `csv`: ZIP of one UTF-8 CSV per sheet plus `README.txt` (`application/zip`). Files are attachments named `legacyvault-export-YYYY-MM-DD.xlsx` / `-csv.zip`, `Cache-Control: private, no-store`. Spreadsheets leave out internal ids, storage locations and key ids, and list deleted rows on their own sheet; file contents and identification details are never included. Every list is read in pages of 1,000. Unknown format or extra parameter → 422. Audited with format and counts only |
+| DELETE | `/users/me` | ✅+re-auth | Schedule account deletion (`confirmed: true`; 30-day grace; sessions revoked; DMS paused; access links revoked). After the grace period housekeeping starts the same hard delete as `delete-now`. 409 when already scheduled |
+| POST | `/users/me/cancel-deletion` | ✅ | Cancel a scheduled deletion. 409 when none is scheduled or the deletion has already begun |
+| POST | `/users/me/delete-now` | ✅+re-auth (`multi_factor`) | Delete the account permanently now — no grace period. Body `{ "confirmation": "DELETE PERMANENTLY" }` (strict; no account id is accepted). Access closes at once; answers `{ status: "DELETED" }` when storage, Clerk identity and rows are gone, or `{ status: "CLEANUP_PENDING" }` when the queued `user.hard-delete` job is finishing it (migration 0012) |
 
 ---
 
@@ -121,7 +122,7 @@ Application-owned auth-adjacent endpoints: `POST /api/webhooks/clerk`
 ### Key Validations
 - Email uniqueness per user (409)
 - Lifecycle per Clarifications 2026-09-18; INACTIVE beneficiaries cannot receive assignments or tokens (422)
-- All changes audited with previous/new values
+- All changes audited: the changed fields, with values only for non-personal state (status, lifecycle timestamps); personal values are withheld as `[protected]` (2026-10-15, `diffForAudit`)
 
 ---
 
@@ -403,7 +404,7 @@ exchanges the token and removes it from the URL (`history.replaceState`).
 | GET/POST | `/api/internal/cron/run-jobs` | `Authorization: Bearer $CRON_SECRET` | Drain due jobs (every 5 min) |
 | GET/POST | `/api/internal/cron/dms-scan` | `CRON_SECRET` | Enqueue **one** idempotent `dms.scan` job (hourly; `idempotency_key = dms.scan:{YYYY-MM-DDTHH}` — duplicate Vercel Cron / `pg_cron` triggers are no-ops). The job handler performs the scan and enqueues per-switch transition jobs; its SUCCEEDED `finished_at` is the scheduler heartbeat used by the health check |
 | GET/POST | `/api/internal/cron/housekeeping` | `CRON_SECRET` | Expiry/timeout sweeps, abandoned-upload cleanup, retention purges, deletion grace (daily) |
-| GET | `/api/v1/health` | ❌ | Public: `{ status: "ok"|"degraded" }` only. With `Authorization: Bearer $CRON_SECRET` or Super Admin session: `{ status, database, storage, jobs: { lastRunAgeSeconds }, dmsScan }` |
+| GET | `/api/v1/health` | ❌ | Public: `{ status: "ok"|"degraded"|"down" }` only. With `Authorization: Bearer $CRON_SECRET` or Super Admin session: `{ status, database, storage, jobs: { lastRunAgeSeconds }, dmsScan, housekeeping: { lastSuccessAgeSeconds }, failures: { deadJobs24h, webhookFailures24h, overduePurges }, scheduler: { configured, lastSuccessAgeSeconds, failedResponses } }`. A stale housekeeping run (> 36 h), any recent failure, or a database scheduler without recent positive evidence degrades the status; none of them makes it `down` |
 
 Internal endpoints are excluded from Clerk protection in `proxy.ts`, verify
 their own credentials on **every request** (`withApi({ auth:'cron' })` —

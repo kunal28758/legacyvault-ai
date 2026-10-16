@@ -1,5 +1,5 @@
-/* Gradient utilities (task T011). Blue carries the brand; violet appears only
-   in the `-ai` gradients, which mark AI features. */
+/* Gradient utilities (task T011). Blue carries trust and action; violet appears
+   only in the `-ai` gradients, which mark AI features. */
 @utility text-gradient-brand {
   background-image: linear-gradient(
     100deg,
@@ -27,16 +27,23 @@
   background-image: linear-gradient(135deg, var(--brand-blue), var(--brand-purple-strong));
 }
 
+/* Page wash: three faint washes — blue (trust) at the top, purple (AI) to the
+   right, green (protection) low on the left — so no single hue dominates. */
 @utility bg-gradient-surface {
   background-image:
     radial-gradient(
-      70% 55% at 50% -12%,
-      color-mix(in oklch, var(--brand-blue) 16%, transparent),
+      70% 50% at 30% -14%,
+      color-mix(in oklch, var(--brand-blue) 10%, transparent),
       transparent 70%
     ),
     radial-gradient(
-      40% 40% at 92% 6%,
-      color-mix(in oklch, var(--brand-purple) 9%, transparent),
+      40% 40% at 94% 8%,
+      color-mix(in oklch, var(--brand-purple) 8%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      45% 35% at 0% 70%,
+      color-mix(in oklch, var(--success) 5%, transparent),
       transparent 70%
     ),
     linear-gradient(180deg, var(--background), var(--background));

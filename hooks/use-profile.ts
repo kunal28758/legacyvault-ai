@@ -3,7 +3,7 @@
 import { useCallback } from "react";
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 
-import { apiClient } from "@/lib/client/api-client";
+import { apiClient, type DownloadedFile } from "@/lib/client/api-client";
 import { queryKeys } from "@/lib/client/query-keys";
 
 /** The application profile that mirrors Clerk plus the app-owned fields. */
@@ -109,17 +109,24 @@ export interface DeletionState {
   deletesAt: string | null;
 }
 
+export type ExportFormat = "xlsx" | "csv" | "json";
+
 /**
  * Account-level actions (api-contracts.md § Users).
  *
  * The export is a bare async function, not a query: it returns every decrypted
  * sensitive field the account holds, and that must not sit in a cache. The
- * caller hands the payload straight to a download and lets it go.
+ * caller hands the file straight to a download and lets it go.
  */
-export function useExportMyData(): () => Promise<unknown> {
-  return useCallback(async () => {
+export function useExportMyData(): (format: ExportFormat) => Promise<DownloadedFile> {
+  return useCallback(async (format: ExportFormat) => {
+    if (format !== "json") {
+      const { data } = await apiClient.download("/users/me/export", { query: { format } });
+      return data;
+    }
     const { data } = await apiClient.get<unknown>("/users/me/export");
-    return data;
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    return { blob, filename: null };
   }, []);
 }
 
@@ -132,6 +139,22 @@ export function useRequestAccountDeletion() {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.users.me() });
+    },
+  });
+}
+
+export interface ImmediateDeletionResult {
+  status: "DELETED" | "CLEANUP_PENDING";
+}
+
+/** Permanent deletion with no grace period; the phrase is checked again server-side. */
+export function useDeleteAccountNow() {
+  return useMutation({
+    mutationFn: async (confirmation: string) => {
+      const { data } = await apiClient.post<ImmediateDeletionResult>("/users/me/delete-now", {
+        confirmation,
+      });
+      return data;
     },
   });
 }

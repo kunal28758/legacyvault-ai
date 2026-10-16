@@ -91,6 +91,12 @@ export interface ApiResult<T> {
   meta?: ApiMeta;
 }
 
+/** A file the server sent as an attachment (`apiClient.download`). */
+export interface DownloadedFile {
+  blob: Blob;
+  filename: string | null;
+}
+
 function buildUrl(path: string, query?: RequestOptions["query"]): string {
   const normalized = path.startsWith("/") ? path : `/${path}`;
   const url = normalized.startsWith(API_BASE_PATH) ? normalized : `${API_BASE_PATH}${normalized}`;
@@ -120,6 +126,7 @@ async function request<T>(
   method: string,
   path: string,
   options: RequestOptions = {},
+  asFile = false,
 ): Promise<ApiResult<T>> {
   const headers: Record<string, string> = {
     Accept: "application/json",
@@ -156,6 +163,12 @@ async function request<T>(
 
   let envelope: ApiEnvelope<T> | undefined;
   const contentType = response.headers.get("Content-Type") ?? "";
+  // Errors still arrive as JSON envelopes and are handled below.
+  if (asFile && response.ok && !contentType.includes("application/json")) {
+    const filename = /filename="([^"]+)"/.exec(response.headers.get("Content-Disposition") ?? "");
+    const file: DownloadedFile = { blob: await response.blob(), filename: filename?.[1] ?? null };
+    return { data: file as T, meta: correlationId ? { correlationId } : undefined };
+  }
   if (contentType.includes("application/json")) {
     try {
       envelope = (await response.json()) as ApiEnvelope<T>;
@@ -198,6 +211,9 @@ async function request<T>(
 export const apiClient = {
   get: <T>(path: string, options?: Omit<RequestOptions, "body">) =>
     request<T>("GET", path, options),
+  /** GET a file attachment; failures throw the same typed errors as `get`. */
+  download: (path: string, options?: Omit<RequestOptions, "body">) =>
+    request<DownloadedFile>("GET", path, options, true),
   post: <T>(path: string, body?: unknown, options?: Omit<RequestOptions, "body">) =>
     request<T>("POST", path, { ...options, body }),
   patch: <T>(path: string, body?: unknown, options?: Omit<RequestOptions, "body">) =>

@@ -34,6 +34,54 @@ export async function markSucceeded(serviceDb: TypedSupabaseClient, id: string):
 }
 
 /**
+ * A RUNNING job older than this belongs to a runner that died: the run-jobs
+ * route is stopped at 300 s, so no live invocation holds a job this long.
+ */
+const ABANDONED_AFTER_MS = 15 * 60 * 1000;
+
+/**
+ * Takes back jobs a dead runner left RUNNING (a killed or crashed invocation):
+ * to the queue, or to DEAD once their attempts are spent. Without this they
+ * would stay RUNNING for ever — a purge never retried, a delivery lost. Every
+ * handler is idempotent (deliveries carry provider idempotency keys).
+ */
+export async function recoverAbandoned(
+  serviceDb: TypedSupabaseClient,
+  now = new Date(),
+): Promise<number> {
+  const cutoff = new Date(now.getTime() - ABANDONED_AFTER_MS).toISOString();
+  const { data, error } = await serviceDb
+    .from("jobs")
+    .select("id, attempts, max_attempts")
+    .eq("status", "RUNNING")
+    .lt("locked_at", cutoff)
+    .limit(100);
+  if (error) throw error;
+  const abandoned = data ?? [];
+  const lastError = "abandoned: the runner stopped while this job was running";
+  const groups = [
+    {
+      ids: abandoned.filter((job) => job.attempts < job.max_attempts).map((job) => job.id),
+      update: { status: "QUEUED" as const },
+    },
+    {
+      ids: abandoned.filter((job) => job.attempts >= job.max_attempts).map((job) => job.id),
+      update: { status: "DEAD" as const, finished_at: now.toISOString() },
+    },
+  ];
+  for (const { ids, update } of groups) {
+    if (ids.length === 0) continue;
+    const { error: updateError } = await serviceDb
+      .from("jobs")
+      .update({ ...update, locked_at: null, locked_by: null, last_error: lastError })
+      .in("id", ids)
+      .eq("status", "RUNNING");
+    if (updateError) throw updateError;
+  }
+  return abandoned.length;
+}
+
+/**
  * Returns a job to the queue, or gives up once it has used its attempts.
  *
  * The retry is delayed by an exponential back-off so a failing dependency is

@@ -46,11 +46,16 @@ export const accessDeliverHandler: JobHandler = async (job, db) => {
 
   const { data: owner, error: ownerError } = await db
     .from("users")
-    .select("name, email")
+    .select("name, email, deleted_at")
     .eq("id", beneficiary.user_id)
     .maybeSingle();
   if (ownerError) throw ownerError;
   if (!owner) throw new Error("owner not found for access delivery");
+  if (owner.deleted_at) {
+    // Deleted while this was queued (0012): nothing may be granted any more.
+    logger.info({ jobId: job.id }, "access delivery skipped: owner account is deleted");
+    return;
+  }
 
   const switchId = typeof payload.switchId === "string" ? payload.switchId : null;
   const requestId = typeof payload.requestId === "string" ? payload.requestId : null;

@@ -4,6 +4,7 @@ import { Hero } from "./_components/hero";
 import {
   Capabilities,
   CtaSection,
+  Faq,
   FeatureShowcase,
   HowItWorks,
   SecurityLayers,
@@ -25,6 +26,7 @@ export default async function HomePage() {
       <HowItWorks />
       <FeatureShowcase />
       <SecurityLayers />
+      <Faq />
       <CtaSection />
     </>
   );

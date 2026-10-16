@@ -20,10 +20,10 @@ import {
 import { cn } from "@/lib/utils";
 
 const links = [
-  { href: "#capabilities", label: "Capabilities" },
-  { href: "#how-it-works", label: "How it works" },
-  { href: "#security", label: "Security" },
-  { href: "#showcase", label: "Product" },
+  { href: "/#capabilities", label: "Capabilities" },
+  { href: "/#how-it-works", label: "How it works" },
+  { href: "/#security", label: "Security" },
+  { href: "/#faq", label: "FAQ" },
 ];
 
 /** Signed-out call to action; also the pre-hydration state so nothing shifts. */

@@ -81,6 +81,15 @@
   background: color-mix(in oklch, currentColor 12%, transparent);
 }
 
+/* Without blur a translucent surface lets busy content show through: the same
+   solid fallback covers browsers that cannot blur and people who ask for it. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass,
+  .glass-strong {
+    background: var(--surface-raised);
+  }
+}
+
 @media (prefers-reduced-transparency: reduce) {
   .glass,
   .glass-strong {

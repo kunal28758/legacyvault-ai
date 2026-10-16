@@ -163,14 +163,20 @@ describe("log and audit redaction", () => {
     expect(serialized).toContain("Priya");
   });
 
-  it("diffs only changed keys and masks sensitive ones", () => {
+  it("diffs only changed keys, masks sensitive ones and withholds personal values", () => {
     const diff = diffForAudit(
-      { name: "Old", phone: "111", accountNumber: "1111" },
-      { name: "New", phone: "111", accountNumber: "2222" },
+      { name: "Old", phone: "111", accountNumber: "1111", status: "PENDING" },
+      { name: "New", phone: "222", accountNumber: "2222", status: "ACTIVE" },
     );
-    expect(diff.changed.sort()).toEqual(["accountNumber", "name"]);
-    expect(diff.previous.name).toBe("Old");
+    expect(diff.changed.sort()).toEqual(["accountNumber", "name", "phone", "status"]);
+    expect(diff.previous.name).toBe("[protected]");
+    expect(diff.next.phone).toBe("[protected]");
     expect(diff.next.accountNumber).toBe("[encrypted]");
-    expect(JSON.stringify(diff)).not.toContain("2222");
+    // Non-personal state changes keep their values for investigations.
+    expect(diff.previous.status).toBe("PENDING");
+    expect(diff.next.status).toBe("ACTIVE");
+    for (const value of ["Old", "New", "111", "222", "2222"]) {
+      expect(JSON.stringify(diff)).not.toContain(value);
+    }
   });
 });

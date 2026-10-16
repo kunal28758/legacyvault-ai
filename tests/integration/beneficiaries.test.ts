@@ -130,6 +130,38 @@ describe.skipIf(!available)("beneficiaries — Class A writes", () => {
       (row) => (row.metadata as Record<string, unknown> | null)?.source === "db_trigger",
     );
     expect(trigger?.action).toBe("beneficiaries.row_changed");
+
+    // 0013: the row says which fields changed, never their personal values.
+    const metadata = trigger?.metadata as {
+      changed: string[];
+      previous: Record<string, unknown>;
+      new: Record<string, unknown>;
+    };
+    expect(metadata.changed).toEqual(expect.arrayContaining(["name", "phone"]));
+    expect(metadata.previous.name).toBe("[protected]");
+    expect(metadata.new.phone).toBe("[protected]");
+    const serialized = JSON.stringify(rows);
+    for (const value of ["Priya", "+91 90000 00000", "priya@example.com", "Spouse"]) {
+      expect(serialized).not.toContain(value);
+    }
+  });
+
+  it("keeps the values of non-personal state changes in the trigger row", async () => {
+    const created = await beneficiaryRepository.insert(alice, aliceId, seed());
+    const service = createServiceScopedClient();
+    const { error } = await service
+      .from("beneficiaries")
+      .update({ status: "ACTIVE" })
+      .eq("id", created.id);
+    expect(error).toBeNull();
+
+    const { data: rows } = await service
+      .from("audit_log")
+      .select("action, metadata")
+      .eq("resource_id", created.id)
+      .eq("action", "beneficiaries.row_changed");
+    const metadata = rows?.at(-1)?.metadata as { new: Record<string, unknown> } | undefined;
+    expect(metadata?.new.status).toBe("ACTIVE");
   });
 
   it("stamps invitedAt only through the service client", async () => {

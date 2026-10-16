@@ -74,8 +74,38 @@ export function redactForAudit(value: unknown, depth = 0): unknown {
 }
 
 /**
+ * Fields a diff records the values of. Every other changed field is still
+ * listed in `changed`, but its value is withheld: an audit row says what
+ * changed and when without keeping personal content (names, contact
+ * details, addresses, notes) after the record, or the account, is gone.
+ * An allowlist, so a new personal field is withheld by default.
+ */
+const DIFF_VALUE_KEYS = new Set([
+  "status",
+  "role",
+  "deletedAt",
+  "deleted_at",
+  "invitedAt",
+  "invited_at",
+  "activatedAt",
+  "activated_at",
+  "onboardingCompletedAt",
+  "onboarding_completed_at",
+  "emailVerified",
+  "email_verified",
+  "mfaEnabled",
+  "mfa_enabled",
+  "preferences",
+  "notificationPreferences",
+  "notification_preferences",
+  "securityPreferences",
+  "security_preferences",
+]);
+
+/**
  * Builds a redacted before/after diff for the audit metadata.
- * Only changed keys are included, and sensitive ones are reduced to a marker.
+ * Only changed keys are included; sensitive ones are reduced to a marker and
+ * personal ones are withheld (`DIFF_VALUE_KEYS`).
  */
 export function diffForAudit(
   before: Record<string, unknown> | null | undefined,
@@ -94,6 +124,9 @@ export function diffForAudit(
     if (REDACTED_KEYS.has(key)) {
       previous[key] = "[encrypted]";
       next[key] = "[encrypted]";
+    } else if (!DIFF_VALUE_KEYS.has(key)) {
+      previous[key] = "[protected]";
+      next[key] = "[protected]";
     } else {
       previous[key] = redactForAudit(from);
       next[key] = redactForAudit(to);

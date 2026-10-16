@@ -88,11 +88,32 @@ export const updatePreferencesSchema = z
   .strict()
   .refine((value) => Object.keys(value).length > 0, "Provide at least one preference group");
 
+/** Days between a scheduled deletion request and the permanent deletion. */
+export const ACCOUNT_DELETION_GRACE_DAYS = 30;
+
 /** Deletion is confirmed explicitly, and acknowledged in the dialog (FR-B011). */
 export const deleteAccountSchema = z.object({
   confirmed: z.literal(true, { error: "Confirm this deletion to continue." }),
 });
 
+/** What the owner types to delete permanently, now, with no grace period. */
+export const DELETE_NOW_PHRASE = "DELETE PERMANENTLY";
+
+export const deleteAccountNowSchema = z
+  .object({
+    confirmation: z.literal(DELETE_NOW_PHRASE, {
+      error: `Type ${DELETE_NOW_PHRASE} to confirm.`,
+    }),
+  })
+  .strict();
+
+/** `GET /users/me/export?format=` — JSON stays the default for API callers. */
+export const exportQuerySchema = z
+  .object({ format: z.enum(["json", "xlsx", "csv"]).default("json") })
+  .strict();
+
 export type DeleteAccountBody = z.infer<typeof deleteAccountSchema>;
+export type DeleteAccountNowBody = z.infer<typeof deleteAccountNowSchema>;
+export type ExportQuery = z.infer<typeof exportQuerySchema>;
 export type UpdateProfileBody = z.infer<typeof updateProfileSchema>;
 export type UpdatePreferencesBody = z.infer<typeof updatePreferencesSchema>;

@@ -38,11 +38,16 @@ export const notificationDeliverHandler: JobHandler = async (job, db) => {
 
   const { data: user, error } = await db
     .from("users")
-    .select("email, notification_preferences")
+    .select("email, notification_preferences, deleted_at")
     .eq("id", notification.user_id)
     .maybeSingle();
   if (error) throw error;
   if (!user) throw new Error("user not found for notification delivery");
+  // A deleted account gets no more email; the row goes with the hard delete.
+  if (user.deleted_at) {
+    logger.info({ jobId: job.id }, "notification email skipped: account is deleted");
+    return;
+  }
 
   const decision = shouldEmailNotification(
     notification.type,

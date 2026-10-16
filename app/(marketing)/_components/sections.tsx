@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   ArrowRight,
   CheckCircle2,
+  ChevronDown,
   Coins,
   FileLock2,
   Fingerprint,
@@ -114,7 +115,7 @@ export function Capabilities() {
   return (
     <section id="capabilities" className="mx-auto w-full max-w-6xl scroll-mt-24 px-6 py-20">
       <Reveal className="mx-auto max-w-2xl text-center">
-        <p className="text-xs font-semibold tracking-[0.2em] text-primary uppercase">
+        <p className="text-xs font-semibold tracking-[0.2em] text-muted-foreground uppercase">
           Key capabilities
         </p>
         <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
@@ -197,19 +198,27 @@ export function HowItWorks() {
     >
       <div className="mx-auto w-full max-w-6xl px-6">
         <Reveal className="max-w-2xl">
-          <p className="text-xs font-semibold tracking-[0.2em] text-primary uppercase">
+          <p className="text-xs font-semibold tracking-[0.2em] text-muted-foreground uppercase">
             How LegacyVault works
           </p>
           <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
             Five steps from scattered information to a protected legacy
           </h2>
         </Reveal>
-        <ol className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          {steps.map((step, index) => (
-            <Reveal key={step.title} delay={index * 0.08}>
-              <li className="group relative flex h-full flex-col gap-4 rounded-2xl border border-glass-border bg-background/40 p-5 transition-colors duration-300 hover:border-primary/35">
+        <Reveal>
+          <ol className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            {steps.map((step, index) => (
+              <li
+                key={step.title}
+                className="group relative flex h-full flex-col gap-4 rounded-2xl border border-glass-border bg-background/40 p-5 transition-colors duration-300 hover:border-primary/35"
+              >
                 <div className="flex items-center justify-between">
-                  <span className="relative flex size-11 items-center justify-center rounded-xl bg-gradient-brand text-primary-foreground shadow-cta transition-transform duration-300 group-hover:scale-105">
+                  <span
+                    className={cn(
+                      "icon-tile size-11 rounded-xl",
+                      index === steps.length - 1 ? "text-success" : "text-primary",
+                    )}
+                  >
                     <step.icon className="size-5" aria-hidden />
                   </span>
                   <span className="font-heading text-3xl font-semibold text-foreground/10 tabular-nums">
@@ -221,9 +230,9 @@ export function HowItWorks() {
                   <p className="mt-2 text-sm leading-6 text-muted-foreground">{step.description}</p>
                 </div>
               </li>
-            </Reveal>
-          ))}
-        </ol>
+            ))}
+          </ol>
+        </Reveal>
       </div>
     </section>
   );
@@ -407,7 +416,7 @@ export function FeatureShowcase() {
   return (
     <section id="showcase" className="mx-auto w-full max-w-6xl scroll-mt-24 px-6 py-20">
       <Reveal className="max-w-2xl">
-        <p className="text-xs font-semibold tracking-[0.2em] text-primary uppercase">
+        <p className="text-xs font-semibold tracking-[0.2em] text-muted-foreground uppercase">
           Feature showcase
         </p>
         <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
@@ -496,7 +505,7 @@ export function SecurityLayers() {
     >
       <div className="mx-auto grid w-full max-w-6xl gap-12 px-6 lg:grid-cols-2 lg:items-center">
         <Reveal>
-          <p className="text-xs font-semibold tracking-[0.2em] text-primary uppercase">
+          <p className="text-xs font-semibold tracking-[0.2em] text-muted-foreground uppercase">
             Security & trust
           </p>
           <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
@@ -522,7 +531,6 @@ export function SecurityLayers() {
           </ul>
         </Reveal>
         <Reveal delay={0.1} className="relative mx-auto aspect-square w-full max-w-md">
-          <div aria-hidden className="absolute inset-0 rounded-full bg-brand-blue/10 blur-3xl" />
           <svg
             viewBox="0 0 400 400"
             className="relative size-full"
@@ -536,16 +544,10 @@ export function SecurityLayers() {
                   cy="200"
                   r={r}
                   fill="none"
-                  stroke={index % 2 === 0 ? "var(--brand-blue)" : "var(--brand-cyan)"}
-                  strokeOpacity={0.35 + index * 0.1}
+                  stroke={index === 4 ? "var(--success)" : "var(--brand-blue)"}
+                  strokeOpacity={0.3 + index * 0.12}
                   strokeWidth={index === 4 ? 2 : 1.25}
                   strokeDasharray={index % 2 === 0 ? "6 8" : undefined}
-                  className={cn(
-                    index % 2 === 0
-                      ? "origin-center animate-[spin_40s_linear_infinite]"
-                      : "origin-center animate-[spin_60s_linear_infinite_reverse]",
-                    "motion-reduce:animate-none",
-                  )}
                 />
                 <text
                   x="200"
@@ -598,23 +600,19 @@ export function CtaSection() {
     <section className="mx-auto w-full max-w-6xl px-6 py-20">
       <Reveal>
         <div className="glass-highlight relative overflow-hidden rounded-3xl p-10 glass-strong sm:p-14">
-          <div aria-hidden className="orb -top-24 -right-16 h-72 w-72 bg-brand-blue" />
           <div className="relative grid gap-8 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
             <div>
               <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
                 Start your legacy plan today
               </h2>
               <p className="mt-4 max-w-xl text-muted-foreground">
-                The first draft takes about ten minutes. Everything stays private, encrypted and
-                under your control — finalize only when you are ready.
+                Start with the essentials and finish at your own pace. Drafts save automatically,
+                and nothing is final until you confirm it.
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                 <Link
                   href="/sign-up"
-                  className={cn(
-                    buttonVariants({ size: "lg" }),
-                    "h-12 px-6 text-base shadow-glow-blue",
-                  )}
+                  className={cn(buttonVariants({ size: "lg" }), "h-12 px-6 text-base")}
                 >
                   Create Your Legacy Plan
                   <ArrowRight className="size-4" aria-hidden />
@@ -632,9 +630,9 @@ export function CtaSection() {
             </div>
             <ul className="space-y-3 text-sm">
               {[
-                "No credit card required to start a plan",
                 "Beneficiaries never need an account",
-                "Export or delete your data at any time",
+                "Re-verification before every sensitive action",
+                "Export your data, or delete your account, at any time",
               ].map((item) => (
                 <li
                   key={item}
@@ -648,6 +646,70 @@ export function CtaSection() {
           </div>
         </div>
       </Reveal>
+    </section>
+  );
+}
+
+/* ── FAQ ───────────────────────────────────────────────────────────────────── */
+
+const faqs = [
+  {
+    question: "Who can see what I store?",
+    answer:
+      "Only you. Files sit in private storage and are served through short-lived signed links after your access is checked; sensitive fields such as account numbers are encrypted before they are stored. A beneficiary sees only what you shared with them, through a scoped, expiring link.",
+  },
+  {
+    question: "Do my beneficiaries need an account?",
+    answer:
+      "No. They receive a time-limited, revocable access link by email when you share something or when your release conditions are met.",
+  },
+  {
+    question: "What happens if I stop checking in?",
+    answer:
+      "If you turn on the Dead Man’s Switch, missed check-ins lead to reminders, a grace period and escalation to your trusted contacts before anything is released — and you can recover at every stage with re-verification.",
+  },
+  {
+    question: "Does the AI change my plan on its own?",
+    answer:
+      "No. AI suggestions are labelled as such and nothing it drafts is saved to your plan, assets or beneficiaries until you review and confirm it.",
+  },
+  {
+    question: "Can I delete my account?",
+    answer:
+      "Yes, in Settings. Schedule deletion with a 30-day grace period you can cancel, or delete everything permanently straight away. You can export your data first.",
+  },
+  {
+    question: "Is this legal advice?",
+    answer:
+      "No. LegacyVault AI helps you organize and protect information. It is not a law firm and does not guarantee the legal validity of any document.",
+  },
+];
+
+export function Faq() {
+  return (
+    <section id="faq" className="mx-auto w-full max-w-3xl scroll-mt-24 px-6 py-20">
+      <Reveal>
+        <p className="text-xs font-semibold tracking-[0.2em] text-muted-foreground uppercase">
+          Questions
+        </p>
+        <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
+          Frequently asked questions
+        </h2>
+      </Reveal>
+      <div className="mt-10 divide-y divide-border border-y border-border">
+        {faqs.map((faq) => (
+          <details key={faq.question} className="group py-1">
+            <summary className="flex list-none items-center justify-between gap-4 rounded-md py-4 font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+              {faq.question}
+              <ChevronDown
+                className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180 motion-reduce:transition-none"
+                aria-hidden
+              />
+            </summary>
+            <p className="pb-5 text-sm leading-6 text-muted-foreground">{faq.answer}</p>
+          </details>
+        ))}
+      </div>
     </section>
   );
 }

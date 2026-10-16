@@ -4,9 +4,10 @@ import { withApi } from "@/lib/api/with-api";
 import { ApiError } from "@/lib/api/errors";
 import { audit } from "@/lib/audit/audit.service";
 import * as jobRepository from "@/lib/repositories/job.repository";
+import { processWebhookOnce } from "@/lib/repositories/webhook.repository";
 import { ensureAppUser } from "@/lib/auth/ensure-app-user";
 import { getEnvGroup } from "@/lib/config/env";
-import { createServiceClient } from "@/lib/db/server";
+import { createServiceClient, type TypedSupabaseClient } from "@/lib/db/server";
 import { logger } from "@/lib/observability/logger";
 
 /**
@@ -19,7 +20,9 @@ import { logger } from "@/lib/observability/logger";
  * Security properties, in order:
  *  1. the Svix signature is verified over the RAW body before anything is
  *     parsed — an invalid signature returns 401 with no side effects;
- *  2. `record_webhook_event()` makes replays a no-op (unique on provider+id);
+ *  2. `record_webhook_event()` makes replays a no-op (unique on provider+id),
+ *     and a delivery whose processing fails is forgotten so the retry runs it
+ *     (`processWebhookOnce`); every case below is idempotent;
  *  3. the browser CSRF check does not apply (no cookies; authenticated per
  *     request by signature) — `withApi` handles that distinction.
  */
@@ -94,112 +97,117 @@ export const POST = withApi(
     const event = (await request.json()) as ClerkWebhookEvent;
     const db = createServiceClient();
 
-    // Idempotency: a duplicate delivery returns false and we stop here.
-    const { data: isNew, error } = await db.rpc("record_webhook_event", {
-      p_provider: "CLERK",
-      p_event_id: svixId,
-      p_event_type: event.type,
-    });
-    if (error) throw error;
-    if (!isNew) {
+    // Idempotency: a duplicate delivery is acknowledged and ignored; one whose
+    // processing fails is forgotten, so Clerk's retry runs it.
+    const outcome = await processWebhookOnce(
+      db,
+      { provider: "CLERK", id: svixId, type: event.type },
+      () => handleEvent(db, event, correlationId, log),
+    );
+    if (outcome.duplicate) {
       log.info({ eventType: event.type }, "duplicate Clerk webhook ignored");
       return { received: true, duplicate: true };
     }
-
-    switch (event.type) {
-      case "user.created":
-      case "user.updated": {
-        const identity = identityFromWebhook(event.data);
-        if (!identity.email) {
-          log.warn({ eventType: event.type }, "Clerk user event without an email address");
-          break;
-        }
-        const appUser = await ensureAppUser(identity);
-        await audit.log({
-          actorId: appUser.id,
-          actorRole: appUser.role,
-          action: event.type === "user.created" ? "user.registered" : "user.mirrored",
-          resourceType: "users",
-          resourceId: appUser.id,
-          outcome: "SUCCESS",
-          metadata: { source: "clerk_webhook" },
-          correlationId,
-        });
-        break;
-      }
-
-      case "user.deleted": {
-        // Soft delete: audit rows and legally significant records are retained;
-        // the hard delete runs after the grace period (T189).
-        const { data: existing } = await db
-          .from("users")
-          .select("id")
-          .eq("clerk_user_id", event.data.id)
-          .maybeSingle();
-        if (existing) {
-          await db
-            .from("users")
-            .update({ deleted_at: new Date().toISOString() })
-            .eq("id", existing.id);
-          await audit.log({
-            actorId: existing.id,
-            action: "user.deleted",
-            resourceType: "users",
-            resourceId: existing.id,
-            outcome: "SUCCESS",
-            metadata: { source: "clerk_webhook" },
-            correlationId,
-          });
-        }
-        break;
-      }
-
-      case "session.created":
-      case "session.ended":
-      case "session.removed":
-      case "session.revoked": {
-        const { data: appUser } = await db
-          .from("users")
-          .select("id, role")
-          .eq("clerk_user_id", event.data.user_id)
-          .maybeSingle();
-        if (!appUser) break;
-
-        if (event.type === "session.created") {
-          await db
-            .from("users")
-            .update({ last_login_at: new Date().toISOString() })
-            .eq("id", appUser.id);
-        }
-
-        await audit.log({
-          actorId: appUser.id,
-          actorRole: appUser.role,
-          action: event.type === "session.created" ? "auth.login" : "auth.logout",
-          resourceType: "session",
-          resourceId: null,
-          outcome: "SUCCESS",
-          // Session id is an opaque Clerk identifier, not a credential.
-          metadata: { source: "clerk_webhook", event: event.type },
-          correlationId,
-        });
-        if (event.type === "session.created") {
-          // Detection runs in the queue: a slow identity provider must never
-          // delay a sign-in, and a duplicate webhook must not notify twice.
-          await jobRepository.enqueue(
-            db,
-            "security.new-device",
-            { userId: appUser.id, sessionId: event.data.id },
-            `security.new-device:${event.data.id}`,
-          );
-        }
-        break;
-      }
-
-      default:
-        logger.debug({ eventType: event.type }, "unhandled Clerk webhook event");
-    }
-
     return { received: true };
   },
 );
+
+async function handleEvent(
+  db: TypedSupabaseClient,
+  event: ClerkWebhookEvent,
+  correlationId: string,
+  log: Pick<typeof logger, "warn">,
+): Promise<void> {
+  switch (event.type) {
+    case "user.created":
+    case "user.updated": {
+      const identity = identityFromWebhook(event.data);
+      if (!identity.email) {
+        log.warn({ eventType: event.type }, "Clerk user event without an email address");
+        break;
+      }
+      const appUser = await ensureAppUser(identity);
+      await audit.log({
+        actorId: appUser.id,
+        actorRole: appUser.role,
+        action: event.type === "user.created" ? "user.registered" : "user.mirrored",
+        resourceType: "users",
+        resourceId: appUser.id,
+        outcome: "SUCCESS",
+        metadata: { source: "clerk_webhook" },
+        correlationId,
+      });
+      break;
+    }
+
+    case "user.deleted": {
+      // Deleted outside the app (Clerk's own account page or dashboard). Close
+      // the account exactly as the app does — access links revoked, Dead
+      // Man's Switch and emergency access stopped, one `user.deleted` audit —
+      // but keep the data: whether such a deletion also erases it is an open
+      // decision (docs/release/ACCOUNT_DELETION_READINESS.md § 6). After an
+      // in-app deletion the account is already deleted (or gone) and this
+      // changes nothing.
+      const { data: existing, error: lookupError } = await db
+        .from("users")
+        .select("id")
+        .eq("clerk_user_id", event.data.id)
+        .maybeSingle();
+      if (lookupError) throw lookupError;
+      if (existing) {
+        const { error: deleteError } = await db.rpc("begin_account_deletion", {
+          p_user_id: existing.id,
+          p_corr: correlationId,
+          p_purge: false,
+        });
+        if (deleteError) throw deleteError;
+      }
+      break;
+    }
+
+    case "session.created":
+    case "session.ended":
+    case "session.removed":
+    case "session.revoked": {
+      const { data: appUser } = await db
+        .from("users")
+        .select("id, role")
+        .eq("clerk_user_id", event.data.user_id)
+        .maybeSingle();
+      if (!appUser) break;
+
+      if (event.type === "session.created") {
+        await db
+          .from("users")
+          .update({ last_login_at: new Date().toISOString() })
+          .eq("id", appUser.id);
+      }
+
+      await audit.log({
+        actorId: appUser.id,
+        actorRole: appUser.role,
+        action: event.type === "session.created" ? "auth.login" : "auth.logout",
+        resourceType: "session",
+        resourceId: null,
+        outcome: "SUCCESS",
+        // Session id is an opaque Clerk identifier, not a credential.
+        metadata: { source: "clerk_webhook", event: event.type },
+        correlationId,
+      });
+      if (event.type === "session.created") {
+        // Detection runs in the queue: a slow identity provider must never
+        // delay a sign-in, and a duplicate webhook must not notify twice.
+        await jobRepository.enqueue(
+          db,
+          "security.new-device",
+          { userId: appUser.id, sessionId: event.data.id },
+          `security.new-device:${event.data.id}`,
+        );
+      }
+      break;
+    }
+
+    default:
+      logger.debug({ eventType: event.type }, "unhandled Clerk webhook event");
+  }
+}

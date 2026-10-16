@@ -19,6 +19,156 @@ Format: newest first. Categories: *Governance*, *Specification*,
 
 ## [Unreleased]
 
+### Excel and CSV export — 2026-10-16 (not deployed)
+
+- Added: Settings → Account → Your data offers an **Excel workbook** (primary),
+  **CSV files** (ZIP, one UTF-8 CSV per category plus a README) and the
+  existing **JSON** (now labelled advanced). `GET /users/me/export?format=`
+  `xlsx|csv|json`; JSON stays the default for API callers.
+- The workbook has 26 sheets in a fixed order: About, Profile,
+  Beneficiaries, three asset classes, Assignments, Documents, Document
+  versions, Document attachments, Folders, Video messages, Will plans, plan
+  content, plan history, Dead Man's Switch, Check-in history, Emergency
+  contacts, Emergency requests, Access links, AI analyses, AI drafts, AI
+  usage, Notifications, Account activity, Deleted items. Names replace ids,
+  labels replace enum codes, dates are real date cells, empty categories keep
+  their header row.
+- Coverage (also in JSON): AI document analyses are decrypted like asset
+  secrets; check-in history, Dead Man's Switch contacts, emergency requests,
+  access links (never their token or code hashes), attachments, AI usage, and
+  deleted rows still inside their retention window. Not exported, by design:
+  file contents, identification details (write-only), AI chats (not stored).
+- Safety: text is always a text cell in the workbook; CSV text starting with
+  `= + - @`, tab or CR is prefixed with `'`. Storage locations, key ids and
+  internal ids are never in the spreadsheets; file contents are not included,
+  and the About sheet says so. Built with the existing `fflate` dependency (no
+  new package).
+- Fixed: the export read at most 500 assets of each kind, and every other
+  list stopped at PostgREST's 1,000-row page without saying so (activity was
+  also capped at 1,000). Every list is now read in pages.
+- Changed: `shadcn` moved to `devDependencies` (the app only imports its CSS
+  at build time), so `pnpm audit --prod` reports 0. `braces` (GHSA-vfj7-8cjw-p6xm)
+  remains in dev tooling with no patched release.
+- Added: `tests/e2e/data-export.spec.ts`, a signed-in export journey.
+- Added: "Download your data (.xlsx)" in the account-deletion card, so a copy
+  can be taken before leaving.
+- Added: a solid-surface fallback for glass panels in browsers without
+  `backdrop-filter`.
+
+### Account deletion and landing redesign — 2026-10-14 (not deployed)
+
+- Fixed (2026-10-15): a job claimed by a run-jobs invocation that then died
+  (its 300 s limit, a crash) stayed `RUNNING` for ever. A purge would never
+  be retried; a release delivery would be lost. Each run now first takes such
+  jobs back: requeued, or `DEAD` once their attempts are spent
+  (`recoverAbandoned`, 15-minute lease). Production had none at the time.
+- Hardened (2026-10-15): `scripts/backup/backup-verify.sh`.
+  - Source checksums are taken just before and just after the dump, so a busy
+    database no longer fails a good backup; tables written to during the dump
+    are named.
+  - Staged `.partial` files mean a failed dump never leaves a file that looks
+    complete.
+  - Every dump is checked for its completion marker.
+  - The restore container has no network and no port.
+  - Hardening: `set +x`, `umask 077`, argument and disk checks, signal-safe
+    cleanup.
+  - 13 tests.
+- Release tooling (2026-10-15):
+  - `scripts/backup/backup-verify.sh` takes a gpg-encrypted logical backup
+    (AES-256, streamed: no plaintext on disk), then restore-tests it in a
+    throwaway container. Rehearsed locally: PASS, 28 tables.
+  - The preflight has 11 counts, adding migration prerequisites:
+    `targets_0013`, `dependencies_0014`, `scheduler_status_present`.
+- Dependencies (2026-10-15): scoped pnpm overrides lift
+  `@modelcontextprotocol/sdk` to 1.32.1 (GHSA-6qxp-vccf-f47h) and
+  `source-map-js` to 1.2.2 (GHSA-68fv-2mgg-jv7q). `braces` GHSA-vfj7-8cjw-p6xm
+  stays open: no patched release exists.
+- Tests (2026-10-15):
+  - `assessHealth()` makes every health transition unit-tested;
+  - the workflow's health step is tested against ok, degraded, down, a refused
+    call, an empty body and an HTML error page;
+  - `.gstack/` is in `.prettierignore`, so `pnpm format:check` exits 0.
+- Security (2026-10-15): Next.js 16.3.6 → **16.3.8**, with `@next/env` and
+  `eslint-config-next` to match. It fixes published advisories: a high SSRF in
+  Image Optimization, cache poisoning and information disclosure.
+  `pnpm audit --prod` goes from 8 advisories to 2. The 2 left (`braces` via
+  the `shadcn` CLI, the MCP SDK via `@google/genai`) are not reachable at
+  runtime.
+- Monitoring (2026-10-15): migration 0014 adds `scheduler_status()`.
+  - The operator health gains a `scheduler` component, so the GitHub Actions
+    fallback can no longer hide a dead database scheduler.
+  - The production-jobs workflow fails, and GitHub emails, when health is not
+    `ok`.
+- Tests (2026-10-15):
+  - the Clerk webhook fails closed (500, no side effect) without a signing
+    secret;
+  - the scheduler-boundary guard now pins exactly two `net`/`vault` paths.
+- Privacy (2026-10-15): new audit rows no longer keep personal values.
+  - Migration 0013 narrows the Class A trigger to non-personal state; changed
+    fields are still listed, values written as `[protected]`.
+  - `create_asset`/`delete_asset` no longer record the asset name.
+  - `diffForAudit` withholds values outside a non-personal allowlist.
+  - Admin actions no longer store the subject's email.
+  - Existing rows are untouched; their retention is an open owner decision.
+- Fixed (2026-10-15): a notification email queued before an account deletion
+  could still be sent to the deleted owner while the purge was pending. It is
+  now skipped.
+- Monitoring (2026-10-15): the operator health breakdown adds housekeeping
+  freshness and counts of dead jobs, failed webhook deliveries and overdue
+  purges in the last day. Any of them degrades the public status.
+- Fixed (2026-10-15): an account deleted **in Clerk** (Clerk's own *Delete
+  account*, reachable from the account menu while the instance allows
+  self-deletion, or the Clerk dashboard) was only marked deleted — its Dead
+  Man's Switch kept running and could tell trusted contacts a release had
+  started, and live access links and emergency requests stayed open. The
+  `user.deleted` webhook now goes through `begin_account_deletion()` (0012)
+  with `p_purge => false`: everything stops at once, the data is kept until
+  the owner decides whether Clerk-side deletions should also erase it.
+- Fixed (2026-10-15): webhook idempotency was at-most-once — the delivery id
+  was recorded before processing, so a delivery that failed was ignored as a
+  duplicate when Clerk or Resend retried it. A failed delivery is now
+  forgotten so the retry runs (`processWebhookOnce`).
+- **Delete account permanently now** (`POST /api/v1/users/me/delete-now`):
+  no grace period. Needs a session, a same-origin request, Clerk `strict_mfa`
+  re-verification (both factors within 10 minutes when the account has a
+  second factor) and the typed phrase `DELETE PERMANENTLY`. Migration 0012's
+  `begin_account_deletion()` closes access in one transaction — marks the
+  account deleted (RLS, guarded functions and `requireUser()` all refuse it,
+  including sessions issued earlier), revokes access links, stops the Dead
+  Man's Switch and emergency access, and queues the hard delete. The route then
+  runs the hard delete inline and answers `DELETED` or `CLEANUP_PENDING`; the
+  queued `user.hard-delete` job retries until it completes, and a second job
+  sweeps objects written later through an already-issued upload URL.
+- **Hard delete** (`purgeAccount`, T189): private storage (row keys and the
+  owner's prefixes, re-listed to prove nothing remains), then the Clerk user
+  (404 = already gone), then the account's documents and the `users` row,
+  which cascades to every domain table. `audit_log` is retained (data-model §
+  Retention); it can hold values entered in the account, such as names.
+- **Scheduled deletion now actually deletes**: housekeeping used to mark an
+  account deleted after its 30 days and keep every row, file and the Clerk
+  identity. It now calls `begin_account_deletion()` with the deadline, so the
+  same hard delete follows. Scheduling and cancelling are compare-and-set: a
+  repeat request cannot restart the grace period, and a cancellation that
+  loses the race with a deletion that began changes nothing.
+- Fixed: `document_versions.uploaded_by` (no ON DELETE action) made any
+  account that had uploaded a document impossible to delete by cascade.
+- Fixed (review): an `access.deliver` job for an emergency grant approved just
+  before deletion minted a new access link and emailed it while cleanup was
+  pending — it now skips a deleted owner. The hard delete's document-version
+  lookup is chunked (400 documents failed with "URI too long").
+- Fixed (release audit): the purge refuses an empty or path-like identifier
+  (an empty Clerk id would have listed — and swept — a bucket's root, i.e.
+  every account's folder); `security.new-device` no longer records device data
+  or alerts for a deleted account; a hard delete whose job ran out of attempts
+  is requeued once a day by housekeeping while the account row still exists.
+  Read-only release preflight: `scripts/account-deletion/preflight.sql`.
+- Settings → Account shows the two options side by side; a scheduled deletion
+  shows its exact date. `/account-deleted` explains the outcome truthfully.
+- Landing page: static, original hero illustration
+  (`public/images/legacy-hero.webp`, 42 KB) replaces the three.js scene —
+  `three`, `@react-three/fiber` and `@types/three` removed; quieter surfaces;
+  semantic blue/green/purple roles; FAQ; nav anchors work from every page.
+
 ### Production rollout — 2026-10-09
 
 - Released `39f7bfc`; migrations 0010 and 0011 applied (0010 first — the

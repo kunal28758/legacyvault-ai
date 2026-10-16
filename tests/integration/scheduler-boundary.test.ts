@@ -60,7 +60,7 @@ function sql(query: string): unknown {
   try {
     let out: string;
     try {
-      out = execSync(`pnpm exec supabase db query --local -f "${file}"`, {
+      out = execSync(`pnpm exec supabase db query --local --output json -f "${file}"`, {
         stdio: ["ignore", "pipe", "pipe"],
       }).toString();
     } catch (cause) {
@@ -68,10 +68,18 @@ function sql(query: string): unknown {
       const { stdout, stderr } = cause as { stdout?: Buffer; stderr?: Buffer };
       throw new Error(`${stdout?.toString() ?? ""}${stderr?.toString() ?? ""}`);
     }
-    const json = JSON.parse(out.slice(out.indexOf("{"), out.lastIndexOf("}") + 1)) as {
-      rows: Record<string, string>[];
-    };
-    return JSON.parse(Object.values(json.rows[0])[0]);
+
+    const json = JSON.parse(out) as Record<string, string>[] | { rows?: Record<string, string>[] };
+
+    const row = Array.isArray(json) ? json[0] : json.rows?.[0];
+
+    if (!row) {
+      throw new Error(
+        `Unexpected Supabase CLI query output; expected a result row. Full output:\n${out}`,
+      );
+    }
+
+    return JSON.parse(Object.values(row)[0]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -110,7 +118,9 @@ describe.skipIf(!available)("scheduler privilege boundary (0010)", () => {
       );
       expect(rpc.status, `${role} net.http_post`).toBe(406);
       // Not reachable by name from the exposed schema either.
-      const bare = await call("/rest/v1/rpc/http_post", headers, { url: "https://example.com" });
+      const bare = await call("/rest/v1/rpc/http_post", headers, {
+        url: "https://example.com",
+      });
       expect(bare.status, `${role} public http_post`).toBe(404);
     }
   });
@@ -164,7 +174,8 @@ describe.skipIf(!available)("scheduler privilege boundary (0010)", () => {
     };
 
     expect(catalog.graphql).toBe(false);
-    // Exactly one function reaches them, owner-only, with a pinned search path.
+    // Exactly two functions reach them, both with a pinned search path: the
+    // trigger (owner-only) and the read-only status (service role only, 0014).
     expect(catalog.functions).toEqual([
       {
         fn: "lv_trigger_scheduler(text)",
@@ -174,7 +185,21 @@ describe.skipIf(!available)("scheduler privilege boundary (0010)", () => {
         authenticated: false,
         service_role: false,
       },
+      {
+        fn: "scheduler_status()",
+        definer: true,
+        config: ['search_path=""'],
+        anon: false,
+        authenticated: false,
+        service_role: true,
+      },
     ]);
+    // The status reads Vault entry names only, never a decrypted value.
+    expect(
+      sql(
+        `select (prosrc ~* 'decrypted_secrets')::text as r from pg_proc where proname = 'scheduler_status';`,
+      ),
+    ).toBe(false);
     expect(catalog.views).toBe(0);
     expect(catalog.published).toBe(0);
     expect(catalog.cronUsage).toEqual([false, false, false]);
@@ -195,5 +220,46 @@ describe.skipIf(!available)("scheduler privilege boundary (0010)", () => {
     expect(() => sql(`select public.lv_trigger_scheduler('/api/v1/users/me')::text as r;`)).toThrow(
       /unknown scheduler route/,
     );
+  });
+
+  it("reports the database scheduler's state to the service role only, without values (0014)", async () => {
+    for (const [role, headers] of Object.entries(await roles())) {
+      const { status, payload } = await call("/rest/v1/rpc/scheduler_status", headers, {});
+      if (role === "service_role") {
+        expect(status, role).toBe(200);
+        expect(Object.keys(payload).sort(), role).toEqual([
+          "configured",
+          "failedResponses",
+          "lastSuccessAt",
+        ]);
+        expect(typeof payload.configured, role).toBe("boolean");
+      } else {
+        expect([401, 403], role).toContain(status);
+        expect(payload.code, role).toBe("42501");
+      }
+    }
+  });
+
+  it("counts a 2xx pg_net response as a success and anything else as a failure", () => {
+    // Far above any id pg_net assigns; removed again below.
+    const ids = [9_000_000_001, 9_000_000_002];
+    const before = sql(`select public.scheduler_status()::text as r;`) as {
+      failedResponses: number;
+    };
+    sql(
+      `with i as (insert into net._http_response (id, status_code, created) values (${ids[0]}, 200, now()), (${ids[1]}, 500, now()) returning id) select json_agg(id)::text as r from i;`,
+    );
+    try {
+      const after = sql(`select public.scheduler_status()::text as r;`) as {
+        lastSuccessAt: string | null;
+        failedResponses: number;
+      };
+      expect(after.lastSuccessAt).not.toBeNull();
+      expect(after.failedResponses).toBe(before.failedResponses + 1);
+    } finally {
+      sql(
+        `with d as (delete from net._http_response where id in (${ids.join(", ")}) returning id) select json_agg(id)::text as r from d;`,
+      );
+    }
   });
 });

@@ -8,10 +8,14 @@ import { useTheme } from "next-themes";
 import {
   AlertTriangle,
   Bell,
-  Download,
+  CalendarClock,
   ExternalLink,
+  FileArchive,
+  FileJson,
+  FileSpreadsheet,
   Fingerprint,
   KeyRound,
+  LockKeyhole,
   Monitor,
   Moon,
   Palette,
@@ -45,7 +49,9 @@ import { useClerkSessions } from "@/hooks/use-clerk-sessions";
 import { useNow } from "@/hooks/use-now";
 import {
   useCancelAccountDeletion,
+  useDeleteAccountNow,
   useExportMyData,
+  type ExportFormat,
   useProfile,
   useRefreshProfile,
   useRequestAccountDeletion,
@@ -54,6 +60,7 @@ import {
 } from "@/hooks/use-profile";
 import { isReverificationCancelled, useReverifiedAction } from "@/hooks/use-reverified-action";
 import { ApiError } from "@/lib/client/api-client";
+import { ACCOUNT_DELETION_GRACE_DAYS, DELETE_NOW_PHRASE } from "@/lib/validators/user.validators";
 
 /**
  * Preference defaults.
@@ -79,7 +86,7 @@ const DEFAULT_SECURITY = {
   loginNotifications: true,
   securityReviewReminder: true,
 } as const;
-import { formatRelative, initials } from "@/lib/format";
+import { formatDate, formatRelative, initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export interface SettingsUser {
@@ -114,11 +121,35 @@ export function SettingsView({
   const requested = searchParams.get("tab");
   const tab: Tab = TABS.includes(requested as Tab) ? (requested as Tab) : "profile";
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteNowOpen, setDeleteNowOpen] = useState(false);
+  const [deleteNowPhrase, setDeleteNowPhrase] = useState("");
   const exportMyData = useExportMyData();
   const requestDeletion = useRequestAccountDeletion();
   const cancelDeletion = useCancelAccountDeletion();
+  const deleteNow = useDeleteAccountNow();
+  const deletionRequestedAt = profile.data?.deletionRequestedAt ?? null;
+  const deletesAt = deletionRequestedAt
+    ? new Date(Date.parse(deletionRequestedAt) + ACCOUNT_DELETION_GRACE_DAYS * 86_400_000)
+    : null;
   const reverified = useReverifiedAction();
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState<ExportFormat | null>(null);
+
+  async function runExport(format: ExportFormat, title: string) {
+    setExporting(format);
+    try {
+      // Straight from the response to a download: the file holds decrypted
+      // fields and is never cached or stored.
+      const file = await reverified(() => exportMyData(format));
+      downloadFile(file.blob, file.filename ?? `legacyvault-export-${todayStamp()}.${format}`);
+      toast.success(`${title} downloaded`);
+    } catch (error) {
+      if (!isReverificationCancelled(error)) {
+        toast.error(error instanceof ApiError ? error.message : "Could not prepare your export.");
+      }
+    } finally {
+      setExporting(null);
+    }
+  }
 
   // Clerk owns two-factor enrolment; this reads its live, authoritative state
   // and opens its own UI for changes. The mirror the dashboard/security score
@@ -629,40 +660,67 @@ export function SettingsView({
             <CardHeader>
               <CardTitle className="text-base">Your data</CardTitle>
               <CardDescription>
-                Export everything you have stored — profile, beneficiaries, assets, document
-                metadata, plans and your own audit rows — as JSON after re-verification.
+                Download a copy of everything you have stored: profile, beneficiaries, assets,
+                document and video details, will plans, Dead Man’s Switch and check-in history,
+                emergency contacts and requests, access links, AI analyses, notifications, account
+                activity, and deleted items still being retained. You will be asked to re-verify
+                first.
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              <Button
-                variant="outline"
-                disabled={exporting}
-                onClick={() => {
-                  void (async () => {
-                    setExporting(true);
-                    try {
-                      // Straight from the response to a download: the payload
-                      // holds decrypted fields and is never cached or stored.
-                      const payload = await reverified(exportMyData);
-                      downloadJson(payload, `legacyvault-export-${todayStamp()}.json`);
-                      toast.success("Your export has been downloaded");
-                    } catch (error) {
-                      if (!isReverificationCancelled(error)) {
-                        toast.error(
-                          error instanceof ApiError
-                            ? error.message
-                            : "Could not prepare your export.",
-                        );
-                      }
-                    } finally {
-                      setExporting(false);
-                    }
-                  })();
-                }}
-              >
-                <Download data-icon="inline-start" />
-                {exporting ? "Preparing…" : "Export my data"}
-              </Button>
+            <CardContent className="space-y-4">
+              <ul className="grid gap-3 md:grid-cols-3" aria-label="Export formats">
+                {EXPORT_OPTIONS.map((option) => (
+                  <li
+                    key={option.format}
+                    className={cn(
+                      "flex flex-col gap-3 rounded-xl border p-4 transition-colors duration-200 hover:border-primary/40",
+                      option.format === "xlsx" ? "border-primary/35 bg-primary/5" : "border-border",
+                    )}
+                  >
+                    <div className="flex items-start gap-3">
+                      <span
+                        className={cn(
+                          "flex size-9 shrink-0 items-center justify-center rounded-lg",
+                          option.format === "xlsx"
+                            ? "bg-primary/15 text-primary"
+                            : "bg-accent text-accent-foreground",
+                        )}
+                      >
+                        <option.icon className="size-4" aria-hidden />
+                      </span>
+                      <div className="min-w-0">
+                        <h3 className="text-sm font-semibold">{option.title}</h3>
+                        <p
+                          id={`export-${option.format}-description`}
+                          className="text-xs leading-5 text-muted-foreground"
+                        >
+                          {option.description}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      variant={option.format === "xlsx" ? "default" : "outline"}
+                      size="sm"
+                      className="mt-auto w-fit"
+                      loading={exporting === option.format}
+                      disabled={exporting !== null}
+                      aria-describedby={`export-${option.format}-description`}
+                      onClick={() => void runExport(option.format, option.title)}
+                    >
+                      {exporting === option.format ? "Preparing…" : option.action}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+              <p className="flex gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs leading-5">
+                <LockKeyhole className="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden />
+                <span>
+                  The export includes the account numbers, policy numbers, credentials, recovery
+                  details and AI document analyses you saved, unencrypted. Store it somewhere safe.
+                  Documents and videos are listed with their details; the files themselves are not
+                  included.
+                </span>
+              </p>
             </CardContent>
           </Card>
           <Card className="border-destructive/30 glass">
@@ -671,45 +729,110 @@ export function SettingsView({
                 <AlertTriangle className="size-4" aria-hidden /> Delete account
               </CardTitle>
               <CardDescription>
-                Deletion starts a 30-day grace period: sessions are revoked, the Dead Man’s Switch
-                is paused and access links are revoked. You can cancel during the grace period.
+                Two ways to leave: schedule deletion with time to change your mind, or delete
+                everything permanently now. Both ask you to re-verify your identity.
               </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {profile.data?.deletionRequestedAt ? (
-                <>
-                  <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
-                    Deletion was requested {formatRelative(profile.data.deletionRequestedAt, now)}.
-                    Everything is deleted 30 days after that, and the account is read-only until you
-                    cancel.
-                  </p>
-                  <Button
-                    variant="outline"
-                    disabled={cancelDeletion.isPending}
-                    onClick={() => {
-                      void (async () => {
-                        try {
-                          await cancelDeletion.mutateAsync();
-                          toast.success("Deletion cancelled — your account is active again");
-                        } catch (error) {
-                          toast.error(
-                            error instanceof ApiError
-                              ? error.message
-                              : "Could not cancel the deletion.",
-                          );
-                        }
-                      })();
-                    }}
-                  >
-                    Cancel deletion
-                  </Button>
-                </>
-              ) : (
-                <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
-                  <Trash2 data-icon="inline-start" />
-                  Request account deletion
+              <p className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-1 text-sm text-muted-foreground">
+                Want a copy first?
+                <Button
+                  variant="link"
+                  size="sm"
+                  loading={exporting === "xlsx"}
+                  disabled={exporting !== null}
+                  onClick={() => void runExport("xlsx", "Excel workbook")}
+                >
+                  {exporting !== "xlsx" && <FileSpreadsheet data-icon="inline-start" />}
+                  Download your data (.xlsx)
                 </Button>
-              )}
+              </p>
+            </CardHeader>
+            <CardContent className="grid gap-4 md:grid-cols-2">
+              <section
+                aria-labelledby="schedule-deletion-title"
+                className="flex flex-col gap-3 rounded-xl border border-border p-4"
+              >
+                <h3
+                  id="schedule-deletion-title"
+                  className="flex items-center gap-2 text-sm font-semibold"
+                >
+                  <CalendarClock className="size-4 text-warning" aria-hidden />
+                  Schedule account deletion
+                </h3>
+                {deletionRequestedAt && deletesAt ? (
+                  <>
+                    <p className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm leading-6">
+                      Scheduled {formatRelative(deletionRequestedAt, now)}. Your account will be
+                      permanently deleted on <strong>{formatDate(deletesAt.toISOString())}</strong>{" "}
+                      (or within a day after). It is read-only until then, and you can cancel any
+                      time before.
+                    </p>
+                    <Button
+                      variant="outline"
+                      className="mt-auto w-fit"
+                      disabled={cancelDeletion.isPending}
+                      onClick={() => {
+                        void (async () => {
+                          try {
+                            await cancelDeletion.mutateAsync();
+                            toast.success("Deletion cancelled — your account is active again");
+                          } catch (error) {
+                            toast.error(
+                              error instanceof ApiError
+                                ? error.message
+                                : "Could not cancel the deletion.",
+                            );
+                          }
+                        })();
+                      }}
+                    >
+                      Cancel scheduled deletion
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm leading-6 text-muted-foreground">
+                      Starts a {ACCOUNT_DELETION_GRACE_DAYS}-day grace period. Sessions are signed
+                      out, the Dead Man’s Switch is paused and access links are revoked; the account
+                      is read-only and you can cancel until the deadline.
+                    </p>
+                    <Button
+                      variant="outline"
+                      className="mt-auto w-fit"
+                      onClick={() => setDeleteOpen(true)}
+                    >
+                      <CalendarClock data-icon="inline-start" />
+                      Schedule deletion
+                    </Button>
+                  </>
+                )}
+              </section>
+              <section
+                aria-labelledby="delete-now-title"
+                className="flex flex-col gap-3 rounded-xl border border-destructive/40 bg-destructive/5 p-4"
+              >
+                <h3
+                  id="delete-now-title"
+                  className="flex items-center gap-2 text-sm font-semibold text-destructive"
+                >
+                  <Trash2 className="size-4" aria-hidden />
+                  Delete account permanently now
+                </h3>
+                <p className="text-sm leading-6 text-muted-foreground">
+                  No grace period and no undo. Access ends immediately and your vault, documents,
+                  videos, beneficiaries, plans and sign-in are permanently removed.
+                </p>
+                <Button
+                  variant="destructive"
+                  className="mt-auto w-fit"
+                  onClick={() => {
+                    setDeleteNowPhrase("");
+                    setDeleteNowOpen(true);
+                  }}
+                >
+                  <Trash2 data-icon="inline-start" />
+                  Delete permanently now
+                </Button>
+              </section>
             </CardContent>
           </Card>
           <p className="text-xs text-muted-foreground">
@@ -726,22 +849,64 @@ export function SettingsView({
       <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        title="Request account deletion?"
-        description="Your account enters a 30-day grace period after which everything is permanently deleted. Audit records are retained as required."
-        confirmLabel="Request deletion"
+        title="Schedule account deletion?"
+        description={`Your account enters a ${ACCOUNT_DELETION_GRACE_DAYS}-day grace period, after which everything is permanently deleted. You can cancel until then. The security audit log is retained.`}
+        confirmLabel="Schedule deletion"
         variant="destructive"
         requiresReverification
-        acknowledgement="I understand my legacy plan, assets, documents and beneficiary access will be deleted after 30 days."
+        acknowledgement={`I understand my legacy plan, assets, documents and beneficiary access will be deleted after ${ACCOUNT_DELETION_GRACE_DAYS} days unless I cancel.`}
         onConfirm={async () => {
           try {
-            await reverified(() => requestDeletion.mutateAsync());
-            toast.success("Deletion requested — you have 30 days to change your mind");
+            const { deletesAt: scheduledFor } = await reverified(() =>
+              requestDeletion.mutateAsync(),
+            );
+            toast.success(
+              `Deletion scheduled for ${formatDate(scheduledFor)} — you can cancel until then`,
+            );
           } catch (error) {
             if (isReverificationCancelled(error)) return;
             toast.error(error instanceof ApiError ? error.message : "Could not request deletion.");
           }
         }}
       />
+
+      <ConfirmDialog
+        open={deleteNowOpen}
+        onOpenChange={setDeleteNowOpen}
+        title="Delete your account permanently now?"
+        description="This cannot be undone or cancelled. Access ends immediately, every device is signed out, and your vault, documents, videos, beneficiaries, plans and sign-in identity are permanently removed. Beneficiary and emergency access stop. The security audit log is retained."
+        confirmLabel="Delete permanently now"
+        variant="destructive"
+        requiresReverification
+        confirmDisabled={deleteNowPhrase !== DELETE_NOW_PHRASE}
+        acknowledgement="I understand this is permanent and that LegacyVault cannot restore my account or data."
+        onConfirm={async () => {
+          try {
+            const { status } = await reverified(() => deleteNow.mutateAsync(deleteNowPhrase));
+            const target = `/account-deleted?status=${status === "DELETED" ? "complete" : "pending"}`;
+            // The session was revoked server-side; this clears it here too.
+            await clerk.signOut({ redirectUrl: target }).catch(() => router.replace(target));
+          } catch (error) {
+            if (isReverificationCancelled(error)) return;
+            toast.error(
+              error instanceof ApiError ? error.message : "Could not delete your account.",
+            );
+          }
+        }}
+      >
+        <div className="space-y-2">
+          <Label htmlFor="delete-now-phrase">
+            Type <span className="font-mono font-semibold">{DELETE_NOW_PHRASE}</span> to confirm
+          </Label>
+          <Input
+            id="delete-now-phrase"
+            value={deleteNowPhrase}
+            onChange={(event) => setDeleteNowPhrase(event.target.value)}
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </div>
+      </ConfirmDialog>
     </div>
   );
 }
@@ -843,16 +1008,44 @@ function todayStamp(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+const EXPORT_OPTIONS: {
+  format: ExportFormat;
+  title: string;
+  description: string;
+  action: string;
+  icon: typeof FileSpreadsheet;
+}[] = [
+  {
+    format: "xlsx",
+    title: "Excel workbook",
+    description: "One sheet per category. Opens in Excel, Numbers and Google Sheets.",
+    action: "Download .xlsx",
+    icon: FileSpreadsheet,
+  },
+  {
+    format: "csv",
+    title: "CSV files",
+    description: "A ZIP with one UTF-8 CSV per category, for other tools.",
+    action: "Download .zip",
+    icon: FileArchive,
+  },
+  {
+    format: "json",
+    title: "JSON (advanced)",
+    description: "The raw records, including internal ids, for developers and data portability.",
+    action: "Download .json",
+    icon: FileJson,
+  },
+];
+
 /**
- * Hands a payload to the browser as a file.
+ * Hands a file to the browser as a download.
  *
  * The object URL is revoked immediately afterwards so the export — which holds
  * decrypted values — does not stay reachable from the page.
  */
-function downloadJson(payload: unknown, filename: string): void {
-  const url = URL.createObjectURL(
-    new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }),
-  );
+function downloadFile(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = filename;

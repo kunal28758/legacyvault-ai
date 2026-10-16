@@ -10,6 +10,8 @@ next-env.d.ts
 .agents
 .agents-backup
 supabase/.temp
+# Local QA tool output (git-ignored by its own .gstack/.gitignore)
+.gstack/
 # Spec Kit infrastructure, specification and documentation are governed artifacts — never auto-formatted
 .specify/
 specs/

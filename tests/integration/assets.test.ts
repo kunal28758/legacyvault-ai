@@ -219,6 +219,26 @@ describe.skipIf(!available)("assets — update and delete", () => {
     expect(deleteError?.code).toBe("42501");
   });
 
+  it("audits creation and deletion without the asset's name (0013)", async () => {
+    const id = await createFinancial(alice, { name: "Grandmother's locker" });
+    const { error } = await alice.rpc("delete_asset", {
+      p_resource_type: "FINANCIAL_ASSET",
+      p_asset_id: id,
+    });
+    expect(error).toBeNull();
+
+    const service = createServiceScopedClient();
+    const { data: rows } = await service
+      .from("audit_log")
+      .select("action, metadata")
+      .eq("resource_id", id);
+    const actions = (rows ?? []).map((row) => row.action);
+    expect(actions).toEqual(expect.arrayContaining(["asset.created", "asset.deleted"]));
+    const created = rows?.find((row) => row.action === "asset.created")?.metadata;
+    expect(created).toMatchObject({ category: "BANK_ACCOUNT" });
+    expect(JSON.stringify(rows)).not.toContain("Grandmother");
+  });
+
   it("soft-deletes with its assignments in one transaction", async () => {
     const assetId = await createFinancial(alice);
     const beneficiaryId = await createBeneficiary(alice, aliceId, "cascade@example.com");

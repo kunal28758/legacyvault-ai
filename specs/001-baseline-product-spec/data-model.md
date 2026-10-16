@@ -245,7 +245,11 @@ the only barrier. Consequences, applied by T218/T019 and tested by T215:
    `{table}.row_created` / `{table}.row_changed`, resource type/id, `outcome =
    SUCCESS`, `metadata.changed` (column names) and previous/new values for
    allow-listed plain columns only (encrypted and protected columns rendered
-   as `[encrypted]` / `[protected]`), `correlation_id` from
+   as `[encrypted]` / `[protected]`). Since migration 0013 the allow-list holds
+   non-personal state only: status, lifecycle timestamps, category, currency,
+   folder/version links, scan status, delivery condition and preferences.
+   Names, contact details, addresses, dates of birth, notes, values and titles
+   are listed in `changed` but written as `[protected]`, `correlation_id` from
    `current_setting('app.correlation_id', true)` when set,
    `metadata.source = 'db_trigger'`. Guarded functions set
    `set_config('app.audit_in_function', 'on', true)` after the auth prologue

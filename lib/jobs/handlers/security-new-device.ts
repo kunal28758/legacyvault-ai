@@ -82,6 +82,19 @@ async function knownSignatures(
 export const securityNewDeviceHandler: JobHandler = async (job, db) => {
   const payload = payloadOf(job);
   const userId = requireString(payload, "userId");
+
+  // Deleted (0012) or already purged: recording the device or alerting would
+  // write new personal data for an account that is being erased.
+  const { data: account, error: accountError } = await db
+    .from("users")
+    .select("deleted_at")
+    .eq("id", userId)
+    .maybeSingle();
+  if (accountError) throw accountError;
+  if (!account || account.deleted_at) {
+    logger.info({ jobId: job.id }, "new-device check skipped: account is deleted");
+    return;
+  }
   const sessionId = requireString(payload, "sessionId");
 
   let activity: Signature;

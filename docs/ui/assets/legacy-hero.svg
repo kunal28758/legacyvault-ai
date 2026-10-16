@@ -1,0 +1,193 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#202b3d"/>
+      <stop offset="0.55" stop-color="#151d2b"/>
+      <stop offset="1" stop-color="#0b1019"/>
+    </linearGradient>
+    <radialGradient id="window" cx="0.2" cy="0.12" r="0.75">
+      <stop offset="0" stop-color="#ffeedd" stop-opacity="0.16"/>
+      <stop offset="0.45" stop-color="#ffe4c4" stop-opacity="0.05"/>
+      <stop offset="1" stop-color="#ffe9d1" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="vignette" cx="0.5" cy="0.5" r="0.75">
+      <stop offset="0.55" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0.45"/>
+    </radialGradient>
+    <linearGradient id="folder" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#26457d"/>
+      <stop offset="1" stop-color="#14284d"/>
+    </linearGradient>
+    <linearGradient id="folderEdge" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#2f5596"/>
+      <stop offset="1" stop-color="#1a3463"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fdfbf6"/>
+      <stop offset="1" stop-color="#efe9de"/>
+    </linearGradient>
+    <linearGradient id="paperBack" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ece5d8"/>
+      <stop offset="1" stop-color="#ddd5c6"/>
+    </linearGradient>
+    <radialGradient id="seal" cx="0.38" cy="0.32" r="0.75">
+      <stop offset="0" stop-color="#34d399"/>
+      <stop offset="0.55" stop-color="#0f9f6e"/>
+      <stop offset="1" stop-color="#05603f"/>
+    </radialGradient>
+    <linearGradient id="dusk" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f7d2b2"/>
+      <stop offset="0.45" stop-color="#d9b3d6"/>
+      <stop offset="1" stop-color="#8a78c4"/>
+    </linearGradient>
+    <linearGradient id="brass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f1d58f"/>
+      <stop offset="0.5" stop-color="#c99a45"/>
+      <stop offset="1" stop-color="#8c6422"/>
+    </linearGradient>
+    <linearGradient id="ribbon" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#8b6ff0"/>
+      <stop offset="1" stop-color="#5a3fc0"/>
+    </linearGradient>
+    <linearGradient id="pen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a4256"/>
+      <stop offset="0.5" stop-color="#1b2030"/>
+      <stop offset="1" stop-color="#0d1018"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="18" dy="28" stdDeviation="22" flood-color="#000" flood-opacity="0.5"/>
+    </filter>
+    <filter id="shadowSoft" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="8" dy="14" stdDeviation="10" flood-color="#000" flood-opacity="0.38"/>
+    </filter>
+    <filter id="grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.06"/>
+      </feComponentTransfer>
+    </filter>
+    <clipPath id="photoClip">
+      <rect x="-122" y="-150" width="244" height="232" rx="3"/>
+    </clipPath>
+  </defs>
+
+  <!-- Backdrop: slate desk under soft window light -->
+  <rect width="1200" height="1200" fill="url(#bg)"/>
+  <rect width="1200" height="1200" fill="url(#window)"/>
+
+  <!-- Portfolio -->
+  <g transform="translate(540 660) rotate(-8)" filter="url(#shadow)">
+    <rect x="-330" y="-400" width="660" height="800" rx="26" fill="url(#folder)"/>
+    <rect x="-330" y="-400" width="660" height="800" rx="26" fill="none" stroke="#3a62a8" stroke-opacity="0.35" stroke-width="2"/>
+    <rect x="-306" y="-376" width="612" height="752" rx="18" fill="none" stroke="#cfe0ff" stroke-opacity="0.16" stroke-width="2" stroke-dasharray="7 9"/>
+    <!-- Embossed shield, lower left -->
+    <g transform="translate(-232 300)" fill="none" stroke="#9cc0ff" stroke-opacity="0.45" stroke-width="4" stroke-linejoin="round">
+      <path d="M0 -44 L34 -32 V-2 C34 22 18 38 0 46 C-18 38 -34 22 -34 -2 V-32 Z"/>
+      <circle cx="0" cy="-6" r="8"/>
+      <path d="M0 2 V18"/>
+    </g>
+    <!-- Spine strap -->
+    <rect x="270" y="-400" width="22" height="800" fill="url(#folderEdge)" opacity="0.6"/>
+  </g>
+
+  <!-- Back sheet -->
+  <g transform="translate(600 610) rotate(3)" filter="url(#shadowSoft)">
+    <rect x="-235" y="-318" width="470" height="620" rx="6" fill="url(#paperBack)"/>
+  </g>
+
+  <!-- Ribbon bookmark running out of the portfolio -->
+  <path d="M705 1010 C712 1060 700 1110 720 1200 L752 1200 C736 1120 744 1062 735 1008 Z" fill="url(#ribbon)" opacity="0.95"/>
+
+  <!-- Main document: the signed plan -->
+  <g transform="translate(575 625) rotate(-3)" filter="url(#shadow)">
+    <rect x="-240" y="-320" width="480" height="630" rx="6" fill="url(#paper)"/>
+    <text x="-190" y="-236" font-family="Georgia, 'Times New Roman', serif" font-size="40" fill="#1e293b" letter-spacing="0.5">Legacy Plan</text>
+    <rect x="-190" y="-212" width="96" height="4" rx="2" fill="#2f5596"/>
+    <g fill="#94a3b8" opacity="0.75">
+      <rect x="-190" y="-170" width="380" height="9" rx="4.5"/>
+      <rect x="-190" y="-144" width="350" height="9" rx="4.5"/>
+      <rect x="-190" y="-118" width="372" height="9" rx="4.5"/>
+      <rect x="-190" y="-92" width="250" height="9" rx="4.5"/>
+      <rect x="-190" y="-50" width="370" height="9" rx="4.5"/>
+      <rect x="-190" y="-24" width="340" height="9" rx="4.5"/>
+      <rect x="-190" y="2" width="360" height="9" rx="4.5"/>
+      <rect x="-190" y="28" width="200" height="9" rx="4.5"/>
+    </g>
+    <!-- Checklist: completed items in green -->
+    <g transform="translate(-190 78)">
+      <g>
+        <rect width="22" height="22" rx="5" fill="#0f9f6e"/>
+        <path d="M6 11.5 L10 15.5 L16.5 7.5" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="36" y="6" width="200" height="9" rx="4.5" fill="#94a3b8" opacity="0.75"/>
+      </g>
+      <g transform="translate(0 38)">
+        <rect width="22" height="22" rx="5" fill="#0f9f6e"/>
+        <path d="M6 11.5 L10 15.5 L16.5 7.5" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="36" y="6" width="168" height="9" rx="4.5" fill="#94a3b8" opacity="0.75"/>
+      </g>
+      <g transform="translate(0 76)">
+        <rect width="22" height="22" rx="5" fill="#0f9f6e"/>
+        <path d="M6 11.5 L10 15.5 L16.5 7.5" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="36" y="6" width="214" height="9" rx="4.5" fill="#94a3b8" opacity="0.75"/>
+      </g>
+    </g>
+    <!-- Signature line -->
+    <rect x="-190" y="262" width="220" height="2" fill="#94a3b8"/>
+    <path d="M-182 248 C-168 214 -150 214 -152 238 C-154 258 -136 222 -118 226 C-104 230 -112 252 -96 246 C-82 240 -80 222 -64 228 C-50 234 -58 250 -40 244 C-26 239 -16 232 2 236" fill="none" stroke="#1e293b" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- Verified seal -->
+    <g transform="translate(148 222)">
+      <circle r="62" fill="#04492f" opacity="0.25" transform="translate(4 6)"/>
+      <path d="M0 -62 L12 -54 L27 -56 L33 -42 L47 -36 L46 -21 L56 -9 L49 4 L53 19 L40 27 L36 42 L21 44 L10 56 L-4 50 L-18 57 L-27 45 L-42 43 L-45 28 L-58 19 L-53 4 L-60 -10 L-49 -21 L-50 -36 L-36 -42 L-30 -56 L-15 -54 Z" fill="url(#seal)"/>
+      <circle r="38" fill="none" stroke="#d1fae5" stroke-opacity="0.55" stroke-width="2.5"/>
+      <path d="M-16 1 L-4 13 L18 -12" fill="none" stroke="#ecfdf5" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  </g>
+
+  <!-- Family photograph -->
+  <g transform="translate(905 345) rotate(9)" filter="url(#shadow)">
+    <rect x="-140" y="-168" width="280" height="330" rx="6" fill="#fbfaf7"/>
+    <g clip-path="url(#photoClip)">
+      <rect x="-122" y="-150" width="244" height="232" fill="url(#dusk)"/>
+      <circle cx="40" cy="-30" r="34" fill="#fff1dc" opacity="0.9"/>
+      <path d="M-122 18 C-70 -20 -20 4 20 -8 C60 -20 92 -6 122 -14 L122 82 L-122 82 Z" fill="#6e5aa6" opacity="0.85"/>
+      <path d="M-122 44 C-60 20 0 34 60 22 C90 16 110 24 122 22 L122 82 L-122 82 Z" fill="#43386f"/>
+      <!-- Two adults and a child, hand in hand -->
+      <g fill="#241d3f">
+        <circle cx="-40" cy="2" r="9"/>
+        <path d="M-52 14 Q-40 8 -28 14 L-26 58 L-54 58 Z"/>
+        <circle cx="-6" cy="6" r="8.5"/>
+        <path d="M-17 17 Q-6 11 5 17 L8 58 L-20 58 Z"/>
+        <circle cx="22" cy="24" r="6.5"/>
+        <path d="M14 33 Q22 29 30 33 L31 58 L13 58 Z"/>
+        <path d="M-28 30 L-17 30" stroke="#241d3f" stroke-width="4" stroke-linecap="round"/>
+        <path d="M5 34 L14 38" stroke="#241d3f" stroke-width="3.5" stroke-linecap="round"/>
+      </g>
+    </g>
+    <rect x="-90" y="112" width="120" height="7" rx="3.5" fill="#cbd5e1"/>
+  </g>
+
+  <!-- Fountain pen -->
+  <g transform="translate(250 1105) rotate(-18)" filter="url(#shadowSoft)">
+    <rect x="-200" y="-13" width="330" height="26" rx="13" fill="url(#pen)"/>
+    <rect x="70" y="-14" width="14" height="28" fill="#c99a45"/>
+    <path d="M130 -11 L196 0 L130 11 Z" fill="#c99a45"/>
+    <path d="M150 0 L194 0" stroke="#5c4316" stroke-width="2"/>
+    <rect x="-150" y="-18" width="120" height="8" rx="4" fill="#d9b56a"/>
+  </g>
+
+  <!-- Brass key with ribbon tag -->
+  <g transform="translate(930 880) rotate(-32)" filter="url(#shadowSoft)">
+    <path d="M-40 -6 C-70 -40 -120 -30 -122 -2 C-124 26 -80 44 -46 12" fill="none" stroke="url(#ribbon)" stroke-width="10" stroke-linecap="round"/>
+    <circle cx="0" cy="0" r="46" fill="url(#brass)"/>
+    <circle cx="0" cy="0" r="22" fill="#151d2b"/>
+    <circle cx="0" cy="0" r="46" fill="none" stroke="#fff3c4" stroke-opacity="0.35" stroke-width="3"/>
+    <rect x="40" y="-9" width="190" height="18" rx="6" fill="url(#brass)"/>
+    <path d="M182 9 V40 H198 V26 H210 V40 H226 V9 Z" fill="url(#brass)"/>
+  </g>
+
+  <!-- Light and finish -->
+  <rect width="1200" height="1200" fill="url(#window)" opacity="0.6"/>
+  <rect width="1200" height="1200" fill="url(#vignette)"/>
+  <rect width="1200" height="1200" filter="url(#grain)"/>
+</svg>

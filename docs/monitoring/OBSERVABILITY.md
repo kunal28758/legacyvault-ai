@@ -63,7 +63,53 @@ traced across API, database and audit trail.
 
 - Public response: `{ status: "ok" | "degraded" }` only.
 - Detailed response (with `CRON_SECRET` bearer or a Super Admin session):
-  `{ status, database, storage, jobs: { lastRunAgeSeconds }, dmsScan }`.
+  `{ status, database, storage, jobs: { lastRunAgeSeconds }, dmsScan,
+  housekeeping: { lastSuccessAgeSeconds }, failures: { deadJobs24h,
+  webhookFailures24h, overduePurges }, scheduler: { configured,
+  lastSuccessAgeSeconds, failedResponses } }`.
+- `scheduler` is the database scheduler itself (`scheduler_status()`,
+  migration 0014). It is kept separate from the job heartbeats, which the
+  GitHub Actions caller can keep fresh on its own.
+  - `ok` requires positive evidence: both Vault entries exist (checked by name;
+    values are never read), pg_net received a 2xx from the app within 30
+    minutes, and no failed call is still on record (pg_net keeps responses for
+    hours).
+  - Without 0014 the fields are `null` and the component is `degraded`.
+  - A green DMS heartbeat therefore no longer hides a dead primary scheduler.
+- `housekeeping` is stale after 36 h. Housekeeping is daily, but the GitHub
+  Actions caller has run up to ~10 h late.
+- `failures` gives operator signals, as counts only, with no payload or
+  personal value:
+  - jobs that exhausted their retries in the last day (a purge, an access
+    delivery, a notification);
+  - webhook deliveries that failed on our side in the last day;
+  - accounts marked deleted more than a day ago whose queued hard delete has
+    not finished.
+
+  Any non-zero count, or a stale housekeeping run, makes the status
+  `degraded`, never `down`.
+
+**Status meanings:**
+- `down`: the database is unreachable, or the last DMS scan is older than 2 h.
+- `degraded`: anything else that is not `ok`.
+- `ok`: every component is `ok`.
+
+All ages are computed from `timestamptz` values, so time zones cannot skew them.
+The decision is the pure `assessHealth()` in `lib/observability/health.ts`,
+with every transition covered by `tests/unit/health-assess.test.ts`.
+
+**Alert delivery.** The last step of `.github/workflows/production-jobs.yml`
+reads the operator breakdown after each scheduled run and fails the run when
+the status is not `ok`. GitHub emails failed scheduled runs to the person who
+last changed the schedule. The log shows component statuses, ages and counts
+only. It takes effect once the workflow is pushed. `tests/unit/production-jobs-workflow.test.ts`
+runs that exact step against each kind of response. **Delivery of the email
+is not yet verified**: GitHub sends it to the account that last changed the
+schedule, if that account's notification settings allow it.
+
+**Optional second channel:** an external uptime monitor on the public
+`/api/v1/health` (status only, no secret). It needs the owner's sign-up and is
+not active.
 - `dmsScan` is derived from the last successful `dms.scan` job
   (`jobs.finished_at`): if older than 2× the scan interval it reports
   `stale`, a CRITICAL audit row `dms.job_health_failure` is written, Super

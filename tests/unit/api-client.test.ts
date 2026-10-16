@@ -98,4 +98,42 @@ describe("api client (T013)", () => {
     expect(shouldRetry(0, network)).toBe(true);
     expect(shouldRetry(2, network)).toBe(false);
   });
+
+  it("returns an attachment as a blob with its file name", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(new Uint8Array([0x50, 0x4b, 3, 4]), {
+          headers: {
+            "Content-Type": "application/zip",
+            "Content-Disposition": 'attachment; filename="legacyvault-export-2026-10-16-csv.zip"',
+          },
+        }),
+      ),
+    );
+    const { data } = await apiClient.download("/users/me/export", { query: { format: "csv" } });
+    expect(data.filename).toBe("legacyvault-export-2026-10-16-csv.zip");
+    expect(new Uint8Array(await data.blob.arrayBuffer())).toEqual(
+      new Uint8Array([0x50, 0x4b, 3, 4]),
+    );
+  });
+
+  it("throws the same typed errors from a download as from a JSON request", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse(403, {
+          success: false,
+          error: {
+            code: "REVERIFICATION_REQUIRED",
+            message: "Re-verify",
+            details: { level: "strict" },
+          },
+        }),
+      ),
+    );
+    await expect(apiClient.download("/users/me/export")).rejects.toBeInstanceOf(
+      ReverificationRequiredError,
+    );
+  });
 });

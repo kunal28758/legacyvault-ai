@@ -4,13 +4,15 @@
 
 /* LegacyVault AI design foundation (tasks T010/T011, constitution XIII/XIV, UX-002).
    Dark-first: `:root` holds the dark palette; `[data-theme="light"]` overrides it.
-   Colour tokens use oklch, and every colour has one job:
-     blue   (#0EA5FF) primary technology / action, the dominant brand accent
-     green  (#14D38F) safe / active / verified / success
-     violet (#9D7CFF) AI and premium features only
-     amber  pending / warning      red  error / destructive
-   Neon stays an accent: surfaces are deep navy, and glow is reserved for the
-   primary CTA, the active nav item and selected cards. */
+   Colour tokens use oklch, and every colour has one job — chosen by meaning,
+   never for decoration, and never the only signal (pair it with an icon/label):
+     blue   (#0EA5FF) trust, navigation, primary actions, security infrastructure
+     green  (#14D38F) protected / verified / completed / success
+     violet (#9D7CFF) AI features and selected highlights only
+     amber  pending / warning      red  destructive / irreversible / error
+     neutrals (slate)  text, surfaces, hierarchy — most of every page
+   Surfaces are deep navy (dark) or near-white (light); glow is reserved for a
+   few state cues, not resting decoration. */
 @import "../styles/glass.css";
 @import "../styles/gradients.css";
 @import "../styles/animations.css";

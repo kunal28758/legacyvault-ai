@@ -184,6 +184,10 @@ export async function ensureAppUserFromSession(
     .maybeSingle();
   if (error) throw error;
 
+  // A deleted account has no application user, even while its hard delete is
+  // still running and a session token issued before it is still valid.
+  if (existing?.deleted_at) return null;
+
   if (
     !options.force &&
     existing &&

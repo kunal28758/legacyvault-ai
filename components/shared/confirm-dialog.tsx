@@ -28,6 +28,8 @@ interface ConfirmDialogProps {
   acknowledgement?: string;
   /** Explains that the real operation requires Clerk re-verification (FR-A018). */
   requiresReverification?: boolean;
+  /** Keeps the confirm button disabled, e.g. until a typed phrase matches. */
+  confirmDisabled?: boolean;
   onConfirm: () => void | Promise<void>;
   children?: React.ReactNode;
 }
@@ -46,6 +48,7 @@ export function ConfirmDialog({
   variant = "default",
   acknowledgement,
   requiresReverification,
+  confirmDisabled,
   onConfirm,
   children,
 }: ConfirmDialogProps) {
@@ -93,8 +96,8 @@ export function ConfirmDialog({
         {children}
         {requiresReverification && (
           <p className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs leading-5 text-muted-foreground">
-            In the live application this step asks you to re-verify with Clerk before it takes
-            effect, and the action is written to your audit log.
+            You will be asked to re-verify your identity before this takes effect, and the action is
+            written to your audit log.
           </p>
         )}
         {acknowledgement && (
@@ -115,7 +118,7 @@ export function ConfirmDialog({
             variant={variant === "destructive" ? "destructive" : "default"}
             onClick={handleConfirm}
             loading={busy}
-            disabled={Boolean(acknowledgement) && !acknowledged}
+            disabled={(Boolean(acknowledgement) && !acknowledged) || confirmDisabled}
           >
             {busy ? "Working…" : confirmLabel}
           </Button>

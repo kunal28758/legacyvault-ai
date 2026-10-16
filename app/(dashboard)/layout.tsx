@@ -33,7 +33,9 @@ export default async function DashboardLayout({ children }: { children: ReactNod
 
   // First run happens outside this shell: there is nothing to navigate to yet.
   const appUser = await getOptionalUser();
-  if (appUser && !appUser.onboardingCompletedAt) redirect("/onboarding");
+  // A session that outlived its account (deleted, hard delete still running).
+  if (!appUser) redirect("/account-deleted");
+  if (!appUser.onboardingCompletedAt) redirect("/onboarding");
 
   // Clerk has the avatar and the freshest display name, but it is a network
   // call: when it fails, the stored profile is enough to render the shell. A
