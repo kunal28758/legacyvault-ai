@@ -157,10 +157,10 @@ function toMessages(
     ...request.messages.map((message): ChatCompletionMessageParam =>
       message.role === "assistant"
         ? {
-            role: "assistant",
-            content:
-              typeof message.content === "string" ? message.content : textOnly(message.content),
-          }
+          role: "assistant",
+          content:
+            typeof message.content === "string" ? message.content : textOnly(message.content),
+        }
         : { role: "user", content: toParts(message.content) },
     ),
   ];
@@ -262,21 +262,30 @@ export function mapCompatibleError(
     // Described, not wrapped: the vendor's message is free text.
     const retryAfterSeconds = retryAfterSecondsOf(cause);
     const code = cause.code ?? cause.type ?? null;
+    const isRateLimitError =
+      cause.status === 429 ||
+      /^(rate_limit_exceeded|rate_limit_error)$/i.test(code ?? "");
+
     const upstream: AIUpstreamFailure = {
       status: cause.status,
       reason: code && /^[A-Za-z_]{2,60}$/.test(code) ? code : null,
-      quota:
-        cause.status === 429
-          ? rateLimitWindow(provider, cause, retryAfterSeconds)
-          : cause.status === 402
-            ? "credits"
-            : null,
+      quota: isRateLimitError
+        ? rateLimitWindow(provider, cause, retryAfterSeconds)
+        : cause.status === 402
+          ? "credits"
+          : null,
       retryAfterSeconds,
     };
-    const known = STATUS_KINDS[cause.status] ?? {
-      kind: "UNAVAILABLE" as const,
-      message: "The AI provider is unavailable.",
-    };
+
+    const known = isRateLimitError
+      ? {
+        kind: "RATE_LIMITED" as const,
+        message: "The AI provider is rate limiting.",
+      }
+      : STATUS_KINDS[cause.status] ?? {
+        kind: "UNAVAILABLE" as const,
+        message: "The AI provider is unavailable.",
+      };
     return new AIProviderError(known.kind, provider, known.message, { upstream });
   }
   if (cause instanceof SyntaxError) {

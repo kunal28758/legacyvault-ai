@@ -357,6 +357,30 @@ describe("other failures", () => {
     expect(result.text).toBe("4");
   });
 
+  it("treats a 413 rate_limit_exceeded response as a retryable rate limit", async () => {
+    fetchMock.mockResolvedValue(
+      vendorError(413, "Rate limit reached", "rate_limit_exceeded", {
+        "retry-after": "19",
+        "x-ratelimit-remaining-requests": "0",
+      }),
+    );
+
+    const error = await provider("groq", "openai/gpt-oss-120b")
+      .generateText(request)
+      .catch((e: unknown) => e);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(error).toMatchObject({
+      kind: "RATE_LIMITED",
+      upstream: {
+        status: 413,
+        reason: "rate_limit_exceeded",
+        retryAfterSeconds: 19,
+      },
+    });
+    expect((error as AIProviderError).retryableElsewhere).toBe(true);
+  });
+
   it.each([
     [400, "REFUSED"],
     [401, "NOT_CONFIGURED"],
