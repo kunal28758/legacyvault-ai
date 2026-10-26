@@ -91,7 +91,7 @@ function TypingDots({ reading }: { reading: boolean }) {
       </span>
       {(reading || slow) && (
         <span className="text-xs text-muted-foreground">
-          {slow ? "Still working on it — the AI service is busy…" : "Reading your files…"}
+          {slow ? "Still working on it — this may take a little longer…" : "Reading your files…"}
         </span>
       )}
     </span>

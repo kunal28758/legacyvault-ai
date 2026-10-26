@@ -15,6 +15,9 @@ import type {
 import { API_ERROR_CODES, type ApiEnvelope } from "@/lib/types/api";
 import type { DocumentAnalyzeBody } from "@/lib/validators/ai.validators";
 
+/** Keep a stalled provider or proxy from leaving the assistant streaming forever. */
+const AI_STREAM_TIMEOUT_MS = 160_000;
+
 /**
  * AI hooks (ADR-008, ADR-016).
  *
@@ -115,6 +118,8 @@ export async function streamAI(
   body: unknown,
   options: { signal?: AbortSignal; onDelta: (text: string) => void },
 ): Promise<Extract<ChatStreamEvent, { type: "done" }>> {
+  const timeout = AbortSignal.timeout(AI_STREAM_TIMEOUT_MS);
+  const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
   let response: Response;
   try {
     response = await fetch(`${API_BASE_PATH}${path}`, {
@@ -126,10 +131,16 @@ export async function streamAI(
         Accept: "application/x-ndjson, application/json",
       },
       body: JSON.stringify(body),
-      signal: options.signal,
+      signal,
     });
   } catch (cause) {
     if (cause instanceof DOMException && cause.name === "AbortError") throw cause;
+    if (timeout.aborted && !options.signal?.aborted) {
+      throw new ApiError(504, {
+        code: API_ERROR_CODES.INVALID_RESPONSE,
+        message: "The AI answer took too long to finish. Try again.",
+      });
+    }
     throw new ApiError(0, {
       code: API_ERROR_CODES.NETWORK_ERROR,
       message: "The request could not be sent. Check your connection and try again.",
@@ -180,7 +191,19 @@ export async function streamAI(
   };
 
   for (;;) {
-    const { done, value } = await reader.read();
+    let result: ReadableStreamReadResult<Uint8Array>;
+    try {
+      result = await reader.read();
+    } catch (cause) {
+      if (timeout.aborted && !options.signal?.aborted) {
+        throw new ApiError(504, {
+          code: API_ERROR_CODES.INVALID_RESPONSE,
+          message: "The AI answer took too long to finish. Try again.",
+        });
+      }
+      throw cause;
+    }
+    const { done, value } = result;
     if (value) buffer += decoder.decode(value, { stream: !done });
     let newline = buffer.indexOf("\n");
     while (newline !== -1) {
