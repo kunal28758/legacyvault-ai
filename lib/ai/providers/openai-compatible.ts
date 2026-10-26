@@ -94,6 +94,13 @@ export const VERIFIED_MODELS: Record<CompatibleProviderName, Record<string, AICa
       pdf: false,
       structured: true,
     },
+    "nvidia/nemotron-3.5-super-vl:free": {
+      imageTypes: ["image/png", "image/jpeg", "image/webp"],
+      maxImages: 3,
+      maxInlineBytes: 14 * MB,
+      pdf: false,
+      structured: true,
+    },
   },
   groq: {
     "openai/gpt-oss-120b": { ...TEXT_ONLY, structured: true },
