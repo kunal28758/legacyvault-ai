@@ -408,6 +408,10 @@ export function createCompatibleProvider(options: CompatibleProviderOptions): AI
             model,
             messages: toMessages(request, name),
             ...limit(request),
+            ...(name === "openrouter" &&
+              model === "nvidia/nemotron-3.5-super-vl:free"
+              ? { reasoning: { effort: "low" } }
+              : {}),
             response_format: {
               type: "json_schema",
               // Best-effort: the reply is re-validated with Zod below either way.
