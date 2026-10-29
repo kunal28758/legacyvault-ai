@@ -51,7 +51,7 @@ const WILL_TEXT = [
   "Signed on 2 January 2026.",
 ].join("\n");
 
-const prompts: AIRequest[] = [];
+const prompts: Array<AIRequest & { schemaName?: string }> = [];
 
 const scripted: AIProvider = {
   name: "openai",
@@ -75,6 +75,26 @@ const scripted: AIProvider = {
   },
   async generateStructured(request) {
     prompts.push(request);
+    if (request.schemaName === "document_comparison") {
+      return {
+        data: request.schema.parse({
+          summary: "Document B amends the executor and savings amount in Document A.",
+          similarities: ["Both documents name an executor and describe savings."],
+          differences: [
+            {
+              topic: "Executor",
+              documentA: 'Document A says "Arjun Sharma".',
+              documentB: 'Document B says "Kavita Sharma".',
+            },
+          ],
+          conflicts: ["The executor names differ."],
+          confidence: "high",
+        }),
+        usage: { inputTokens: 100, outputTokens: 50 },
+        provider: "openai",
+        model: "scripted-model",
+      };
+    }
     const summary: DocumentSummary = {
       documentType: "Will",
       executiveSummary: "Priya Sharma's will naming Arjun Sharma as executor.",
@@ -119,6 +139,7 @@ let other: AppUser;
 let ownerClient: unknown;
 let otherClient: unknown;
 let documentId: string;
+let secondDocumentId: string;
 
 function appUser(id: string, clerkUserId: string): AppUser {
   return {
@@ -158,6 +179,28 @@ beforeAll(async () => {
   const outcome = await uploadService.completeUpload(owner, ticket.uploadId, {}, "test");
   if (!outcome.documentId) throw new Error(`upload failed: ${outcome.rejectionReason}`);
   documentId = outcome.documentId;
+
+  const secondBytes = new TextEncoder().encode(
+    "AMENDMENT\nThe executor is Kavita Sharma.\nThe savings are Rs 15,00,000.\nSigned on 3 January 2026.",
+  );
+  const secondTicket = await uploadService.createUploadSession(
+    owner,
+    {
+      kind: "DOCUMENT",
+      name: "amendment.txt",
+      mimeType: "text/plain",
+      sizeBytes: secondBytes.byteLength,
+    },
+    "test",
+  );
+  await fetch(secondTicket.uploadUrl, {
+    method: "PUT",
+    headers: { "content-type": "text/plain" },
+    body: secondBytes,
+  });
+  const secondOutcome = await uploadService.completeUpload(owner, secondTicket.uploadId, {}, "test");
+  if (!secondOutcome.documentId) throw new Error(`upload failed: ${secondOutcome.rejectionReason}`);
+  secondDocumentId = secondOutcome.documentId;
 }, 60_000);
 
 beforeEach(() => {
@@ -194,6 +237,29 @@ describe.skipIf(!available)("document AI", () => {
     expect(JSON.stringify(sent.messages)).toContain("Arjun Sharma as executor");
     // Grounding caught the invented amount and nothing else.
     expect(record.grounding?.unverified.map((item) => item.value)).toEqual(["Rs 99,00,000"]);
+    expect(sent.maxOutputTokens).toBe(1_500);
+    expect(JSON.stringify(sent.messages).length).toBeLessThan(12_000 + 2_000);
+  });
+
+  it("compares two owned documents with stable A/B labels within the comparison budget", async () => {
+    prompts.length = 0;
+    const result = await documentAi.compareDocuments(
+      owner,
+      [documentId, secondDocumentId],
+      "test",
+    );
+
+    expect(result.documents).toEqual([
+      { id: documentId, name: "will.txt" },
+      { id: secondDocumentId, name: "amendment.txt" },
+    ]);
+    expect(prompts).toHaveLength(1);
+    const sent = prompts[0]!;
+    expect(sent.schemaName).toBe("document_comparison");
+    expect(sent.maxOutputTokens).toBe(1_500);
+    expect(JSON.stringify(sent.messages)).toContain('Document A: \\"will.txt\\"');
+    expect(JSON.stringify(sent.messages)).toContain('Document B: \\"amendment.txt\\"');
+    expect(JSON.stringify(sent.messages).length).toBeLessThan(16_000 + 2_000);
   });
 
   it("stores results encrypted and serves them again without another model call", async () => {

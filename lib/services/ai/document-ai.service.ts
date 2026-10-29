@@ -70,8 +70,20 @@ import { toAIApiError } from "./errors";
  * never stored.
  */
 
-/** Characters of document text sent to the model (~40k tokens). */
+/**
+ * Action-specific text budgets. Character counts are only an approximation of
+ * tokens; these conservative limits leave room for DOCUMENT_SYSTEM,
+ * instructions and the structured response on providers with small TPM caps.
+ */
+/** Global budget retained for document chat and attachment flows. */
 const MAX_DOCUMENT_CHARS = 150_000;
+export const DOCUMENT_AI_BUDGETS = {
+  summary: { inputChars: 12_000, outputTokens: 1_500 },
+  extract: { inputChars: 12_000, outputTokens: 1_500 },
+  explain: { inputChars: 16_000, outputTokens: 1_200 },
+  translate: { inputChars: 8_000, outputTokens: 2_500 },
+  compare: { inputChars: 16_000, outputTokens: 1_500 },
+} as const;
 /** Inline file limit for OCR requests to the provider. */
 const MAX_OCR_BYTES = MAX_AI_INLINE_BYTES;
 
@@ -378,7 +390,18 @@ export async function analyzeDocument(
 
   try {
     const document = await loadDocument(user, documentId, signal);
-    const { block, truncated } = documentBlock(document.sections, MAX_DOCUMENT_CHARS);
+    const budget =
+      body.action === "summary" || body.action === "extract"
+        ? DOCUMENT_AI_BUDGETS[body.action]
+        : body.action === "translate"
+          ? DOCUMENT_AI_BUDGETS.translate
+          : body.action === "explain"
+            ? DOCUMENT_AI_BUDGETS.explain
+            : null;
+    const { block, truncated } = documentBlock(
+      document.sections,
+      budget?.inputChars ?? MAX_DOCUMENT_CHARS,
+    );
     const extraction: ExtractionInfo = { ...document.info, truncated };
     const draftLookupDb = await createUserClient();
     const existingDraftId = await aiRepository.findAnalysisDraftId(
@@ -408,7 +431,7 @@ export async function analyzeDocument(
           messages: messages(SUMMARY_INSTRUCTIONS),
           schema: documentSummarySchema,
           schemaName: "document_summary",
-          maxOutputTokens: 4_000,
+          maxOutputTokens: DOCUMENT_AI_BUDGETS.summary.outputTokens,
           signal,
         });
         grounding = groundSummary(result.data, corpus);
@@ -426,7 +449,7 @@ export async function analyzeDocument(
           messages: messages(EXTRACT_INSTRUCTIONS),
           schema: documentExtractionSchema,
           schemaName: "document_extraction",
-          maxOutputTokens: 4_000,
+          maxOutputTokens: DOCUMENT_AI_BUDGETS.extract.outputTokens,
           signal,
         });
         grounding = groundExtraction(result.data, corpus);
@@ -462,7 +485,9 @@ export async function analyzeDocument(
               ? translateInstructions(body.language ?? "English")
               : EXPLAIN_INSTRUCTIONS,
           ),
-          maxOutputTokens: isTranslation ? 12_000 : 2_000,
+          maxOutputTokens: isTranslation
+            ? DOCUMENT_AI_BUDGETS.translate.outputTokens
+            : DOCUMENT_AI_BUDGETS.explain.outputTokens,
           signal,
         });
         payload = { action: body.action, data: { text: result.text.trim() } };
@@ -486,7 +511,7 @@ export async function analyzeDocument(
       provider: modelInfo.provider,
       model: modelInfo.model,
       promptVersion,
-      inputSummary: `${body.action} · ${document.info.method} · ${document.info.unitCount} units${truncated ? " · truncated" : ""}`,
+      inputSummary: `${body.action} · ${document.info.method} · ${document.info.unitCount} units${truncated ? " · truncated to action budget" : ""}`,
       outputSummary,
       usage,
       draftId,
@@ -681,7 +706,7 @@ export async function compareDocuments(
       loadDocument(user, documentIds[0], signal),
       loadDocument(user, documentIds[1], signal),
     ]);
-    const half = Math.floor(MAX_DOCUMENT_CHARS / 2);
+    const half = Math.floor(DOCUMENT_AI_BUDGETS.compare.inputChars / 2);
     const blockA = documentBlock(a.sections, half, "A");
     const blockB = documentBlock(b.sections, half, "B");
     const provider = getAIProvider();
@@ -691,12 +716,12 @@ export async function compareDocuments(
       messages: [
         {
           role: "user",
-          content: `${blockA.block}\n\n${blockB.block}\n\nDocument A is "${a.name}". Document B is "${b.name}".\n\n${COMPARE_INSTRUCTIONS}`,
+          content: `Document A: "${a.name}"\n${blockA.block}\n\nDocument B: "${b.name}"\n${blockB.block}\n\n${COMPARE_INSTRUCTIONS}`,
         },
       ],
       schema: documentComparisonSchema,
       schemaName: "document_comparison",
-      maxOutputTokens: 4_000,
+      maxOutputTokens: DOCUMENT_AI_BUDGETS.compare.outputTokens,
       signal,
     });
     const grounding = groundComparison(result.data, corpusOf(a.sections), corpusOf(b.sections));
@@ -705,7 +730,7 @@ export async function compareDocuments(
       provider: result.provider,
       model: result.model,
       promptVersion: PROMPT_VERSIONS.documentCompare,
-      inputSummary: `compare · ${a.info.method} + ${b.info.method}`,
+      inputSummary: `compare · Document A (${a.info.method}) + Document B (${b.info.method})${blockA.truncated || blockB.truncated ? " · truncated to comparison budget" : ""}`,
       outputSummary: `${result.data.differences.length} differences · ${result.data.conflicts.length} conflicts`,
       usage: result.usage,
       validation: { checked: grounding.checked, verified: grounding.verified },
