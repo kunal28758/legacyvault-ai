@@ -380,6 +380,13 @@ export async function analyzeDocument(
     const document = await loadDocument(user, documentId, signal);
     const { block, truncated } = documentBlock(document.sections, MAX_DOCUMENT_CHARS);
     const extraction: ExtractionInfo = { ...document.info, truncated };
+    const draftLookupDb = await createUserClient();
+    const existingDraftId = await aiRepository.findAnalysisDraftId(
+      draftLookupDb,
+      user.id,
+      documentId,
+    );
+
     const corpus = corpusOf(document.sections);
     const provider = getAIProvider();
     const messages = (instructions: string): AIMessage[] => [
@@ -472,10 +479,8 @@ export async function analyzeDocument(
     // Persist as an encrypted AI version (ADR-016): reopening costs nothing,
     // regenerating adds a version, and nothing is readable at rest.
     const service = createServiceClient();
-    const db = await createUserClient();
     const draftId =
-      (await aiRepository.findAnalysisDraftId(db, user.id, documentId)) ??
-      (await aiRepository.createAnalysisDraft(service, user.id, documentId));
+      existingDraftId ?? (await aiRepository.createAnalysisDraft(service, user.id, documentId));
 
     const interactionId = await recordInteraction(user, {
       provider: modelInfo.provider,

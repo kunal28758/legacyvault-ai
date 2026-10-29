@@ -223,10 +223,6 @@ async function run<T>(
   const skipped: string[] = [];
   let lastError: AIProviderError | null = null;
   const budget = AbortSignal.timeout(chainBudgetMs);
-  const bounded: AIRequest = {
-    ...request,
-    signal: request.signal ? AbortSignal.any([request.signal, budget]) : budget,
-  };
 
   for (const provider of providers) {
     const reason = ineligibility(provider, request, operation, documentProviders);
@@ -236,29 +232,51 @@ async function run<T>(
     }
     if (budget.aborted) throw budgetSpent(lastError?.provider ?? null);
     const started = Date.now();
+
+    const attemptTimeout = AbortSignal.timeout(30_000);
+    const signals: AbortSignal[] = [budget, attemptTimeout];
+    if (request.signal) signals.push(request.signal);
+    const bounded: AIRequest = {
+      ...request,
+      signal: AbortSignal.any(signals),
+    };
+
     try {
       const value = await call(provider, bounded);
       return { value, provider, started };
     } catch (thrown) {
       if (!(thrown instanceof AIProviderError)) throw thrown;
       // The budget, not the caller, ended it: report a timeout, not a cancel.
+      const callerCancelled = request.signal?.aborted ?? false;
       const cause =
-        budget.aborted && !request.signal?.aborted ? budgetSpent(provider.name) : thrown;
-      const failover = cause.retryableElsewhere && !budget.aborted;
+        budget.aborted && !callerCancelled
+          ? budgetSpent(provider.name)
+          : attemptTimeout.aborted && !callerCancelled
+            ? new AIProviderError(
+                "TIMEOUT",
+                provider.name,
+                "The AI provider took too long to answer.",
+              )
+            : thrown;
+      const failover =
+        !budget.aborted &&
+        !callerCancelled &&
+        (cause.retryableElsewhere ||
+          (operation === "structured" && cause.kind === "INVALID_OUTPUT"));
+      lastError = cause;
       logger.warn(
         {
           provider: provider.name,
           model: provider.model,
           operation,
           durationMs: Date.now() - started,
-          outcome: cause.kind === "CANCELLED" ? "cancelled" : "failed",
+          outcome: "failed",
           kind: cause.kind,
-          upstream: cause.upstream,
           failover,
+          upstream: cause.upstream,
         },
         "AI provider call failed",
       );
-      lastError = cause;
       if (!failover) throw cause;
     }
   }
