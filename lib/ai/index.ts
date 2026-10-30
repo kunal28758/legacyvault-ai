@@ -10,6 +10,7 @@ import {
   type AIProviderName,
   type AIRequest,
   type AIStream,
+  type StructuredOutputDiagnostic,
 } from "./provider";
 import { createGeminiProvider } from "./providers/gemini";
 import { createOpenAIProvider } from "./providers/openai";
@@ -285,7 +286,12 @@ async function run<T>(
   throw lastError ?? unsupported(skipped);
 }
 
-function succeeded(provider: AIProvider, operation: Operation, started: number): void {
+function succeeded(
+  provider: AIProvider,
+  operation: Operation,
+  started: number,
+  structuredOutput?: StructuredOutputDiagnostic,
+): void {
   logger.info(
     {
       provider: provider.name,
@@ -293,6 +299,7 @@ function succeeded(provider: AIProvider, operation: Operation, started: number):
       operation,
       durationMs: Date.now() - started,
       outcome: "success",
+      ...(structuredOutput ? { structuredOutput } : {}),
     },
     "AI provider call",
   );
@@ -360,7 +367,7 @@ export function getAIProvider(): AIProvider {
       const { value, provider, started } = await run(configured, request, "structured", (p, r) =>
         p.generateStructured({ ...request, signal: r.signal }),
       );
-      succeeded(provider, "structured", started);
+      succeeded(provider, "structured", started, value.structuredOutput);
       return value;
     },
     // A stream can only fall back before its first token has been sent.

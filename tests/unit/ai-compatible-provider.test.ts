@@ -192,6 +192,63 @@ describe("requests", () => {
     ).rejects.toMatchObject({ kind: "INVALID_OUTPUT" });
   });
 
+  it.each([
+    ["", "empty"],
+    ["plain text with no JSON", "non_json"],
+    ['{"ok":', "malformed_json"],
+    ['{"ok":"yes"}', "schema_invalid_json"],
+  ] as const)(
+    "classifies structured response %j as %s without exposing content",
+    async (content, classification) => {
+      fetchMock.mockResolvedValueOnce(completion(content, "stop"));
+      const error = await provider("cerebras", "gpt-oss-120b")
+        .generateStructured({
+          ...request,
+          schema: z.object({ ok: z.boolean() }),
+          schemaName: "classification",
+        })
+        .catch((e: unknown) => e);
+
+      expect(error).toMatchObject({
+        kind: "INVALID_OUTPUT",
+        upstream: {
+          structuredOutput: { classification, finishReason: "stop" },
+        },
+      });
+      if (content) expect(JSON.stringify(error)).not.toContain(content);
+    },
+  );
+
+  it("classifies valid structured JSON and allowlists finish reasons", async () => {
+    fetchMock.mockResolvedValueOnce(completion('{"ok":true}', "unexpected-provider-value"));
+    const result = await provider("cerebras", "gpt-oss-120b").generateStructured({
+      ...request,
+      schema: z.object({ ok: z.boolean() }),
+      schemaName: "classification",
+    });
+
+    expect(result.structuredOutput).toEqual({
+      classification: "valid_json",
+      finishReason: null,
+    });
+  });
+
+  it("keeps malicious upstream fields out of sanitized 422 diagnostics", async () => {
+    fetchMock.mockResolvedValueOnce(
+      vendorError(422, "document secret and https://attacker.example", "bad-code\nsecret"),
+    );
+    const error = await provider("groq", "openai/gpt-oss-120b")
+      .generateText(request)
+      .catch((e: unknown) => e);
+
+    expect(error).toMatchObject({
+      kind: "REFUSED",
+      upstream: { status: 422, reason: null },
+    });
+    expect(JSON.stringify(error)).not.toContain("attacker.example");
+    expect(JSON.stringify(error)).not.toContain("document secret");
+  });
+
   it("will not ask an unverified model for structured output", async () => {
     await expect(
       provider("huggingface", "someone/unverified").generateStructured({
@@ -357,9 +414,16 @@ describe("other failures", () => {
     expect(result.text).toBe("4");
   });
 
-  it("treats a 413 rate_limit_exceeded response as a retryable rate limit", async () => {
+  it.each([
+    "rate_limit_exceeded",
+    "RATE_LIMIT_EXCEEDED",
+    "Rate_Limit_Exceeded",
+    "rate_limit_error",
+    "RATE_LIMIT_ERROR",
+    "Rate_Limit_Error",
+  ])("treats a 413 %s response as a retryable rate limit", async (code) => {
     fetchMock.mockResolvedValue(
-      vendorError(413, "Rate limit reached", "rate_limit_exceeded", {
+      vendorError(413, "Rate limit reached", code, {
         "retry-after": "19",
         "x-ratelimit-remaining-requests": "0",
       }),
@@ -374,11 +438,29 @@ describe("other failures", () => {
       kind: "RATE_LIMITED",
       upstream: {
         status: 413,
-        reason: "rate_limit_exceeded",
+        reason: code.toLowerCase(),
         retryAfterSeconds: 19,
       },
     });
     expect((error as AIProviderError).retryableElsewhere).toBe(true);
+  });
+
+  it("rejects unknown upstream codes without exposing them", async () => {
+    fetchMock.mockResolvedValue(
+      vendorError(413, "Rate limit reached", "RATE_LIMIT_EXCEEDED_WITH_SECRET", {
+        "retry-after": "19",
+      }),
+    );
+
+    const error = await provider("groq", "openai/gpt-oss-120b")
+      .generateText(request)
+      .catch((e: unknown) => e);
+
+    expect(error).toMatchObject({
+      kind: "REFUSED",
+      upstream: { status: 413, reason: null },
+    });
+    expect(JSON.stringify(error)).not.toContain("RATE_LIMIT_EXCEEDED_WITH_SECRET");
   });
 
   it.each([

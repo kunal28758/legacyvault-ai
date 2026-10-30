@@ -20,6 +20,8 @@ import {
   type AIStream,
   type AIUpstreamFailure,
   type AIUsage,
+  type StructuredOutputDiagnostic,
+  type StructuredOutputFinishReason,
 } from "@/lib/ai/provider";
 import { withRetry } from "@/lib/ai/retry";
 
@@ -248,6 +250,24 @@ const STATUS_KINDS: Record<number, { kind: AIErrorKind; message: string }> = {
   504: { kind: "TIMEOUT", message: "The AI provider timed out." },
 };
 
+const SAFE_UPSTREAM_CODES = new Set([
+  "rate_limit_exceeded",
+  "rate_limit_error",
+  "invalid_api_key",
+  "insufficient_quota",
+  "model_not_found",
+  "invalid_request_error",
+  "unsupported_parameter",
+  "context_length_exceeded",
+  "content_policy_violation",
+]);
+
+function safeUpstreamCode(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.toLowerCase();
+  return SAFE_UPSTREAM_CODES.has(normalized) ? normalized : null;
+}
+
 export function mapCompatibleError(
   provider: CompatibleProviderName,
   cause: unknown,
@@ -268,7 +288,7 @@ export function mapCompatibleError(
   if (cause instanceof OpenAI.APIError && typeof cause.status === "number") {
     // Described, not wrapped: the vendor's message is free text.
     const retryAfterSeconds = retryAfterSecondsOf(cause);
-    const code = cause.code ?? cause.type ?? null;
+    const code = safeUpstreamCode(cause.code) ?? safeUpstreamCode(cause.type);
     const isRateLimitError =
       cause.status === 429 ||
       /^(rate_limit_exceeded|rate_limit_error)$/i.test(code ?? "");
@@ -317,6 +337,40 @@ function malformed(provider: CompatibleProviderName): AIProviderError {
 
 function refusedBy(provider: CompatibleProviderName): AIProviderError {
   return new AIProviderError("REFUSED", provider, "The AI provider declined to answer.");
+}
+
+const STRUCTURED_FINISH_REASONS = new Set<StructuredOutputFinishReason>([
+  "stop",
+  "length",
+  "content_filter",
+  "tool_calls",
+  "function_call",
+]);
+
+function finishReasonOf(value: unknown): StructuredOutputFinishReason | null {
+  return typeof value === "string" && STRUCTURED_FINISH_REASONS.has(value as StructuredOutputFinishReason)
+    ? (value as StructuredOutputFinishReason)
+    : null;
+}
+
+function structuredOutputDiagnostic(
+  content: string,
+  finishReason: unknown,
+  schemaValid: boolean,
+): StructuredOutputDiagnostic {
+  const trimmed = content.trim();
+  let classification: StructuredOutputDiagnostic["classification"];
+  if (!trimmed) {
+    classification = "empty";
+  } else {
+    const parsed = safeJson(trimmed);
+    if (parsed === undefined) {
+      classification = /^[\[{\s]/.test(trimmed) ? "malformed_json" : "non_json";
+    } else {
+      classification = schemaValid ? "valid_json" : "schema_invalid_json";
+    }
+  }
+  return { classification, finishReason: finishReasonOf(finishReason) };
 }
 
 function safeJson(text: string): unknown {
@@ -428,15 +482,29 @@ export function createCompatibleProvider(options: CompatibleProviderOptions): AI
       const choice = completion.choices?.[0];
       if (!choice) throw malformed(name);
       if (choice.finish_reason === "content_filter") throw refusedBy(name);
-      const parsed = schema.safeParse(safeJson(choice.message?.content ?? ""));
+      const content = choice.message?.content ?? "";
+      const parsedValue = safeJson(content);
+      const parsed = schema.safeParse(parsedValue);
+      const structuredOutput = structuredOutputDiagnostic(
+        content,
+        choice.finish_reason,
+        parsed.success,
+      );
       if (!parsed.success) {
         throw new AIProviderError(
           "INVALID_OUTPUT",
           name,
           "The AI provider returned an answer in the wrong shape.",
+          { upstream: { status: null, reason: null, structuredOutput } },
         );
       }
-      return { data: parsed.data, usage: usageOf(completion.usage), provider: name, model };
+      return {
+        data: parsed.data,
+        usage: usageOf(completion.usage),
+        provider: name,
+        model,
+        structuredOutput,
+      };
     },
 
     async stream(request) {

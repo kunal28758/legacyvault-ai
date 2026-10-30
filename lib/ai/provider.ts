@@ -88,6 +88,25 @@ export interface AIUsage {
   outputTokens: number | null;
 }
 
+export type StructuredOutputClassification =
+  | "empty"
+  | "non_json"
+  | "malformed_json"
+  | "schema_invalid_json"
+  | "valid_json";
+
+export type StructuredOutputFinishReason =
+  | "stop"
+  | "length"
+  | "content_filter"
+  | "tool_calls"
+  | "function_call";
+
+export interface StructuredOutputDiagnostic {
+  classification: StructuredOutputClassification;
+  finishReason: StructuredOutputFinishReason | null;
+}
+
 export interface AITextResult {
   text: string;
   usage: AIUsage;
@@ -102,6 +121,7 @@ export interface AIStructuredResult<T> {
   usage: AIUsage;
   provider: AIProviderName;
   model: string;
+  structuredOutput?: StructuredOutputDiagnostic;
 }
 
 export interface AIStream {
@@ -156,6 +176,8 @@ export interface AIUpstreamFailure {
   quotaLimit?: number | null;
   /** How long the vendor asked callers to wait, when it says. */
   retryAfterSeconds?: number | null;
+  /** Closed, content-free diagnostics for structured-output responses. */
+  structuredOutput?: StructuredOutputDiagnostic;
 }
 
 export class AIProviderError extends Error {
