@@ -18,13 +18,15 @@ import { useDocuments } from "@/hooks/use-documents";
 import {
   useCreateNewDraft,
   useFinalizePlan,
+  useLegacyPlan,
   useOpenDraft,
+  usePlanVersion,
   usePlanVersions,
   useSavePlanStep,
 } from "@/hooks/use-legacy-plan";
 import { ApiError } from "@/lib/client/api-client";
 import { computeCompleteness } from "@/lib/legacy-plan/completeness";
-import { PLAN_STEPS, TOTAL_PLAN_STEPS } from "@/lib/legacy-plan/steps";
+import { normalizeWizardStep, PLAN_STEPS, TOTAL_PLAN_STEPS } from "@/lib/legacy-plan/steps";
 import type { Asset, AssetWithAssignments } from "@/lib/types/asset";
 import type { BeneficiaryWithRoles } from "@/lib/types/beneficiary";
 import type { DocumentSummary } from "@/lib/types/document";
@@ -33,6 +35,7 @@ import type {
   PlanCompleteness,
   PlanSectionKey,
   PlanStepsData,
+  PlanVersionDetail,
   PlanVersionSummary,
 } from "@/lib/types/legacy-plan";
 import {
@@ -54,6 +57,7 @@ interface WizardContextValue {
   assetItems: AssetWithAssignments[];
   documents: DocumentSummary[];
   versions: PlanVersionSummary[];
+  snapshot: PlanVersionDetail | null;
   unassignedAssetCount: number;
   currentStep: number;
   totalSteps: number;
@@ -233,8 +237,11 @@ export function WizardProvider({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const snapshotPlanId = searchParams.get("planId");
+  const requestedVersionId = searchParams.get("versionId");
 
   const openDraft = useOpenDraft();
+  const selectedPlan = useLegacyPlan(snapshotPlanId);
   const [plan, setPlan] = useState<LegacyPlan | null>(null);
   const [stepsData, setStepsData] = useState<PlanStepsData>({});
   const [currentStep, setCurrentStep] = useState(1);
@@ -255,6 +262,8 @@ export function WizardProvider({
   const versionsQuery = usePlanVersions(plan?.id ?? null, {
     enabled: currentStep === TOTAL_PLAN_STEPS || (plan != null && plan.status !== "DRAFT"),
   });
+  const snapshotVersionId = requestedVersionId ?? versionsQuery.data?.items[0]?.id ?? null;
+  const snapshotVersionQuery = usePlanVersion(plan?.id ?? snapshotPlanId, snapshotVersionId);
 
   const saveStep = useSavePlanStep(plan?.id ?? null);
   const finalizePlan = useFinalizePlan(plan?.id ?? null);
@@ -263,16 +272,24 @@ export function WizardProvider({
 
   // One call on mount: find the open draft or create it server-side.
   useEffect(() => {
+    if (snapshotPlanId && !selectedPlan.data) return;
     if (!session.claimOpen()) return;
-    openDraft
-      .mutateAsync()
+    const opening = snapshotPlanId
+      ? selectedPlan.data
+        ? Promise.resolve(selectedPlan.data)
+        : Promise.resolve(null)
+      : openDraft.mutateAsync();
+    opening
       .then((result) => {
+        if (!result) return;
         session.setLockVersion(result.lockVersion);
         setPlan(result);
         setStepsData(result.stepsData);
         const requested = Number(searchParams.get("step"));
         const start =
-          requested >= 1 && requested <= TOTAL_PLAN_STEPS ? requested : result.currentStep;
+          requested >= 1 && requested <= TOTAL_PLAN_STEPS
+            ? requested
+            : normalizeWizardStep(result.currentStep);
         setCurrentStep(Math.min(Math.max(start, 1), TOTAL_PLAN_STEPS));
       })
       .catch((error: unknown) => {
@@ -282,7 +299,7 @@ export function WizardProvider({
       });
     // Intentionally once: the draft is resolved a single time per mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [selectedPlan.data]);
 
   const beneficiaries = useMemo(
     () => beneficiariesQuery.data?.items ?? [],
@@ -483,6 +500,7 @@ export function WizardProvider({
       assetItems,
       documents,
       versions: versionsQuery.data?.items ?? [],
+      snapshot: snapshotVersionQuery.data ?? null,
       unassignedAssetCount,
       currentStep,
       totalSteps: TOTAL_PLAN_STEPS,
@@ -557,7 +575,9 @@ export function WizardProvider({
           setPlan(result.plan);
           setStepsData(result.plan.stepsData);
           setCurrentStep(TOTAL_PLAN_STEPS);
-          router.replace(`/legacy-plan/wizard?step=${TOTAL_PLAN_STEPS}`);
+          router.replace(
+            `/legacy-plan/wizard?step=${TOTAL_PLAN_STEPS}&planId=${result.plan.id}&versionId=${result.versionId}`,
+          );
           return true;
         } catch (error) {
           toast.error(
@@ -594,6 +614,7 @@ export function WizardProvider({
     documents,
     unassignedAssetCount,
     versionsQuery.data,
+    snapshotVersionQuery.data,
     stepsData,
     currentStep,
     completeness,

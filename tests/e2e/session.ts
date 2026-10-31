@@ -12,7 +12,7 @@ import { expect, type Page } from "@playwright/test";
  */
 export async function signInAndSettle(page: Page, email: string): Promise<void> {
   await page.goto("/");
-  await clerk.signIn({ page, signInParams: { strategy: "email_code", identifier: email } });
+  await clerk.signIn({ page, emailAddress: email });
   // Clerk navigates on its own after a successful sign-in; starting our own
   // navigation on top of that one aborts it.
   await page.waitForLoadState("domcontentloaded");

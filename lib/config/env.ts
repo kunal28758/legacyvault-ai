@@ -98,3 +98,16 @@ export const serverEnv: ServerEnv = new Proxy({} as ServerEnv, {
 export function resetServerEnvCache(): void {
   cached = undefined;
 }
+
+/**
+ * Runtime cutover switch. An invalid value blocks mutations rather than
+ * silently disabling the safety control; an absent value keeps normal operation.
+ */
+export function legacyPlanMaintenanceEnabled(): boolean {
+  const value = process.env.LEGACY_PLAN_MAINTENANCE_MODE;
+  if (value === undefined) return false;
+  if (value === "enabled") return true;
+  if (value === "disabled") return false;
+  console.error("[config] Invalid LEGACY_PLAN_MAINTENANCE_MODE; failing closed.");
+  return true;
+}

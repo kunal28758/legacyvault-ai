@@ -19,6 +19,7 @@ type IdParams = { id: string };
 export const POST = withApi<FinalizePlanBody, undefined, IdParams>(
   {
     auth: "user",
+    maintenanceGate: "legacy-plan",
     rateLimit: "sensitive",
     schema: { params: planIdParamSchema, body: finalizeSchema },
     auditAction: "plan.finalized",

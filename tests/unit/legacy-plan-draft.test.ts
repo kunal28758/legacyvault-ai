@@ -46,11 +46,8 @@ describe("draft shapes", () => {
 
   it("never lets personal details be skipped", () => {
     expect(SKIPPABLE_SECTIONS).not.toContain("personal-details");
-    expect(SKIPPABLE_SECTIONS).toHaveLength(8);
+    expect(SKIPPABLE_SECTIONS).toHaveLength(4);
     expect(sectionDraftSchemas["personal-details"].parse({ skipped: true })).toEqual({});
-    expect(sectionDraftSchemas["witness-details"].parse({ skipped: true })).toEqual({
-      skipped: true,
-    });
   });
 });
 
@@ -64,14 +61,14 @@ describe("skipped sections", () => {
   it("are labelled skipped and remain incomplete", () => {
     const result = computeCompleteness({
       ...context,
-      stepsData: { "witness-details": { witnesses: [], skipped: true } },
+      stepsData: { "special-wishes": { instructions: "", skipped: true } },
     });
-    expect(result.sections["witness-details"]).toMatchObject({
+    expect(result.sections["special-wishes"]).toMatchObject({
       complete: false,
       skipped: true,
       summary: SKIPPED_SUMMARY,
     });
-    expect(result.incompleteSections).toContain("witness-details");
+    expect(result.incompleteSections).toContain("special-wishes");
   });
 
   it("stop being skipped once the section is complete", () => {

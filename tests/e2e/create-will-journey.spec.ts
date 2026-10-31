@@ -114,7 +114,7 @@ test.describe("create will, upload and AI journey", () => {
     });
 
     // The review step shows the skipped section as skipped, not as done.
-    await openWizardStep(page, 10, /Review your plan/i);
+    await openWizardStep(page, 6, /Review your plan/i);
     // The review row, not the stepper entry of the same name: only the review
     // row has an Edit button.
     const family = page

@@ -23,6 +23,13 @@ export const PLAN_SECTION_KEYS = [
   "document-attachments",
 ] as const;
 export type PlanSectionKey = (typeof PLAN_SECTION_KEYS)[number];
+export const ACTIVE_PLAN_SECTION_KEYS = [
+  "personal-details",
+  "family-information",
+  "beneficiaries",
+  "special-wishes",
+  "document-attachments",
+] as const satisfies readonly PlanSectionKey[];
 
 export type PlanStepsData = Partial<Record<PlanSectionKey, Record<string, unknown>>>;
 
@@ -42,6 +49,7 @@ export interface LegacyPlan {
 
 export interface PlanVersionSummary {
   id: string;
+  planId: string;
   versionNumber: number;
   finalizedAt: string;
   acknowledgedIncomplete: boolean;

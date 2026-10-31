@@ -9,6 +9,7 @@ import type {
   LegacyPlanOverview,
   PlanReview,
   PlanSectionKey,
+  PlanVersionDetail,
   PlanVersionSummary,
   SavePlanStepResult,
 } from "@/lib/types/legacy-plan";
@@ -56,6 +57,23 @@ export function useLegacyPlan(id: string | null): UseQueryResult<LegacyPlan> {
     enabled: Boolean(id),
     queryFn: async ({ signal }) => {
       const { data } = await apiClient.get<LegacyPlan>(`/legacy-plans/${id}`, { signal });
+      return data;
+    },
+  });
+}
+
+export function usePlanVersion(
+  planId: string | null,
+  versionId: string | null,
+): UseQueryResult<PlanVersionDetail> {
+  return useQuery({
+    queryKey: queryKeys.legacyPlan.version(planId ?? "none", versionId ?? "none"),
+    enabled: Boolean(planId && versionId),
+    queryFn: async ({ signal }) => {
+      const { data } = await apiClient.get<PlanVersionDetail>(
+        `/legacy-plans/${planId}/versions/${versionId}`,
+        { signal },
+      );
       return data;
     },
   });

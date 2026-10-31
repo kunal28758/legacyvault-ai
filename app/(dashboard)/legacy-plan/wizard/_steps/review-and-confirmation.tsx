@@ -104,7 +104,7 @@ function ReleaseSummary() {
   );
 }
 
-/* Step 10 — review (T069 / T103) */
+/* Step 6 — review (T069 / T103) */
 export function ReviewStep() {
   const { completeness, goTo, previous, finalize, plan, unassignedAssetCount, readOnly, busy } =
     useWizard();
@@ -114,7 +114,9 @@ export function ReviewStep() {
   const review = usePlanReview(plan.status === "DRAFT" ? plan.id : null);
   const [open, setOpen] = useState(false);
 
-  const sections = Object.values(review.data?.sections ?? completeness.sections);
+  const sections = Object.values(review.data?.sections ?? completeness.sections).filter((section) =>
+    PLAN_STEPS.some((step) => step.key === section.key),
+  );
   const incomplete = review.data?.incompleteSections ?? completeness.incompleteSections;
   const personalMissing = !(
     review.data?.personalDetailsComplete ?? completeness.sections["personal-details"].complete
@@ -135,7 +137,7 @@ export function ReviewStep() {
 
   return (
     <WizardStep
-      eyebrow="Step 10"
+      eyebrow="Step 6"
       title="Review your plan"
       description="Check every section before you finalize. Personal details are required; any other incomplete section can be acknowledged and completed in a later version."
       hideNavigation
@@ -283,7 +285,47 @@ export function ReviewStep() {
   );
 }
 
-/* Step 11 — confirmation (T224) */
+function FinalizedSnapshot() {
+  const { snapshot, plan } = useWizard();
+  const stepsData = (snapshot?.snapshotData.stepsData ?? plan.stepsData) as Record<
+    string,
+    unknown
+  >;
+  const resolved = snapshot?.snapshotData ?? {};
+  const sections = PLAN_STEPS.filter(
+    (step) => step.key !== "review" && step.key !== "confirmation",
+  );
+
+  return (
+    <Card className="glass">
+      <CardContent className="space-y-3 p-5">
+        <p className="text-sm font-medium">Finalized plan snapshot</p>
+        {snapshot ? (
+          sections.map((step) => (
+            <div key={step.key} className="rounded-xl border border-border p-3">
+              <p className="text-sm font-medium">{step.title}</p>
+              <pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-xs text-muted-foreground">
+                {JSON.stringify(
+                  step.key === "beneficiaries"
+                    ? (resolved.beneficiaries ?? stepsData[step.key] ?? {})
+                    : step.key === "document-attachments"
+                      ? (resolved.documentAttachments ?? stepsData[step.key] ?? {})
+                      : (stepsData[step.key] ?? {}),
+                  null,
+                  2,
+                )}
+              </pre>
+            </div>
+          ))
+        ) : (
+          <p className="text-xs text-muted-foreground">Loading the authorized snapshot…</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/* Step 7 — confirmation (T224) */
 export function ConfirmationStep() {
   const { plan, versions, createNewDraft, goTo, busy } = useWizard();
   const latest = versions[0];
@@ -292,7 +334,7 @@ export function ConfirmationStep() {
   if (!finalized) {
     return (
       <WizardStep
-        eyebrow="Step 11"
+        eyebrow="Step 7"
         title="Confirmation"
         description="This step becomes available after you finalize the plan in the review step."
         hideNavigation
@@ -302,7 +344,7 @@ export function ConfirmationStep() {
           <p className="text-sm text-muted-foreground">
             Your plan is still a draft. Return to the review step to finalize it.
           </p>
-          <Button variant="outline" onClick={() => goTo(10)}>
+          <Button variant="outline" onClick={() => goTo(6)}>
             Back to review
           </Button>
         </div>
@@ -312,7 +354,7 @@ export function ConfirmationStep() {
 
   return (
     <WizardStep
-      eyebrow="Step 11"
+      eyebrow="Step 7"
       title="Plan finalized"
       description="Your legacy plan is now a read-only version. Keep it current by creating a new draft whenever something changes."
       hideNavigation
@@ -337,7 +379,7 @@ export function ConfirmationStep() {
             <dl className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <dt className="text-xs text-muted-foreground">Sections complete</dt>
-                <dd className="font-medium">{9 - (latest?.incompleteSections.length ?? 0)} of 9</dd>
+                <dd className="font-medium">{5 - (latest?.incompleteSections.length ?? 0)} of 5</dd>
               </div>
               <div>
                 <dt className="text-xs text-muted-foreground">Acknowledged incomplete</dt>
@@ -404,6 +446,7 @@ export function ConfirmationStep() {
           </Button>
         </div>
       </div>
+      <FinalizedSnapshot />
     </WizardStep>
   );
 }

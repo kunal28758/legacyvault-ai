@@ -90,16 +90,15 @@ describe.skipIf(!available)("create will — persistence", () => {
     );
     expect(first.complete).toBe(false);
 
-    // Step 7, skipped with something already typed.
+    // A data section can be skipped while preserving the explicit draft marker.
     const skipped = await planService.savePlanStep(
       alice,
       draft.id,
-      "witness-details",
-      { data: { witnesses: [{ name: "Meera" }], skipped: true }, lockVersion: first.lockVersion },
+      "family-information",
+      { data: { skipped: true }, lockVersion: first.lockVersion },
       "test",
     );
-    // Complete on its own merits (a witness is named) even though it was skipped.
-    expect(skipped.complete).toBe(true);
+    expect(skipped.complete).toBe(false);
 
     const second = await planService.savePlanStep(
       alice,
@@ -118,13 +117,10 @@ describe.skipIf(!available)("create will — persistence", () => {
       legalName: "Priya Sharma",
       city: "Mumbai",
     });
-    expect(resumed.stepsData["witness-details"]).toEqual({
-      witnesses: [{ name: "Meera" }],
-      skipped: true,
-    });
+    expect(resumed.stepsData["family-information"]).toEqual({ skipped: true });
     expect(resumed.stepsData["special-wishes"]).toEqual({ skipped: true });
     // Resume lands on the furthest step reached.
-    expect(resumed.currentStep).toBe(8);
+    expect(resumed.currentStep).toBe(4);
     expect(resumed.lockVersion).toBe(second.lockVersion);
 
     const review = await planService.reviewPlan(alice, draft.id);

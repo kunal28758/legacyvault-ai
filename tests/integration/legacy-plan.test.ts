@@ -207,22 +207,33 @@ describe.skipIf(!available)("legacy plan — finalization", () => {
 
   it("finalizes with an acknowledgement, snapshots, and locks the plan", async () => {
     const planId = await createDraft(alice);
-    await alice.from("beneficiaries").insert({
-      user_id: aliceId,
-      name: "Rohan Mehta",
-      relationship: "Son",
-      email: "rohan.plan@example.com",
-    });
+    const { data: beneficiary } = await alice
+      .from("beneficiaries")
+      .insert({
+        user_id: aliceId,
+        name: "Rohan Mehta",
+        relationship: "Son",
+        email: "rohan.plan@example.com",
+      })
+      .select("id")
+      .single();
+    if (!beneficiary?.id) throw new Error("beneficiary was not created");
     await alice.rpc("save_plan_step", {
       p_plan_id: planId,
       p_step: "personal-details",
       p_data: COMPLETE_PERSONAL,
       p_expected_lock_version: 0,
     });
+    await alice.rpc("save_plan_step", {
+      p_plan_id: planId,
+      p_step: "beneficiaries",
+      p_data: { beneficiaryIds: [beneficiary.id] },
+      p_expected_lock_version: 1,
+    });
 
     const { data: versionId, error } = await alice.rpc("finalize_legacy_plan", {
       p_plan_id: planId,
-      p_expected_lock_version: 1,
+      p_expected_lock_version: 2,
       p_acknowledge_incomplete: true,
       p_corr: "22222222-2222-4222-8222-222222222222",
     });
@@ -235,7 +246,7 @@ describe.skipIf(!available)("legacy plan — finalization", () => {
     const version = await planRepository.findVersion(alice, aliceId, planId, versionId as string);
     expect(version?.versionNumber).toBe(1);
     expect(version?.acknowledgedIncomplete).toBe(true);
-    expect(version?.incompleteSections).toContain("witness-details");
+    expect(version?.incompleteSections).toContain("beneficiaries");
     // Resolved by value: the beneficiary is copied into the snapshot.
     expect(JSON.stringify(version?.snapshotData)).toContain("Rohan Mehta");
 

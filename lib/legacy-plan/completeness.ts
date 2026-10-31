@@ -1,5 +1,6 @@
 import {
   PLAN_SECTION_KEYS,
+  ACTIVE_PLAN_SECTION_KEYS,
   type PlanCompleteness,
   type PlanSectionKey,
   type PlanStepsData,
@@ -97,45 +98,6 @@ export function computeCompleteness(context: CompletenessContext): PlanCompleten
       : "No beneficiaries selected",
   };
 
-  const assetSection = (
-    key: PlanSectionKey,
-    kind: CompletenessContext["assets"][number]["kind"],
-  ) => {
-    const section = asRecord(data[key]);
-    const ids = stringList(section.assetIds).filter((id) =>
-      context.assets.some((a) => a.id === id && a.kind === kind),
-    );
-    const none = section.none === true;
-    sections[key] = {
-      key,
-      title: PLAN_SECTION_TITLES[key],
-      required: false,
-      complete: none || ids.length > 0,
-      summary: none
-        ? "Marked as none"
-        : ids.length
-          ? `${ids.length} included`
-          : "Nothing included yet",
-    };
-  };
-  assetSection("financial-assets", "FINANCIAL_ASSET");
-  assetSection("physical-assets", "PHYSICAL_ASSET");
-  assetSection("digital-assets", "DIGITAL_ASSET");
-
-  const witnesses = asRecord(data["witness-details"]);
-  const witnessRows = Array.isArray(witnesses.witnesses)
-    ? witnesses.witnesses.filter((w) => hasText(asRecord(w).name))
-    : [];
-  sections["witness-details"] = {
-    key: "witness-details",
-    title: PLAN_SECTION_TITLES["witness-details"],
-    required: false,
-    complete: witnessRows.length > 0 || witnesses.none === true,
-    summary: witnessRows.length
-      ? `${witnessRows.length} witness${witnessRows.length > 1 ? "es" : ""}`
-      : "No witnesses recorded",
-  };
-
   const wishes = asRecord(data["special-wishes"]);
   const wishFields = ["instructions", "funeralWishes", "messages"].filter((key) =>
     hasText(wishes[key]),
@@ -165,6 +127,16 @@ export function computeCompleteness(context: CompletenessContext): PlanCompleten
           : "No documents attached",
   };
 
+  for (const key of ["financial-assets", "physical-assets", "digital-assets", "witness-details"] as const) {
+    sections[key] = {
+      key,
+      title: PLAN_SECTION_TITLES[key],
+      required: false,
+      complete: true,
+      summary: "Archived data retained",
+    };
+  }
+
   // "Skip for now" is recorded on the section and shown as such, but it never
   // counts as complete: a skipped section is still incomplete at finalization.
   for (const key of PLAN_SECTION_KEYS) {
@@ -173,9 +145,9 @@ export function computeCompleteness(context: CompletenessContext): PlanCompleten
     if (skipped) sections[key].summary = SKIPPED_SUMMARY;
   }
 
-  const incompleteSections = PLAN_SECTION_KEYS.filter((key) => !sections[key].complete);
+  const incompleteSections = ACTIVE_PLAN_SECTION_KEYS.filter((key) => !sections[key].complete);
   const percent = Math.round(
-    ((PLAN_SECTION_KEYS.length - incompleteSections.length) / PLAN_SECTION_KEYS.length) * 100,
+    ((ACTIVE_PLAN_SECTION_KEYS.length - incompleteSections.length) / ACTIVE_PLAN_SECTION_KEYS.length) * 100,
   );
   return { sections, incompleteSections, percent };
 }

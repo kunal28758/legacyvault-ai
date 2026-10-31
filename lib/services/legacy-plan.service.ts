@@ -8,6 +8,7 @@ import { computeCompleteness, type CompletenessContext } from "@/lib/legacy-plan
 import * as assetRepository from "@/lib/repositories/asset.repository";
 import * as planRepository from "@/lib/repositories/legacy-plan.repository";
 import type { AssetKind } from "@/lib/types/asset";
+import { ACTIVE_PLAN_SECTION_KEYS } from "@/lib/types/legacy-plan";
 import type {
   LegacyPlan,
   LegacyPlanOverview,
@@ -376,10 +377,8 @@ async function refreshCompletionStatus(
   const completeness = computeCompleteness(context);
   let lockVersion = plan.lockVersion;
 
-  for (const [key, section] of Object.entries(completeness.sections) as [
-    PlanSectionKey,
-    { complete: boolean },
-  ][]) {
+  for (const key of ACTIVE_PLAN_SECTION_KEYS) {
+    const section = completeness.sections[key];
     const recorded = plan.completionStatus[key] ?? false;
     const saved = plan.stepsData[key];
     // Only sections the user has actually touched are corrected; an untouched

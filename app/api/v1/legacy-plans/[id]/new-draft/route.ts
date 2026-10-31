@@ -17,6 +17,7 @@ type IdParams = { id: string };
 export const POST = withApi<NewDraftBody, undefined, IdParams>(
   {
     auth: "user",
+    maintenanceGate: "legacy-plan",
     rateLimit: "default",
     schema: { params: planIdParamSchema, body: newDraftBodySchema },
     auditAction: "plan.draft_created",

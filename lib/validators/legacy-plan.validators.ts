@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { PLAN_SECTION_KEYS } from "@/lib/types/legacy-plan";
+import { ACTIVE_PLAN_SECTION_KEYS, PLAN_SECTION_KEYS } from "@/lib/types/legacy-plan";
 
 /**
  * Zod schemas for the legacy-plan sections (task T057 — shared by the wizard
@@ -201,7 +201,7 @@ export const sectionDraftSchemas = {
 
 /** Personal details can never be skipped: finalization requires them. */
 export const SKIPPABLE_SECTIONS: readonly (typeof PLAN_SECTION_KEYS)[number][] =
-  PLAN_SECTION_KEYS.filter((key) => key !== "personal-details");
+  ACTIVE_PLAN_SECTION_KEYS.filter((key) => key !== "personal-details");
 
 export const sectionSchemas = {
   "personal-details": personalDetailsSchema,

@@ -20,6 +20,7 @@ type StepParams = { id: string; step: PlanSectionKey };
 export const PATCH = withApi<undefined, undefined, StepParams>(
   {
     auth: "user",
+    maintenanceGate: "legacy-plan",
     // Debounced section saves: their own budget, so typing never starves
     // other writes (and vice versa).
     rateLimit: "autosave",

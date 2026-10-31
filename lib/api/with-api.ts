@@ -11,7 +11,7 @@ import { requireAccessGrant } from "@/lib/auth/require-access-grant";
 import { requireRole, requireUser, type UserRole } from "@/lib/auth/require-user";
 import type { AppUser } from "@/lib/auth/ensure-app-user";
 import type { AccessGrant } from "@/lib/services/access-portal.service";
-import { getEnvGroup } from "@/lib/config/env";
+import { getEnvGroup, legacyPlanMaintenanceEnabled } from "@/lib/config/env";
 import { errorFields, supabaseClientFields } from "@/lib/observability/error-fields";
 import { requestLogger, redactPath } from "@/lib/observability/logger";
 import { safeEqual } from "@/lib/security/encryption";
@@ -59,6 +59,7 @@ export type AnonymousApiContext<TBody = unknown, TQuery = unknown, TParams = unk
 
 export interface WithApiOptions<TBody, TQuery, TParams> {
   auth: AuthMode;
+  maintenanceGate?: "legacy-plan";
   roles?: readonly UserRole[];
   reverification?: "strict" | "multi_factor";
   rateLimit?: RateLimitPolicyName;
@@ -79,6 +80,13 @@ type RouteArgs = { params: Promise<Record<string, string | string[]>> };
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 /** Modes that travel with ambient credentials and therefore need CSRF defence. */
 const COOKIE_MODES = new Set<AuthMode>(["public", "user", "admin", "access-cookie"]);
+
+function assertMaintenanceGateOpen(gate: "legacy-plan" | undefined): void {
+  if (!gate) return;
+
+  if (!legacyPlanMaintenanceEnabled()) return;
+  throw ApiError.maintenance();
+}
 
 /**
  * Same-origin check for cookie-bearing mutations (FR-Q007).
@@ -191,13 +199,17 @@ export function withApi<
         grant = await requireAccessGrant();
       }
 
-      // 2. CSRF for ambient-credential modes only.
+      // 2. Maintenance gates run after authentication so unauthenticated callers
+      // retain the normal 401 response and cannot learn deployment state.
+      assertMaintenanceGateOpen(options.maintenanceGate);
+
+      // 3. CSRF for ambient-credential modes only.
       if (COOKIE_MODES.has(options.auth)) assertSameOrigin(request);
 
-      // 3. Step-up verification for sensitive operations.
+      // 4. Step-up verification for sensitive operations.
       if (options.reverification) await assertReverification(options.reverification);
 
-      // 4. Rate limit — keyed by user where we have one, else by client IP.
+      // 5. Rate limit — keyed by user where we have one, else by client IP.
       //    Reads on a `default` route count against the separate `read` budget.
       if (options.rateLimit) {
         const isRead = request.method === "GET" || request.method === "HEAD";
@@ -207,7 +219,7 @@ export function withApi<
         });
       }
 
-      // 5. Validation.
+      // 6. Validation.
       const params = options.schema?.params
         ? parseOrThrow(options.schema.params, await resolveParams(routeArgs))
         : ((await resolveParams(routeArgs)) as TParams);
@@ -218,7 +230,7 @@ export function withApi<
         ? await parseJsonBody(request, options.schema.body)
         : (undefined as TBody);
 
-      // 6. Handler.
+      // 7. Handler.
       const result = await handler({
         request,
         user: user as AppUser,

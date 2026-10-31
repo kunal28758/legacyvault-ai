@@ -22,6 +22,7 @@ export const GET = withApi(
 export const POST = withApi(
   {
     auth: "user",
+    maintenanceGate: "legacy-plan",
     rateLimit: "default",
     auditAction: "plan.created",
     auditResourceType: "legacy_plan",

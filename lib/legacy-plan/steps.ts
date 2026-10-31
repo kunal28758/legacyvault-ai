@@ -1,10 +1,10 @@
 import type { PlanSectionKey } from "@/lib/types/legacy-plan";
 
 /**
- * The eleven wizard steps (FR-C001).
+ * The seven wizard steps (FR-C001).
  *
- * Steps 1–9 map one-to-one onto the section keys the database stores; steps 10
- * and 11 are review and confirmation, which hold no data of their own. Lifted
+ * Steps 1–5 map one-to-one onto the active section keys; steps 6 and 7 are
+ * review and confirmation, which hold no data of their own. Lifted
  * out of the demo layer so the plan UI no longer imports it.
  */
 export const PLAN_STEPS: {
@@ -28,45 +28,31 @@ export const PLAN_STEPS: {
   { step: 3, key: "beneficiaries", title: "Beneficiaries", description: "People who inherit" },
   {
     step: 4,
-    key: "financial-assets",
-    title: "Financial Assets",
-    description: "Accounts, insurance, investments",
-  },
-  {
-    step: 5,
-    key: "physical-assets",
-    title: "Physical Assets",
-    description: "Property, vehicles, valuables",
-  },
-  {
-    step: 6,
-    key: "digital-assets",
-    title: "Digital Assets",
-    description: "Accounts, domains, wallets",
-  },
-  {
-    step: 7,
-    key: "witness-details",
-    title: "Witness Details",
-    description: "People who witness the plan",
-  },
-  {
-    step: 8,
     key: "special-wishes",
     title: "Special Wishes",
     description: "Instructions and messages",
   },
   {
-    step: 9,
+    step: 5,
     key: "document-attachments",
     title: "Document Attachments",
     description: "Supporting vault documents",
   },
-  { step: 10, key: "review", title: "Review", description: "Check everything before finalizing" },
-  { step: 11, key: "confirmation", title: "Confirmation", description: "Finalized plan summary" },
+  { step: 6, key: "review", title: "Review", description: "Check everything before finalizing" },
+  { step: 7, key: "confirmation", title: "Confirmation", description: "Finalized plan summary" },
 ];
 
-export const TOTAL_PLAN_STEPS = 11;
+export const TOTAL_PLAN_STEPS = 7;
+
+/** Maps a persisted pre-7-step cursor without changing any saved section data. */
+export function normalizeWizardStep(step: number): number {
+  if (step <= 3) return Math.max(step, 1);
+  if (step <= 7) return 4;
+  if (step === 8) return 4;
+  if (step === 9) return 5;
+  if (step === 10) return 6;
+  return 7;
+}
 
 export function stepForSection(key: PlanSectionKey): number {
   return PLAN_STEPS.find((step) => step.key === key)?.step ?? 1;

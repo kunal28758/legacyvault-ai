@@ -174,6 +174,9 @@ export const serverEnvGroups = {
   operations: {
     ADMIN_EMAIL: z.email(),
   },
+  maintenance: {
+    LEGACY_PLAN_MAINTENANCE_MODE: z.enum(["enabled", "disabled"]).default("disabled"),
+  },
 } as const;
 
 export type ServerEnvGroupName = keyof typeof serverEnvGroups;
@@ -197,6 +200,7 @@ export const serverEnvShape = {
   ...serverEnvGroups.observability,
   ...serverEnvGroups.cron,
   ...serverEnvGroups.operations,
+  ...serverEnvGroups.maintenance,
 } as const;
 
 /** The cross-field inputs, loose enough to evaluate on a partially valid environment. */

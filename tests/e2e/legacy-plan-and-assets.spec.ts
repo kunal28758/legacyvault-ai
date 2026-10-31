@@ -106,7 +106,7 @@ test.describe("legacy plan and assets", () => {
     await expect(page.getByLabel("Full legal name")).toHaveValue(legalName, { timeout: 30_000 });
 
     // The section now counts as complete in the review step.
-    await page.goto("/legacy-plan/wizard?step=10");
+    await page.goto("/legacy-plan/wizard?step=6");
     await expect(page.getByRole("heading", { name: "Review your plan" })).toBeVisible({
       timeout: 30_000,
     });

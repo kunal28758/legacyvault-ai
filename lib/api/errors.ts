@@ -30,6 +30,7 @@ export type ApiErrorCode =
   | "FILE_TYPE_MISMATCH"
   | "FILE_TOO_LARGE"
   | "AI_UNAVAILABLE"
+  | "MAINTENANCE"
   | "SERVICE_UNAVAILABLE"
   | "INTERNAL_ERROR";
 
@@ -95,6 +96,14 @@ export class ApiError extends Error {
     return new ApiError(429, "RATE_LIMITED", "Too many requests. Please slow down and try again.", {
       details: { retryAfterSeconds },
     });
+  }
+
+  static maintenance() {
+    return new ApiError(
+      503,
+      "MAINTENANCE",
+      "This operation is temporarily unavailable while maintenance is in progress.",
+    );
   }
 
   static reverificationRequired(level: "strict" | "multi_factor") {

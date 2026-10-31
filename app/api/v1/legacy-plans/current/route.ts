@@ -11,6 +11,7 @@ import * as planService from "@/lib/services/legacy-plan.service";
 export const POST = withApi(
   {
     auth: "user",
+    maintenanceGate: "legacy-plan",
     rateLimit: "default",
     auditAction: "plan.draft_opened",
     auditResourceType: "legacy_plan",

@@ -14,10 +14,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { PLAN_STEPS } from "@/lib/legacy-plan/steps";
 
 import { FamilyInformationStep } from "../_steps/family-information";
-import { AssetsStep, BeneficiariesStep, DocumentAttachmentsStep } from "../_steps/module-steps";
+import { BeneficiariesStep, DocumentAttachmentsStep } from "../_steps/module-steps";
 import { PersonalDetailsStep } from "../_steps/personal-details";
 import { ConfirmationStep, ReviewStep } from "../_steps/review-and-confirmation";
-import { SpecialWishesStep, WitnessDetailsStep } from "../_steps/witness-and-wishes";
+import { SpecialWishesStep } from "../_steps/witness-and-wishes";
 
 function CurrentStep() {
   const { currentStep } = useWizard();
@@ -29,21 +29,13 @@ function CurrentStep() {
     case 3:
       return <BeneficiariesStep key="3" />;
     case 4:
-      return <AssetsStep key="4" kind="FINANCIAL_ASSET" />;
+      return <SpecialWishesStep key="4" />;
     case 5:
-      return <AssetsStep key="5" kind="PHYSICAL_ASSET" />;
+      return <DocumentAttachmentsStep key="5" />;
     case 6:
-      return <AssetsStep key="6" kind="DIGITAL_ASSET" />;
-    case 7:
-      return <WitnessDetailsStep key="7" />;
-    case 8:
-      return <SpecialWishesStep key="8" />;
-    case 9:
-      return <DocumentAttachmentsStep key="9" />;
-    case 10:
-      return <ReviewStep key="10" />;
+      return <ReviewStep key="6" />;
     default:
-      return <ConfirmationStep key="11" />;
+      return <ConfirmationStep key="7" />;
   }
 }
 

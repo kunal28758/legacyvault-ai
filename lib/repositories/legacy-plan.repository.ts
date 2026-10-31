@@ -49,6 +49,7 @@ export function toLegacyPlan(row: LegacyPlanRow): LegacyPlan {
 export function toVersionSummary(row: PlanVersionRow): PlanVersionSummary {
   return {
     id: row.id,
+    planId: row.legacy_plan_id,
     versionNumber: row.version_number,
     finalizedAt: row.finalized_at,
     acknowledgedIncomplete: row.acknowledged_incomplete,

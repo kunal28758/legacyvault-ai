@@ -69,7 +69,7 @@ const DRAFT_PLAN = {
   id: "11111111-1111-4111-8111-111111111111",
   status: "DRAFT",
   version: 1,
-  currentStep: 6,
+  currentStep: 4,
   stepsData: {},
   completionStatus: {},
   lockVersion: 0,
@@ -226,8 +226,8 @@ describe("authenticated views", () => {
     await waitFor(() =>
       expect(screen.getByRole("navigation", { name: /plan steps/i })).toBeInTheDocument(),
     );
-    expect(screen.getByText(/Step 6 of 11/)).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 2, name: /Digital assets/i })).toBeInTheDocument();
+    expect(screen.getByText(/Step 4 of 7/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: /Special wishes/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Save & continue/i })).toBeInTheDocument();
     // An optional step can be skipped; nothing has been saved yet, so nothing claims to be.
     expect(screen.getByRole("button", { name: /Skip for now/i })).toBeInTheDocument();

@@ -22,10 +22,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAssets } from "@/hooks/use-assets";
 import { useBeneficiaries } from "@/hooks/use-beneficiaries";
+import { useDocuments } from "@/hooks/use-documents";
 import { useCreateNewDraft, useLegacyPlanOverview } from "@/hooks/use-legacy-plan";
 import { useNow } from "@/hooks/use-now";
 import { ApiError } from "@/lib/client/api-client";
-import { computeCompleteness } from "@/lib/legacy-plan/completeness";
+import { PLAN_SECTION_TITLES, computeCompleteness } from "@/lib/legacy-plan/completeness";
+import { ACTIVE_PLAN_SECTION_KEYS } from "@/lib/types/legacy-plan";
 import { PLAN_STEPS, stepForSection } from "@/lib/legacy-plan/steps";
 import { formatDateTime, formatRelative } from "@/lib/format";
 
@@ -43,6 +45,7 @@ export function LegacyPlanView() {
   const financial = useAssets("FINANCIAL_ASSET");
   const physical = useAssets("PHYSICAL_ASSET");
   const digital = useAssets("DIGITAL_ASSET");
+  const documents = useDocuments({ limit: 100 });
   const newDraft = useCreateNewDraft();
   const now = useNow();
 
@@ -74,7 +77,7 @@ export function LegacyPlanView() {
         <PageHeader
           eyebrow="Legacy"
           title="Legacy plan"
-          description="Create a structured digital will in eleven guided steps."
+          description="Create a structured digital will in seven guided steps."
         />
         <EmptyState
           icon={ScrollText}
@@ -101,7 +104,7 @@ export function LegacyPlanView() {
     stepsData: plan.stepsData,
     beneficiaries: beneficiariesQuery.data?.items ?? [],
     assets,
-    documents: [],
+    documents: documents.data?.items ?? [],
   });
 
   const finalized = plan.status === "FINALIZED";
@@ -173,7 +176,7 @@ export function LegacyPlanView() {
             <dl className="space-y-3 text-sm">
               <div>
                 <dt className="text-xs text-muted-foreground">Sections complete</dt>
-                <dd className="font-medium">{9 - completeness.incompleteSections.length} / 9</dd>
+                <dd className="font-medium">{5 - completeness.incompleteSections.length} / 5</dd>
               </div>
               <div>
                 <dt className="text-xs text-muted-foreground">Current step</dt>
@@ -198,7 +201,9 @@ export function LegacyPlanView() {
           </CardHeader>
           <CardContent>
             <ul className="grid gap-2 sm:grid-cols-2">
-              {Object.values(completeness.sections).map((section) => {
+              {Object.values(completeness.sections)
+                .filter((section) => ACTIVE_PLAN_SECTION_KEYS.some((key) => key === section.key))
+                .map((section) => {
                 const step = stepForSection(section.key);
                 return (
                   <li key={section.key}>
@@ -229,7 +234,7 @@ export function LegacyPlanView() {
                     </Link>
                   </li>
                 );
-              })}
+                })}
             </ul>
           </CardContent>
         </Card>
@@ -271,7 +276,11 @@ export function LegacyPlanView() {
                       <p className="text-xs text-muted-foreground">
                         Incomplete:{" "}
                         {version.incompleteSections
-                          .map((key) => PLAN_STEPS.find((step) => step.key === key)?.title)
+                          .map(
+                            (key) =>
+                              PLAN_STEPS.find((step) => step.key === key)?.title ??
+                              PLAN_SECTION_TITLES[key],
+                          )
                           .join(", ")}
                       </p>
                     )}
@@ -279,7 +288,11 @@ export function LegacyPlanView() {
                       variant="outline"
                       size="sm"
                       nativeButton={false}
-                      render={<Link href="/legacy-plan/wizard?step=11" />}
+                      render={
+                        <Link
+                          href={`/legacy-plan/wizard?step=7&planId=${version.planId}&versionId=${version.id}`}
+                        />
+                      }
                     >
                       View snapshot
                     </Button>

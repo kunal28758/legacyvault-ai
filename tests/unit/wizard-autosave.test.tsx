@@ -183,11 +183,11 @@ describe("create will — saving", () => {
         <WizardView />
       </Providers>,
     );
-    await screen.findByRole("heading", { level: 2, name: /Financial assets/i });
+    await screen.findByRole("heading", { level: 2, name: /Special wishes/i });
     fireEvent.click(screen.getByRole("button", { name: /Save & continue/ }));
     await waitFor(() =>
       expect(
-        screen.getAllByText(/Include at least one asset, or mark this class as/).length,
+        screen.getAllByText(/Write something in at least one area/).length,
       ).toBeGreaterThan(0),
     );
     expect(document.body.textContent).not.toMatch(/expected (string|array), received undefined/);

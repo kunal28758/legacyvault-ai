@@ -35,7 +35,7 @@ describe("section completeness", () => {
   it("treats an empty plan as 0% with every section incomplete", () => {
     const result = computeCompleteness(emptyContext);
     expect(result.percent).toBe(0);
-    expect(result.incompleteSections).toHaveLength(9);
+    expect(result.incompleteSections).toHaveLength(5);
     expect(result.sections["personal-details"].required).toBe(true);
   });
 
@@ -79,24 +79,11 @@ describe("section completeness", () => {
     expect(result.sections.beneficiaries.complete).toBe(false);
   });
 
-  it("requires the selected asset to exist and to be of that class", () => {
+  it("retains historical asset data without making it an active wizard requirement", () => {
     const stepsData = { "financial-assets": { assetIds: ["a1"] } };
 
-    expect(
-      computeCompleteness({
-        ...emptyContext,
-        stepsData,
-        assets: [{ id: "a1", kind: "PHYSICAL_ASSET" }],
-      }).sections["financial-assets"].complete,
-    ).toBe(false);
-
-    expect(
-      computeCompleteness({
-        ...emptyContext,
-        stepsData,
-        assets: [{ id: "a1", kind: "FINANCIAL_ASSET" }],
-      }).sections["financial-assets"].complete,
-    ).toBe(true);
+    expect(computeCompleteness({ ...emptyContext, stepsData }).sections["financial-assets"].complete).toBe(true);
+    expect(computeCompleteness({ ...emptyContext, stepsData }).incompleteSections).not.toContain("financial-assets");
   });
 
   it("accepts an explicit 'none' for the optional collection sections", () => {
@@ -111,23 +98,9 @@ describe("section completeness", () => {
       },
     });
     expect(result.sections["financial-assets"].complete).toBe(true);
-    expect(result.sections["financial-assets"].summary).toBe("Marked as none");
+    expect(result.sections["financial-assets"].summary).toBe("Archived data retained");
     expect(result.sections["document-attachments"].complete).toBe(true);
     expect(result.sections["witness-details"].complete).toBe(true);
-  });
-
-  it("counts a witness only when it has a name", () => {
-    const blank = computeCompleteness({
-      ...emptyContext,
-      stepsData: { "witness-details": { witnesses: [{ name: "  " }] } },
-    });
-    expect(blank.sections["witness-details"].complete).toBe(false);
-
-    const named = computeCompleteness({
-      ...emptyContext,
-      stepsData: { "witness-details": { witnesses: [{ name: "Anil Kumar" }] } },
-    });
-    expect(named.sections["witness-details"].complete).toBe(true);
   });
 
   it("needs at least one written area for special wishes", () => {
@@ -146,12 +119,12 @@ describe("section completeness", () => {
     ).toBe(true);
   });
 
-  it("reports a percentage over the nine sections", () => {
+  it("reports a percentage over the five active sections", () => {
     const result = computeCompleteness({
       ...emptyContext,
       stepsData: { "personal-details": completePersonal },
     });
-    expect(result.percent).toBe(11);
+    expect(result.percent).toBe(20);
     expect(result.incompleteSections).not.toContain("personal-details");
   });
 
